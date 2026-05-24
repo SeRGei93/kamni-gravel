@@ -1,0 +1,82 @@
+package dto
+
+import (
+	"time"
+
+	"gravel_bot/internal/domain/entity"
+)
+
+// GiftDTO представляет DTO подарка для API
+type GiftDTO struct {
+	ID             uint                 `json:"id"`
+	UserID         int64                `json:"user_id"`
+	Username       string               `json:"username,omitempty"`
+	FirstName      string               `json:"first_name,omitempty"`
+	LastName       string               `json:"last_name,omitempty"`
+	EventID        uint                 `json:"event_id"`
+	Description    string               `json:"description"`
+	GenderFilter   string               `json:"gender_filter,omitempty"`   // all, male, female
+	BikeTypeFilter string               `json:"bike_type_filter,omitempty"` // all, gravel, mtb, road, single_speed, tandem
+	Place          *int                 `json:"place,omitempty"`           // место (позиция)
+	Attachments    []*GiftAttachmentDTO `json:"attachments,omitempty"`
+	Criteria       []*CriteriaDTO       `json:"criteria,omitempty"`
+	CreatedAt      time.Time            `json:"created_at"`
+}
+
+// GiftAttachmentDTO представляет DTO прикреплённого файла
+type GiftAttachmentDTO struct {
+	ID             uint   `json:"id"`
+	GiftID         uint   `json:"gift_id"`
+	TelegramFileID string `json:"telegram_file_id"`
+	FileType       string `json:"file_type"` // photo, document
+}
+
+// FromGift создаёт DTO из entity.Gift
+func FromGift(g *entity.Gift) *GiftDTO {
+	dto := &GiftDTO{
+		ID:             g.ID,
+		UserID:         g.UserID,
+		EventID:        g.EventID,
+		Description:    g.Description,
+		GenderFilter:   g.GenderFilter,
+		BikeTypeFilter: g.BikeTypeFilter,
+		Place:          g.Place,
+		CreatedAt:      g.CreatedAt,
+	}
+
+	// Добавляем данные пользователя
+	if g.User != nil {
+		dto.Username = g.User.Username
+		dto.FirstName = g.User.FirstName
+		dto.LastName = g.User.LastName
+	}
+
+	// Добавляем прикреплённые файлы
+	if len(g.Attachments) > 0 {
+		dto.Attachments = make([]*GiftAttachmentDTO, len(g.Attachments))
+		for i, a := range g.Attachments {
+			dto.Attachments[i] = &GiftAttachmentDTO{
+				ID:             a.ID,
+				GiftID:         a.GiftID,
+				TelegramFileID: a.TelegramFileID,
+				FileType:       a.FileType,
+			}
+		}
+	}
+
+	// Добавляем критерии
+	if len(g.Criteria) > 0 {
+		dto.Criteria = make([]*CriteriaDTO, len(g.Criteria))
+		for i, c := range g.Criteria {
+			dto.Criteria[i] = FromCriteria(c)
+		}
+	}
+
+	return dto
+}
+
+// GiftListResponse представляет ответ со списком подарков
+type GiftListResponse struct {
+	Gifts []*GiftDTO `json:"gifts"`
+	Total int        `json:"total"`
+}

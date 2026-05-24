@@ -1,0 +1,169 @@
+'use client';
+
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
+import Badge from '../ui/badge/Badge';
+import Button from '../ui/button/Button';
+import { PencilIcon, TrashBinIcon } from '@/icons';
+import type { Event } from '@/types';
+
+interface EventsTableProps {
+  events: Event[];
+  isLoading?: boolean;
+  onEdit?: (event: Event) => void;
+  onDelete?: (eventId: number) => void;
+}
+
+export default function EventsTable({
+  events,
+  isLoading,
+  onEdit,
+  onDelete,
+}: EventsTableProps) {
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDelete = async (eventId: number) => {
+    if (!confirm('Вы уверены, что хотите удалить это событие? Все связанные данные будут сохранены.')) {
+      return;
+    }
+
+    setDeletingId(eventId);
+    try {
+      if (onDelete) {
+        await onDelete(eventId);
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-gray-500 dark:text-gray-400">Загрузка...</div>
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-gray-500 dark:text-gray-400">События не найдены</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+      <div className="max-w-full overflow-x-auto">
+        <Table>
+          <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+            <TableRow>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
+                Название
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
+                Описание
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
+                Даты
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
+                Статус
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
+                Действия
+              </TableCell>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+            {events.map((event) => (
+              <TableRow
+                key={event.id}
+                className="hover:bg-gray-50 dark:hover:bg-white/5"
+              >
+                <TableCell className="px-5 py-4 text-start">
+                  <Link
+                    href={`/events/${event.id}`}
+                    className="font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300"
+                  >
+                    {event.name}
+                  </Link>
+                </TableCell>
+                <TableCell className="px-5 py-4 text-start">
+                  <p className="max-w-md text-sm text-gray-800 dark:text-white/90 line-clamp-2">
+                    {event.description || '-'}
+                  </p>
+                </TableCell>
+                <TableCell className="px-5 py-4 text-start">
+                  <div className="text-sm text-gray-800 dark:text-white/90">
+                    {event.start_date && (
+                      <div>
+                        Начало:{' '}
+                        {new Date(event.start_date).toLocaleDateString('ru-RU')}
+                      </div>
+                    )}
+                    {event.end_date && (
+                      <div>
+                        Окончание:{' '}
+                        {new Date(event.end_date).toLocaleDateString('ru-RU')}
+                      </div>
+                    )}
+                    {!event.start_date && !event.end_date && '-'}
+                  </div>
+                </TableCell>
+                <TableCell className="px-5 py-4 text-start">
+                  <Badge color={event.active ? 'success' : 'light'} size="sm">
+                    {event.active ? 'Активно' : 'Неактивно'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="px-5 py-4 text-start">
+                  <div className="flex items-center gap-2">
+                    {onEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        startIcon={<PencilIcon />}
+                        onClick={() => onEdit(event)}
+                      >
+                        Редактировать
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        startIcon={<TrashBinIcon />}
+                        onClick={() => handleDelete(event.id)}
+                        disabled={deletingId === event.id}
+                      >
+                        {deletingId === event.id ? '...' : 'Удалить'}
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}

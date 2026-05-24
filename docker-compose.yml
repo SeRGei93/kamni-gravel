@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gravel_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-gravel_bot}
+      - POSTGRES_USER=${POSTGRES_USER:-gravel}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-gravel_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gravel} -d ${POSTGRES_DB:-gravel_bot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend-bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: bot
+    container_name: gravel_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENV=${ENV:-local}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB:-gravel_bot}
+      - DB_USER=${POSTGRES_USER:-gravel}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-gravel_password}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-0}
+      - PUBLIC_CHAT_ID=${PUBLIC_CHAT_ID:-0}
+      - BOT_DEBUG=${BOT_DEBUG:-false}
+      - BOT_SESSION_TIMEOUT=${BOT_SESSION_TIMEOUT:-30m}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: api
+    container_name: gravel_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENV=${ENV:-local}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB:-gravel_bot}
+      - DB_USER=${POSTGRES_USER:-gravel}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-gravel_password}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - API_HOST=${API_HOST:-0.0.0.0}
+      - API_PORT=${API_PORT:-8080}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ACCESS_TTL=${JWT_ACCESS_TTL:-15m}
+      - JWT_REFRESH_TTL=${JWT_REFRESH_TTL:-168h}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: migrate
+    container_name: gravel_migrate
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB:-gravel_bot}
+      - DB_USER=${POSTGRES_USER:-gravel}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-gravel_password}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["up"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gravel_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend-api:8080
+    depends_on:
+      - backend-api
+
+volumes:
+  postgres_data:

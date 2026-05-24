@@ -1,0 +1,278 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
+import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
+import Badge from '../ui/badge/Badge';
+import Button from '../ui/button/Button';
+import { TrashBinIcon, PencilIcon } from '@/icons';
+import { telegramApi } from '@/api/telegram';
+import { getCriteriaColor } from '@/utils/criteria';
+import type { Gift } from '@/types';
+
+interface GiftsTableProps {
+  gifts: Gift[];
+  assignedGiftIds?: Set<number>;
+  isLoading?: boolean;
+  onEdit?: (gift: Gift) => void;
+  onDelete?: (giftId: number) => void;
+}
+
+export default function GiftsTable({
+  gifts,
+  assignedGiftIds,
+  isLoading,
+  onEdit,
+  onDelete,
+}: GiftsTableProps) {
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDelete = async (giftId: number) => {
+    if (!confirm('Вы уверены, что хотите удалить этот подарок?')) {
+      return;
+    }
+
+    setDeletingId(giftId);
+    try {
+      if (onDelete) {
+        await onDelete(giftId);
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Состояние для хранения URL фото
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+
+  // Загружаем URL фото при изменении списка подарков
+  useEffect(() => {
+    const loadPhotoUrls = async () => {
+      const urls: Record<string, string> = {};
+      
+      for (const gift of gifts) {
+        const photo = gift.attachments?.find((a) => a.file_type === 'photo');
+        if (photo && !photoUrls[photo.telegram_file_id]) {
+          try {
+            const url = await telegramApi.getFileURL(photo.telegram_file_id);
+            urls[photo.telegram_file_id] = url;
+          } catch (err) {
+            console.error(`Failed to load photo for file ${photo.telegram_file_id}:`, err);
+          }
+        }
+      }
+
+      if (Object.keys(urls).length > 0) {
+        setPhotoUrls((prev) => ({ ...prev, ...urls }));
+      }
+    };
+
+    if (gifts.length > 0) {
+      loadPhotoUrls();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
+  }, [gifts]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-gray-500 dark:text-gray-400">Загрузка...</div>
+      </div>
+    );
+  }
+
+  if (gifts.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-gray-500 dark:text-gray-400">Подарки не найдены</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+      <div className="max-w-full overflow-x-auto">
+        <div className="min-w-[1000px]">
+          <Table>
+            <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+              <TableRow>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Фото
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Описание
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  От кого
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Критерии
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Распределен
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Дата
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Действия
+                </TableCell>
+              </TableRow>
+            </TableHeader>
+
+            <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+              {gifts.map((gift) => {
+                const firstPhoto = gift.attachments?.find(
+                  (a) => a.file_type === 'photo'
+                );
+                const photoUrl = firstPhoto
+                  ? photoUrls[firstPhoto.telegram_file_id] || null
+                  : null;
+
+                return (
+                  <TableRow
+                    key={gift.id}
+                    className="hover:bg-gray-50 dark:hover:bg-white/5"
+                  >
+                    <TableCell className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        {photoUrl ? (
+                          <Image
+                            src={photoUrl}
+                            alt="Подарок"
+                            width={60}
+                            height={60}
+                            className="rounded-lg object-cover"
+                          />
+                        ) : firstPhoto ? (
+                          <div className="flex h-[60px] w-[60px] items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              📷
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex h-[60px] w-[60px] items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              📦
+                            </span>
+                          </div>
+                        )}
+                        {gift.attachments && gift.attachments.length > 1 && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            +{gift.attachments.length - 1}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
+                      <p className="max-w-md text-sm text-gray-800 dark:text-white/90">
+                        {gift.description}
+                      </p>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                          {gift.first_name} {gift.last_name}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          @{gift.username || `user${gift.user_id}`}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
+                      {gift.criteria && gift.criteria.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {gift.criteria.slice(0, 3).map((c) => (
+                            <Badge
+                              key={c.id}
+                              color={getCriteriaColor(c.criteria_type)}
+                              size="sm"
+                            >
+                              {c.name}
+                            </Badge>
+                          ))}
+                          {gift.criteria.length > 3 && (
+                            <Badge color="light" size="sm">
+                              +{gift.criteria.length - 3}
+                            </Badge>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          Без критериев
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
+                      <div className="flex items-center gap-2">
+                        <div className={`h-2.5 w-2.5 rounded-full ${
+                          assignedGiftIds && assignedGiftIds.has(gift.id)
+                            ? 'bg-success-500'
+                            : 'bg-error-500'
+                        }`} />
+                        <span className="text-sm text-gray-800 dark:text-white/90">
+                          {assignedGiftIds && assignedGiftIds.has(gift.id) ? 'Да' : 'Нет'}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
+                      <span className="text-sm text-gray-800 dark:text-white/90">
+                        {new Date(gift.created_at).toLocaleDateString('ru-RU')}
+                      </span>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
+                      <div className="flex items-center gap-2">
+                        {onEdit && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            startIcon={<PencilIcon />}
+                            onClick={() => onEdit(gift)}
+                          >
+                            Редактировать
+                          </Button>
+                        )}
+                        {onDelete && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            startIcon={<TrashBinIcon />}
+                            onClick={() => handleDelete(gift.id)}
+                            disabled={deletingId === gift.id}
+                          >
+                            {deletingId === gift.id ? '...' : 'Удалить'}
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,1236 @@
+# Gravel Bot API - OpenAPI 3.0 Specification
+# 
+# Для просмотра документации:
+# 1. Запустите API сервер: make run-api
+# 2. Откройте в браузере: http://localhost:8080/docs/
+# 
+# Или локально:
+# cd backend/docs && python3 -m http.server 8000
+# Откройте: http://localhost:8000
+
+openapi: 3.0.3
+info:
+  title: Gravel Bot API
+  description: |
+    API для управления велосипедными гонками, участниками и призами.
+    
+    ## Аутентификация
+    Защищённые эндпоинты требуют JWT токен в заголовке Authorization: Bearer <token>
+    
+    ## Роли
+    - **admin** - полный доступ ко всем операциям
+    - **viewer** - только чтение данных
+    
+    ## Быстрый старт
+    1. Войдите через `/auth/login` (admin/admin123)
+    2. Скопируйте `access_token` из ответа
+    3. Нажмите "Authorize" вверху страницы и вставьте токен
+    4. Теперь можете тестировать защищённые эндпоинты
+  version: 1.0.0
+  contact:
+    name: Gravel Bot Support
+    email: support@gravelbot.com
+
+servers:
+  - url: http://localhost:8080/api
+    description: Development server
+  - url: https://api.gravelbot.com/api
+    description: Production server
+
+tags:
+  - name: Auth
+    description: Аутентификация и авторизация
+  - name: Events
+    description: Управление событиями (гонками)
+  - name: Participants
+    description: Управление участниками
+  - name: Results
+    description: Управление результатами участников
+  - name: Gifts
+    description: Управление подарками от спонсоров
+  - name: Criteria
+    description: Управление критериями для подарков
+  - name: Prize Assignments
+    description: Назначение призов участникам
+  - name: Stats
+    description: Статистика
+
+paths:
+  # ==================== AUTH ====================
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход в систему
+      description: Аутентификация администратора
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  format: password
+                  example: admin123
+      responses:
+        '200':
+          description: Успешная аутентификация
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      username:
+                        type: string
+                      role:
+                        type: string
+                        enum: [admin, viewer]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновление токена
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Новый access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Информация о текущем пользователе
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Данные пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUser'
+
+  # ==================== EVENTS ====================
+  /events:
+    get:
+      tags: [Events]
+      summary: Список всех событий
+      parameters:
+        - name: activeOnly
+          in: query
+          schema:
+            type: boolean
+          description: Фильтр по активным событиям
+      responses:
+        '200':
+          description: Список событий
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Events]
+      summary: Создать новое событие
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: kamni_200
+                description:
+                  type: string
+                  example: КАМНИ 200 - гравийная гонка на 200 км
+                start_date:
+                  type: string
+                  format: date-time
+                end_date:
+                  type: string
+                  format: date-time
+                active:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Событие создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+
+  /events/{id}:
+    get:
+      tags: [Events]
+      summary: Получить событие по ID
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Данные события
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Events]
+      summary: Обновить событие
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                start_date:
+                  type: string
+                  format: date-time
+                end_date:
+                  type: string
+                  format: date-time
+                active:
+                  type: boolean
+      responses:
+        '200':
+          description: Событие обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+
+    delete:
+      tags: [Events]
+      summary: Удалить событие
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '204':
+          description: Событие удалено
+
+  # ==================== PARTICIPANTS ====================
+  /events/{eventId}/participants:
+    get:
+      tags: [Participants]
+      summary: Список участников события
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - name: bike_type
+          in: query
+          schema:
+            $ref: '#/components/schemas/BikeType'
+        - name: gender
+          in: query
+          schema:
+            $ref: '#/components/schemas/Gender'
+      responses:
+        '200':
+          description: Список участников
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  participants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Participant'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Participants]
+      summary: Зарегистрировать участника
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, bike_type, gender]
+              properties:
+                user_id:
+                  type: integer
+                  format: int64
+                  description: Telegram ID пользователя
+                bike_type:
+                  $ref: '#/components/schemas/BikeType'
+                gender:
+                  $ref: '#/components/schemas/Gender'
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Участник зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Participant'
+
+  /participants/{id}:
+    get:
+      tags: [Participants]
+      summary: Получить участника по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Данные участника
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Participant'
+
+    put:
+      tags: [Participants]
+      summary: Обновить данные участника
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bike_type:
+                  $ref: '#/components/schemas/BikeType'
+                gender:
+                  $ref: '#/components/schemas/Gender'
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Участник обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Participant'
+
+    delete:
+      tags: [Participants]
+      summary: Удалить участника
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Участник удалён
+
+  # ==================== RESULTS ====================
+  /participants/{participantId}/results:
+    get:
+      tags: [Results]
+      summary: Список результатов участника
+      parameters:
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Список результатов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Result'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Results]
+      summary: Добавить результат участнику
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result_link]
+              properties:
+                result_link:
+                  type: string
+                  description: Ссылка на результат (Strava/Komoot)
+                  example: https://www.strava.com/activities/123456789
+      responses:
+        '201':
+          description: Результат добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+
+  /results/{id}:
+    get:
+      tags: [Results]
+      summary: Получить результат по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Данные результата
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+
+    put:
+      tags: [Results]
+      summary: Обновить время результата
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                elapsed_time_sec:
+                  type: integer
+                  description: Общее время в секундах
+                moving_time_sec:
+                  type: integer
+                  description: Время в пути в секундах
+      responses:
+        '200':
+          description: Результат обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+
+    delete:
+      tags: [Results]
+      summary: Удалить результат
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Результат удалён
+
+  # ==================== GIFTS ====================
+  /events/{eventId}/gifts:
+    get:
+      tags: [Gifts]
+      summary: Список подарков события
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Список подарков
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gifts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Gift'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Gifts]
+      summary: Добавить подарок
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, description]
+              properties:
+                user_id:
+                  type: integer
+                  format: int64
+                description:
+                  type: string
+                  example: Велосипедный насос высокого давления
+                attachments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      telegram_file_id:
+                        type: string
+                      file_type:
+                        type: string
+                        enum: [photo, document]
+      responses:
+        '201':
+          description: Подарок добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gift'
+
+  /gifts/{id}:
+    get:
+      tags: [Gifts]
+      summary: Получить подарок по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Данные подарка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gift'
+
+    delete:
+      tags: [Gifts]
+      summary: Удалить подарок
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Подарок удалён
+
+  # ==================== CRITERIA ====================
+  /criteria:
+    get:
+      tags: [Criteria]
+      summary: Список всех критериев
+      parameters:
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/CriteriaType'
+          description: Фильтр по типу критерия
+      responses:
+        '200':
+          description: Список критериев
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  criteria:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Criteria'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Criteria]
+      summary: Создать новый критерий
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, criteria_type]
+              properties:
+                name:
+                  type: string
+                  example: Максимальная скорость
+                description:
+                  type: string
+                  example: Самая высокая зафиксированная скорость
+                criteria_type:
+                  $ref: '#/components/schemas/CriteriaType'
+      responses:
+        '201':
+          description: Критерий создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Criteria'
+
+  /criteria/{id}:
+    get:
+      tags: [Criteria]
+      summary: Получить критерий по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Данные критерия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Criteria'
+
+    put:
+      tags: [Criteria]
+      summary: Обновить критерий
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                criteria_type:
+                  $ref: '#/components/schemas/CriteriaType'
+      responses:
+        '200':
+          description: Критерий обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Criteria'
+
+    delete:
+      tags: [Criteria]
+      summary: Удалить критерий
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Критерий удалён
+
+  # ==================== PRIZE ASSIGNMENTS ====================
+  /prize-assignments:
+    post:
+      tags: [Prize Assignments]
+      summary: Назначить приз участнику
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [participant_id, gift_id]
+              properties:
+                participant_id:
+                  type: integer
+                gift_id:
+                  type: integer
+                comment:
+                  type: string
+                  example: За первое место в абсолютном зачёте
+      responses:
+        '201':
+          description: Приз назначен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrizeAssignment'
+
+  /events/{eventId}/prize-assignments:
+    get:
+      tags: [Prize Assignments]
+      summary: Список назначений призов для события
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Список назначений
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prize_assignments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PrizeAssignment'
+                  total:
+                    type: integer
+
+  /participants/{participantId}/prize-assignments:
+    get:
+      tags: [Prize Assignments]
+      summary: Список призов участника
+      parameters:
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Список призов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prize_assignments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PrizeAssignment'
+                  total:
+                    type: integer
+
+  /prize-assignments/{id}:
+    get:
+      tags: [Prize Assignments]
+      summary: Получить назначение приза по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Данные назначения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrizeAssignment'
+
+    delete:
+      tags: [Prize Assignments]
+      summary: Отменить назначение приза
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Назначение отменено
+
+  # ==================== STATS ====================
+  /stats:
+    get:
+      tags: [Stats]
+      summary: Общая статистика
+      responses:
+        '200':
+          description: Статистика по всем событиям
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_events:
+                    type: integer
+                  total_participants:
+                    type: integer
+                  total_gifts:
+                    type: integer
+                  total_assignments:
+                    type: integer
+
+  /events/{eventId}/stats:
+    get:
+      tags: [Stats]
+      summary: Статистика по событию
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Статистика события
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: integer
+                  participants_count:
+                    type: integer
+                  gifts_count:
+                    type: integer
+                  assignments_count:
+                    type: integer
+                  by_bike_type:
+                    type: object
+                  by_gender:
+                    type: object
+
+  # ==================== TELEGRAM FILES ====================
+  /telegram/files/{fileId}:
+    get:
+      tags: [Telegram]
+      summary: Получить URL файла из Telegram
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: URL файла
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+
+  /telegram/files/{fileId}/info:
+    get:
+      tags: [Telegram]
+      summary: Получить информацию о файле
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Информация о файле
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id:
+                    type: string
+                  file_size:
+                    type: integer
+                  file_path:
+                    type: string
+                  url:
+                    type: string
+                    description: Прямая ссылка на файл в Telegram
+
+# ==================== COMPONENTS ====================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: ID события
+
+  responses:
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Unauthorized
+
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Not found
+
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+  schemas:
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, viewer]
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: kamni_200
+        description:
+          type: string
+          example: КАМНИ 200 - гравийная гонка на 200 км
+        active:
+          type: boolean
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        gpx_file_path:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Participant:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        event_id:
+          type: integer
+        bike_type:
+          $ref: '#/components/schemas/BikeType'
+        gender:
+          $ref: '#/components/schemas/Gender'
+        result_link:
+          type: string
+          description: Ссылка на результат (Strava/Komoot)
+        is_finished:
+          type: boolean
+          description: Финишировал ли участник (есть актуальный результат)
+        elapsed_time:
+          type: string
+          description: Общее время в формате ЧЧ:ММ:СС
+        moving_time:
+          type: string
+          description: Время в пути в формате ЧЧ:ММ:СС
+        elapsed_time_sec:
+          type: integer
+          description: Общее время в секундах
+        moving_time_sec:
+          type: integer
+          description: Время в пути в секундах
+        notes:
+          type: string
+        registered_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          description: Время отправки результата
+        place:
+          type: integer
+          description: Место в зачёте (0 если не финишировал)
+        has_gift:
+          type: boolean
+          description: Добавил ли подарок
+        prizes_count:
+          type: integer
+          description: Количество полученных призов
+
+    Result:
+      type: object
+      properties:
+        id:
+          type: integer
+        participant_id:
+          type: integer
+        result_link:
+          type: string
+          description: Ссылка на результат (Strava/Komoot)
+        elapsed_time_sec:
+          type: integer
+          description: Общее время в секундах
+        moving_time_sec:
+          type: integer
+          description: Время в пути в секундах
+        elapsed_time:
+          type: string
+          description: Общее время в формате ЧЧ:ММ:СС
+        moving_time:
+          type: string
+          description: Время в пути в формате ЧЧ:ММ:СС
+        is_current:
+          type: boolean
+          description: Актуальный ли результат
+        submitted_at:
+          type: string
+          format: date-time
+
+    Gift:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        event_id:
+          type: integer
+        description:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              gift_id:
+                type: integer
+              telegram_file_id:
+                type: string
+              file_type:
+                type: string
+                enum: [photo, document]
+        criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/Criteria'
+        created_at:
+          type: string
+          format: date-time
+        is_assigned:
+          type: boolean
+
+    Criteria:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: Максимальная скорость
+        description:
+          type: string
+          example: Самая высокая зафиксированная скорость
+        criteria_type:
+          $ref: '#/components/schemas/CriteriaType'
+        created_at:
+          type: string
+          format: date-time
+
+    PrizeAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+        participant_id:
+          type: integer
+        gift_id:
+          type: integer
+        comment:
+          type: string
+        assigned_at:
+          type: string
+          format: date-time
+        gift:
+          $ref: '#/components/schemas/Gift'
+
+    BikeType:
+      type: string
+      enum:
+        - gravel
+        - mtb
+        - road
+        - single_speed
+        - tandem
+      description: |
+        Тип велосипеда:
+        * `gravel` - Гравийный велосипед
+        * `mtb` - Горный велосипед
+        * `road` - Шоссейный велосипед
+        * `single_speed` - Синглспид
+        * `tandem` - Тандем
+
+    Gender:
+      type: string
+      enum:
+        - male
+        - female
+      description: |
+        Пол участника:
+        * `male` - Мужской
+        * `female` - Женский
+
+    CriteriaType:
+      type: string
+      enum:
+        - speed
+        - photo
+        - beer
+        - custom
+      description: |
+        Тип критерия:
+        * `speed` - Скоростной критерий
+        * `photo` - Фото-критерий
+        * `beer` - Пивной критерий
+        * `custom` - Кастомный критерий
