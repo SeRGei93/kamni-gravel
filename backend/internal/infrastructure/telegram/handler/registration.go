@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"log"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot/models"
 
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/infrastructure/telegram/keyboard"
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
 
@@ -36,7 +37,7 @@ func NewRegistrationHandler(
 }
 
 // StartRegistration начинает процесс регистрации
-func (h *RegistrationHandler) StartRegistration(ctx context.Context, userID int64) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *RegistrationHandler) StartRegistration(ctx context.Context, userID int64) (string, *models.InlineKeyboardMarkup) {
 	// Получаем активное событие
 	event, err := h.eventRepo.FindActive(ctx)
 	if err != nil {
@@ -61,42 +62,19 @@ func (h *RegistrationHandler) StartRegistration(ctx context.Context, userID int6
 	h.sessionManager.SetState(userID, session.StateAwaitingBikeType)
 
 	// Создаём клавиатуру с типами велосипедов
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚵 Гравийник", "bike_gravel"),
-			tgbotapi.NewInlineKeyboardButtonData("🏔 МТБ", "bike_mtb"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚴 Шоссе", "bike_road"),
-			tgbotapi.NewInlineKeyboardButtonData("🔧 Фикс", "bike_single_speed"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👥 Тандем", "bike_tandem"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
-		),
-	)
+	keyboard := keyboard.BikeTypeMenu()
 
 	return "Выберите тип велосипеда:", &keyboard
 }
 
 // HandleBikeTypeSelection обрабатывает выбор типа велосипеда
-func (h *RegistrationHandler) HandleBikeTypeSelection(ctx context.Context, userID int64, bikeType string) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *RegistrationHandler) HandleBikeTypeSelection(ctx context.Context, userID int64, bikeType string) (string, *models.InlineKeyboardMarkup) {
 	// Сохраняем тип велосипеда
 	h.sessionManager.SetData(userID, "bike_type", bikeType)
 	h.sessionManager.SetState(userID, session.StateAwaitingGender)
 
 	// Создаём клавиатуру с выбором пола
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👨 Мужской", "gender_male"),
-			tgbotapi.NewInlineKeyboardButtonData("👩 Женский", "gender_female"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
-		),
-	)
+	keyboard := keyboard.GenderMenu()
 
 	return "Выберите пол:", &keyboard
 }

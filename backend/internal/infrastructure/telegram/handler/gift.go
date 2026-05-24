@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"log"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot/models"
 
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/infrastructure/telegram/keyboard"
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
 
@@ -33,7 +34,7 @@ func NewGiftHandler(
 }
 
 // StartAddGift начинает процесс добавления подарка
-func (h *GiftHandler) StartAddGift(ctx context.Context, userID int64) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *GiftHandler) StartAddGift(ctx context.Context, userID int64) (string, *models.InlineKeyboardMarkup) {
 	// Получаем активное событие
 	event, err := h.eventRepo.FindActive(ctx)
 	if err != nil {
@@ -53,24 +54,24 @@ func (h *GiftHandler) StartAddGift(ctx context.Context, userID int64) (string, *
 
 Шаг 1/4: Выберите пол участника`
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👨 Мужской", "gift_gender_male"),
-			tgbotapi.NewInlineKeyboardButtonData("👩 Женский", "gift_gender_female"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👥 Любой", "gift_gender_all"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
-		),
-	)
+	keyboard := keyboard.NewBuilder().
+		AddRow(
+			keyboard.Button("👨 Мужской", "gift_gender_male"),
+			keyboard.Button("👩 Женский", "gift_gender_female"),
+		).
+		AddRow(
+			keyboard.Button("👥 Любой", "gift_gender_all"),
+		).
+		AddRow(
+			keyboard.Button("❌ Отмена", "cancel"),
+		).
+		Build()
 
 	return text, &keyboard
 }
 
 // HandleGiftGenderSelection обрабатывает выбор гендера для подарка
-func (h *GiftHandler) HandleGiftGenderSelection(ctx context.Context, userID int64, gender string) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *GiftHandler) HandleGiftGenderSelection(ctx context.Context, userID int64, gender string) (string, *models.InlineKeyboardMarkup) {
 	// Сохраняем гендер
 	h.sessionManager.SetData(userID, "gift_gender", gender)
 	h.sessionManager.SetState(userID, session.StateAwaitingGiftBikeType)
@@ -79,31 +80,31 @@ func (h *GiftHandler) HandleGiftGenderSelection(ctx context.Context, userID int6
 
 Шаг 2/4: Выберите тип велосипеда`
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚵 Гравийник", "gift_bike_gravel"),
-			tgbotapi.NewInlineKeyboardButtonData("🏔 МТБ", "gift_bike_mtb"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚴 Шоссе", "gift_bike_road"),
-			tgbotapi.NewInlineKeyboardButtonData("⚡️ Фикс", "gift_bike_single_speed"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👥 Тандем", "gift_bike_tandem"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚲 Любой", "gift_bike_all"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
-		),
-	)
+	keyboard := keyboard.NewBuilder().
+		AddRow(
+			keyboard.Button("🚵 Гравийник", "gift_bike_gravel"),
+			keyboard.Button("🏔 МТБ", "gift_bike_mtb"),
+		).
+		AddRow(
+			keyboard.Button("🚴 Шоссе", "gift_bike_road"),
+			keyboard.Button("⚡️ Фикс", "gift_bike_single_speed"),
+		).
+		AddRow(
+			keyboard.Button("👥 Тандем", "gift_bike_tandem"),
+		).
+		AddRow(
+			keyboard.Button("🚲 Любой", "gift_bike_all"),
+		).
+		AddRow(
+			keyboard.Button("❌ Отмена", "cancel"),
+		).
+		Build()
 
 	return text, &keyboard
 }
 
 // HandleGiftBikeTypeSelection обрабатывает выбор типа велосипеда для подарка
-func (h *GiftHandler) HandleGiftBikeTypeSelection(ctx context.Context, userID int64, bikeType string) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *GiftHandler) HandleGiftBikeTypeSelection(ctx context.Context, userID int64, bikeType string) (string, *models.InlineKeyboardMarkup) {
 	// Сохраняем тип велосипеда
 	h.sessionManager.SetData(userID, "gift_bike_type", bikeType)
 	h.sessionManager.SetState(userID, session.StateAwaitingGiftDesc)
@@ -122,17 +123,13 @@ func (h *GiftHandler) HandleGiftBikeTypeSelection(ctx context.Context, userID in
 • Бутылка водки "Налибоки" за первое место МТБ
 • Первое место абсолют - Кирпич`
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
-		),
-	)
+	keyboard := keyboard.CancelMenu()
 
 	return text, &keyboard
 }
 
 // HandleGiftDescription обрабатывает описание подарка
-func (h *GiftHandler) HandleGiftDescription(ctx context.Context, userID int64, description string) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *GiftHandler) HandleGiftDescription(ctx context.Context, userID int64, description string) (string, *models.InlineKeyboardMarkup) {
 	// Сохраняем описание
 	h.sessionManager.SetData(userID, "gift_description", description)
 	h.sessionManager.SetState(userID, session.StateAwaitingGiftPhoto)
@@ -143,15 +140,7 @@ func (h *GiftHandler) HandleGiftDescription(ctx context.Context, userID int64, d
 
 Когда закончите, нажмите "Завершить" или "Пропустить", если фото нет.`
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✅ Завершить", "finish_gift"),
-			tgbotapi.NewInlineKeyboardButtonData("⏭ Пропустить", "skip_photos"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
-		),
-	)
+	keyboard := keyboard.GiftPhotoMenu()
 
 	return text, &keyboard
 }

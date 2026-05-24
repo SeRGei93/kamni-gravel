@@ -6,7 +6,8 @@ import (
 	"log"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	telegrambot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/query"
@@ -16,7 +17,8 @@ import (
 
 // Bot представляет Telegram бота
 type Bot struct {
-	api            *tgbotapi.BotAPI
+	api            *telegrambot.Bot
+	debug          bool
 	sessionManager *session.Manager
 
 	// Repositories
@@ -62,13 +64,6 @@ func NewBot(
 	giftCriteriaRepo repository.GiftCriteriaRepository,
 	prizeAssignmentRepo repository.PrizeAssignmentRepository,
 ) (*Bot, error) {
-	api, err := tgbotapi.NewBotAPI(cfg.Token)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create bot API: %w", err)
-	}
-
-	api.Debug = cfg.Debug
-
 	// Создаём session manager
 	sessionManager := session.NewManager(cfg.SessionTimeout)
 
@@ -109,8 +104,8 @@ func NewBot(
 		criteriaRepo,
 	)
 
-	bot := &Bot{
-		api:                        api,
+	telegramBot := &Bot{
+		debug:                      cfg.Debug,
 		sessionManager:             sessionManager,
 		userRepo:                   userRepo,
 		eventRepo:                  eventRepo,
@@ -131,35 +126,48 @@ func NewBot(
 		getStatsHandler:            getStatsHandler,
 	}
 
-	log.Printf("Authorized on account %s", api.Self.UserName)
+	opts := []telegrambot.Option{
+		telegrambot.WithDefaultHandler(telegramBot.handleUpdate),
+	}
+	if cfg.Debug {
+		opts = append(opts, telegrambot.WithDebug())
+	}
 
-	return bot, nil
+	api, err := telegrambot.New(cfg.Token, opts...)
+	if err != nil {
+		log.Printf("Failed to initialize Telegram bot API: %v", err)
+		return nil, fmt.Errorf("failed to create bot API: %w", err)
+	}
+
+	telegramBot.api = api
+
+	log.Printf("Telegram bot initialized successfully: bot_id=%d debug=%t", api.ID(), cfg.Debug)
+
+	return telegramBot, nil
 }
 
 // Start запускает бота
 func (b *Bot) Start(ctx context.Context) error {
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
+	log.Println("Telegram bot started, waiting for updates...")
+	b.api.Start(ctx)
+	log.Println("Telegram bot stopped")
 
-	updates := b.api.GetUpdatesChan(u)
-
-	log.Println("Bot started, waiting for updates...")
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Bot stopped")
-			return ctx.Err()
-		case update := <-updates:
-			go b.handleUpdate(ctx, update)
-		}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+
+	return nil
 }
 
 // handleUpdate обрабатывает входящее обновление
-func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
+func (b *Bot) handleUpdate(ctx context.Context, _ *telegrambot.Bot, update *models.Update) {
+	if update == nil {
+		b.logDebug("Unsupported Telegram update: nil update")
+		return
+	}
+
 	// Обработка команд
-	if update.Message != nil && update.Message.IsCommand() {
+	if update.Message != nil && messageCommand(update.Message) != "" {
 		b.handleCommand(ctx, update.Message)
 		return
 	}
@@ -175,40 +183,86 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		b.handleMessage(ctx, update.Message)
 		return
 	}
+
+	b.logDebug("Unsupported Telegram update kind: update_id=%d", update.ID)
 }
 
 // SendMessage отправляет текстовое сообщение
-func (b *Bot) SendMessage(chatID int64, text string) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-	_, err := b.api.Send(msg)
-	return err
+func (b *Bot) SendMessage(ctx context.Context, chatID int64, text string) (*models.Message, error) {
+	msg, err := b.api.SendMessage(ctx, &telegrambot.SendMessageParams{
+		ChatID: chatID,
+		Text:   text,
+	})
+	if err != nil {
+		log.Printf("Telegram API call failed: operation=send_message chat_id=%d error=%v", chatID, err)
+		return nil, err
+	}
+
+	return msg, nil
 }
 
 // SendMessageWithKeyboard отправляет сообщение с inline клавиатурой
-func (b *Bot) SendMessageWithKeyboard(chatID int64, text string, keyboard tgbotapi.InlineKeyboardMarkup) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ReplyMarkup = keyboard
-	_, err := b.api.Send(msg)
-	return err
+func (b *Bot) SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard models.InlineKeyboardMarkup) (*models.Message, error) {
+	msg, err := b.api.SendMessage(ctx, &telegrambot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        text,
+		ReplyMarkup: keyboard,
+	})
+	if err != nil {
+		log.Printf("Telegram API call failed: operation=send_message_with_keyboard chat_id=%d error=%v", chatID, err)
+		return nil, err
+	}
+
+	return msg, nil
 }
 
 // EditMessage редактирует существующее сообщение
-func (b *Bot) EditMessage(chatID int64, messageID int, text string) error {
-	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
-	_, err := b.api.Send(msg)
-	return err
+func (b *Bot) EditMessage(ctx context.Context, chatID int64, messageID int, text string) error {
+	_, err := b.api.EditMessageText(ctx, &telegrambot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		Text:      text,
+	})
+	if err != nil {
+		log.Printf("Telegram API call failed: operation=edit_message chat_id=%d message_id=%d error=%v", chatID, messageID, err)
+		return err
+	}
+
+	return nil
 }
 
 // AnswerCallback отвечает на callback query
-func (b *Bot) AnswerCallback(callbackID string, text string) error {
-	callback := tgbotapi.NewCallback(callbackID, text)
-	_, err := b.api.Request(callback)
-	return err
+func (b *Bot) AnswerCallback(ctx context.Context, callbackID string, text string) error {
+	_, err := b.api.AnswerCallbackQuery(ctx, &telegrambot.AnswerCallbackQueryParams{
+		CallbackQueryID: callbackID,
+		Text:            text,
+	})
+	if err != nil {
+		log.Printf("Telegram API call failed: operation=answer_callback callback_id=%s error=%v", callbackID, err)
+		return err
+	}
+
+	return nil
 }
 
 // DeleteMessage удаляет сообщение
-func (b *Bot) DeleteMessage(chatID int64, messageID int) error {
-	msg := tgbotapi.NewDeleteMessage(chatID, messageID)
-	_, err := b.api.Request(msg)
-	return err
+func (b *Bot) DeleteMessage(ctx context.Context, chatID int64, messageID int) error {
+	_, err := b.api.DeleteMessage(ctx, &telegrambot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+	})
+	if err != nil {
+		log.Printf("Telegram API call failed: operation=delete_message chat_id=%d message_id=%d error=%v", chatID, messageID, err)
+		return err
+	}
+
+	return nil
+}
+
+func (b *Bot) logDebug(format string, args ...any) {
+	if !b.debug {
+		return
+	}
+
+	log.Printf(format, args...)
 }

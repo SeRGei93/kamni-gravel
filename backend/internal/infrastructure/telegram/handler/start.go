@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"log"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot/models"
 
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/infrastructure/telegram/keyboard"
 )
 
 // StartHandler обрабатывает команду /start
@@ -29,9 +30,14 @@ func NewStartHandler(
 }
 
 // Handle обрабатывает команду /start
-func (h *StartHandler) Handle(ctx context.Context, msg *tgbotapi.Message) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *StartHandler) Handle(ctx context.Context, msg *models.Message) (string, *models.InlineKeyboardMarkup) {
+	if msg == nil || msg.From == nil {
+		log.Printf("Start command ignored: missing Telegram sender")
+		return "Не удалось определить пользователя. Попробуйте отправить /start ещё раз.", nil
+	}
+
 	userID := msg.From.ID
-	username := msg.From.UserName
+	username := msg.From.Username
 	firstName := msg.From.FirstName
 	lastName := msg.From.LastName
 
@@ -76,20 +82,7 @@ func (h *StartHandler) Handle(ctx context.Context, msg *tgbotapi.Message) (strin
 Что ты хочешь сделать?`, firstName, event.Name, event.Description)
 
 	// Создаём клавиатуру с действиями
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚴 Зарегистрироваться", "register"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎁 Добавить подарок", "add_gift"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🏁 Отправить результат", "submit_result"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Информация", "info"),
-		),
-	)
+	keyboard := keyboard.MainMenu()
 
 	return text, &keyboard
 }

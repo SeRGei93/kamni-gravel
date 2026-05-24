@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	telegrambot "github.com/go-telegram/bot"
 
 	"gravel_bot/internal/infrastructure/http/response"
 )
@@ -30,24 +30,24 @@ func (h *TelegramHandler) GetFileURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаём временный bot API клиент для получения file_path
-	bot, err := tgbotapi.NewBotAPI(h.botToken)
+	// Создаём временный bot API клиент для получения file_path без getMe на каждый запрос.
+	bot, err := telegrambot.New(h.botToken, telegrambot.WithSkipGetMe())
 	if err != nil {
-		log.Printf("Error creating bot API: %v", err)
+		log.Printf("Error creating Telegram file client for file_id=%s: %v", fileID, err)
 		response.InternalServerError(w, "Failed to connect to Telegram")
 		return
 	}
 
 	// Получаем информацию о файле
-	file, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
+	file, err := bot.GetFile(r.Context(), &telegrambot.GetFileParams{FileID: fileID})
 	if err != nil {
-		log.Printf("Error getting file from Telegram: %v", err)
+		log.Printf("Error getting file from Telegram: file_id=%s error=%v", fileID, err)
 		response.NotFound(w, "File not found")
 		return
 	}
 
 	// Формируем URL файла
-	fileURL := file.Link(h.botToken)
+	fileURL := bot.FileDownloadLink(file)
 
 	// Возвращаем URL
 	response.Success(w, map[string]string{
@@ -63,18 +63,18 @@ func (h *TelegramHandler) GetFileInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаём временный bot API клиент
-	bot, err := tgbotapi.NewBotAPI(h.botToken)
+	// Создаём временный bot API клиент без getMe на каждый запрос.
+	bot, err := telegrambot.New(h.botToken, telegrambot.WithSkipGetMe())
 	if err != nil {
-		log.Printf("Error creating bot API: %v", err)
+		log.Printf("Error creating Telegram file client for file_id=%s: %v", fileID, err)
 		response.InternalServerError(w, "Failed to connect to Telegram")
 		return
 	}
 
 	// Получаем информацию о файле
-	file, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
+	file, err := bot.GetFile(r.Context(), &telegrambot.GetFileParams{FileID: fileID})
 	if err != nil {
-		log.Printf("Error getting file from Telegram: %v", err)
+		log.Printf("Error getting file from Telegram: file_id=%s error=%v", fileID, err)
 		response.NotFound(w, "File not found")
 		return
 	}
@@ -84,7 +84,7 @@ func (h *TelegramHandler) GetFileInfo(w http.ResponseWriter, r *http.Request) {
 		"file_id":   file.FileID,
 		"file_path": file.FilePath,
 		"file_size": file.FileSize,
-		"url":       file.Link(h.botToken),
+		"url":       bot.FileDownloadLink(file),
 	}
 
 	response.Success(w, fileInfo)

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"log"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot/models"
 
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/infrastructure/telegram/keyboard"
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
 
@@ -36,7 +37,7 @@ func NewResultHandler(
 }
 
 // StartSubmitResult начинает процесс отправки результата
-func (h *ResultHandler) StartSubmitResult(ctx context.Context, userID int64) (string, *tgbotapi.InlineKeyboardMarkup) {
+func (h *ResultHandler) StartSubmitResult(ctx context.Context, userID int64) (string, *models.InlineKeyboardMarkup) {
 	// Получаем активное событие
 	event, err := h.eventRepo.FindActive(ctx)
 	if err != nil {
@@ -73,11 +74,7 @@ func (h *ResultHandler) StartSubmitResult(ctx context.Context, userID int64) (st
 https://www.strava.com/activities/123456789
 https://www.komoot.com/tour/123456789`
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
-		),
-	)
+	keyboard := keyboard.CancelMenu()
 
 	return text, &keyboard
 }
