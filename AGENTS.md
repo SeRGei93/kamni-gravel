@@ -8,7 +8,7 @@ Gravel Bot is a Telegram bot and admin dashboard for organizing cycling races an
 
 ## Canonical Rules
 
-`.cursor/rules/rules.mdc` is the original project rule source from the Cursor workflow. Follow it first for architecture boundaries:
+Use these project architecture and workflow boundaries:
 
 - Domain imports nothing from application or infrastructure.
 - Application imports domain only.
@@ -18,6 +18,7 @@ Gravel Bot is a Telegram bot and admin dashboard for organizing cycling races an
 - Inject dependencies through constructors.
 - Put `context.Context` first for request-scoped and IO functions.
 - Do not add ad hoc Markdown reports or instruction files unless the user explicitly asks.
+- Communicate with the user in Russian unless they explicitly ask for another language.
 
 ## Tech Stack
 
@@ -54,7 +55,6 @@ Gravel Bot is a Telegram bot and admin dashboard for organizing cycling races an
 │       ├── layout/                  # app shell components
 │       ├── types/                   # TypeScript types
 │       └── utils/                   # frontend helpers
-├── .cursor/rules/rules.mdc          # original Cursor architecture rules
 ├── .ai-factory/                     # AI Factory project context
 ├── docker-compose.yml               # local full-system runtime
 ├── env.example                      # environment template
@@ -83,7 +83,6 @@ Gravel Bot is a Telegram bot and admin dashboard for organizing cycling races an
 |----------|------|-------------|
 | README | `README.md` | Project overview, runtime, commands, ports. |
 | API docs | `backend/docs/swagger.yaml` | Swagger/OpenAPI specification. |
-| Cursor rules | `.cursor/rules/rules.mdc` | Original architecture rules. |
 | Description | `.ai-factory/DESCRIPTION.md` | AI Factory project specification. |
 | Architecture | `.ai-factory/ARCHITECTURE.md` | Codex-readable architecture rules. |
 
@@ -104,7 +103,6 @@ Gravel Bot is a Telegram bot and admin dashboard for organizing cycling races an
 | File | Purpose |
 |------|---------|
 | `AGENTS.md` | This file: project structure and operating map. |
-| `.cursor/rules/rules.mdc` | Canonical Cursor-era project rules. |
 | `.ai-factory/DESCRIPTION.md` | Project specification and stack summary. |
 | `.ai-factory/ARCHITECTURE.md` | Architecture boundaries and workflow guidance. |
 | `.agents/skills/` | Project skills installed through `skills.sh`. |
