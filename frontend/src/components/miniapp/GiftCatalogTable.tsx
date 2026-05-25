@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
 import type { BikeTypeFilter, GenderFilter, Gift } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
@@ -22,7 +23,7 @@ const bikeText = BIKE_TYPE_OPTIONS.reduce<Record<string, string>>((acc, option) 
 export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableProps) {
   return (
     <section
-      className={`overflow-hidden rounded-lg border border-[#e5e5e5] bg-white shadow-sm ${
+      className={`overflow-hidden border border-[#d4d4d4] bg-white shadow-sm ${
         isLoading ? "opacity-70" : ""
       }`}
       aria-busy={isLoading}
@@ -34,7 +35,7 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
           <col className="w-28" />
         </colgroup>
         <thead className="bg-[#111111]">
-          <tr className="border-b border-[#262626] text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-white">
+          <tr className="border-b border-[#262626] text-left text-[10px] font-semibold uppercase text-white">
             <th scope="col" className="px-1.5 py-2">
               Фото
             </th>
@@ -62,17 +63,26 @@ function GiftTableRow({ gift }: { gift: Gift }) {
   const donor = donorName || gift.username || `Участник ${gift.user_id}`;
 
   return (
-    <tr className="align-top">
+    <tr className="align-top hover:bg-[#fafafa]">
       <td className="py-1.5 pl-2 pr-1">
-        <div className="h-10 w-10 overflow-hidden rounded-md border border-[#e5e5e5] bg-[#fff7ed]">
+        <Link
+          href={`/miniapp/gifts/${gift.id}`}
+          className="block h-10 w-10 overflow-hidden border border-[#d4d4d4] bg-[#fff7ed]"
+          aria-label={`Открыть подарок ${gift.id}`}
+        >
           <GiftImage giftId={gift.id} attachment={photo} />
-        </div>
+        </Link>
       </td>
       <td className="min-w-0 px-1.5 py-1.5">
-        <p className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111111]">
+        <Link
+          href={`/miniapp/gifts/${gift.id}`}
+          className="line-clamp-1 break-words text-sm font-semibold leading-5 text-[#111111]"
+        >
           {gift.description}
+        </Link>
+        <p className="mt-1 truncate text-[11px] font-semibold uppercase leading-4 text-[#737373]">
+          от {donor}
         </p>
-        <p className="mt-1 truncate text-[11px] leading-4 text-[#737373]">от {donor}</p>
       </td>
       <td className="px-1.5 py-1.5">
         <GiftCompactConditions gift={gift} />
@@ -95,6 +105,12 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
       <ConditionLine label="Вело" value={bikeText[bikeType] ?? bikeType} />
       {gift.place !== undefined && <ConditionLine label="Место" value={String(gift.place)} />}
       {criteriaText && <ConditionLine label="Кр." value={criteriaText} />}
+      <Link
+        href={`/miniapp/gifts/${gift.id}`}
+        className="inline-flex border border-[#f97316] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111111]"
+      >
+        Открыть
+      </Link>
     </div>
   );
 }

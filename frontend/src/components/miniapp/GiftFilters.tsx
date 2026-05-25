@@ -25,7 +25,7 @@ export default function GiftFilters({
   onBikeTypeChange,
 }: GiftFiltersProps) {
   return (
-    <section className="sticky top-0 z-10 border-b border-[#262626] bg-[#111111]/95 px-3 py-3 backdrop-blur">
+    <section className="sticky top-0 z-10 border-y border-[#262626] bg-[#070707]/95 px-3 py-3 backdrop-blur">
       <div className="mx-auto flex w-full max-w-md flex-col gap-3">
         <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
           {GENDER_OPTIONS.map((option) => {
@@ -36,10 +36,10 @@ export default function GiftFilters({
                 type="button"
                 disabled={isLoading}
                 onClick={() => onGenderChange(value)}
-                className={`h-9 shrink-0 rounded-md border px-3 text-sm font-medium transition ${
+                className={`h-8 shrink-0 border px-3 text-[11px] font-semibold uppercase transition ${
                   gender === value
                     ? "border-[#f97316] bg-[#f97316] text-white"
-                    : "border-[#d4d4d4] bg-white text-[#111111]"
+                    : "border-white/25 bg-[#111111] text-white"
                 }`}
               >
                 {genderLabels[value]}
@@ -57,10 +57,10 @@ export default function GiftFilters({
                 type="button"
                 disabled={isLoading}
                 onClick={() => onBikeTypeChange(value)}
-                className={`h-9 shrink-0 rounded-md border px-3 text-sm font-medium transition ${
+                className={`h-8 shrink-0 border px-3 text-[11px] font-semibold uppercase transition ${
                   bikeType === value
-                    ? "border-[#f97316] bg-[#111111] text-white ring-1 ring-[#f97316]"
-                    : "border-[#d4d4d4] bg-white text-[#111111]"
+                    ? "border-[#b7a87f] bg-[#b7a87f] text-[#070707]"
+                    : "border-white/25 bg-[#111111] text-white"
                 }`}
               >
                 {option.label}
