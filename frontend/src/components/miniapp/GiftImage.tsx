@@ -69,8 +69,8 @@ export default function GiftImage({ giftId, attachment }: GiftImageProps) {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(160deg,#2a2720_0%,#8f3d24_42%,#c96534_72%,#dd7a3c_100%)] text-center">
-      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[#fff0d0]/55 bg-[#2a2720]/85 text-[9px] font-semibold uppercase text-[#fff0d0]">
+    <div className="flex h-full w-full items-center justify-center bg-[#fff7ed] text-center">
+      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[#fdba74] bg-[#111111] text-[9px] font-semibold uppercase text-white">
         {failed ? "!" : "нет"}
       </div>
     </div>
