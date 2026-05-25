@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"time"
 
 	telegrambot "github.com/go-telegram/bot"
@@ -19,6 +21,7 @@ import (
 type Bot struct {
 	api            *telegrambot.Bot
 	debug          bool
+	miniappURL     string
 	sessionManager *session.Manager
 
 	// Repositories
@@ -49,6 +52,7 @@ type Bot struct {
 type Config struct {
 	Token          string
 	Debug          bool
+	MiniappURL     string
 	SessionTimeout time.Duration
 }
 
@@ -64,6 +68,8 @@ func NewBot(
 	giftCriteriaRepo repository.GiftCriteriaRepository,
 	prizeAssignmentRepo repository.PrizeAssignmentRepository,
 ) (*Bot, error) {
+	miniappURL := validateMiniappURL(cfg.MiniappURL)
+
 	// Создаём session manager
 	sessionManager := session.NewManager(cfg.SessionTimeout)
 
@@ -106,6 +112,7 @@ func NewBot(
 
 	telegramBot := &Bot{
 		debug:                      cfg.Debug,
+		miniappURL:                 miniappURL,
 		sessionManager:             sessionManager,
 		userRepo:                   userRepo,
 		eventRepo:                  eventRepo,
@@ -144,6 +151,31 @@ func NewBot(
 	log.Printf("Telegram bot initialized successfully: bot_id=%d debug=%t", api.ID(), cfg.Debug)
 
 	return telegramBot, nil
+}
+
+func validateMiniappURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		log.Printf("INFO Telegram miniapp URL omitted; WebApp button disabled")
+		return ""
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		log.Printf("WARN Telegram miniapp URL ignored: reason=malformed_url")
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		log.Printf("WARN Telegram miniapp URL ignored: reason=unsupported_scheme scheme=%q", parsed.Scheme)
+		return ""
+	}
+	if parsed.Host == "" {
+		log.Printf("WARN Telegram miniapp URL ignored: reason=missing_host scheme=%q", parsed.Scheme)
+		return ""
+	}
+
+	log.Printf("INFO Telegram miniapp URL configured: scheme=%s host=%s", parsed.Scheme, parsed.Host)
+	return rawURL
 }
 
 // Start запускает бота

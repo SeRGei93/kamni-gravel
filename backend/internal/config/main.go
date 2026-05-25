@@ -35,6 +35,7 @@ type BotConfig struct {
 	AdminChat      int64
 	PublicChat     int64
 	Debug          bool
+	MiniappURL     string
 	SessionTimeout time.Duration
 }
 
@@ -73,6 +74,7 @@ func MustLoad(_ string) *Config {
 			AdminChat:      getEnvInt64("ADMIN_CHAT_ID", 0),
 			PublicChat:     getEnvInt64("PUBLIC_CHAT_ID", 0),
 			Debug:          getEnvBool("BOT_DEBUG", false),
+			MiniappURL:     getEnv("MINIAPP_URL", ""),
 			SessionTimeout: getEnvDuration("BOT_SESSION_TIMEOUT", 30*time.Minute),
 		},
 

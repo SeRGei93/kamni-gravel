@@ -14,18 +14,21 @@ import (
 
 // StartHandler обрабатывает команду /start
 type StartHandler struct {
-	userRepo  repository.UserRepository
-	eventRepo repository.EventRepository
+	userRepo   repository.UserRepository
+	eventRepo  repository.EventRepository
+	miniappURL string
 }
 
 // NewStartHandler создаёт новый handler
 func NewStartHandler(
 	userRepo repository.UserRepository,
 	eventRepo repository.EventRepository,
+	miniappURL string,
 ) *StartHandler {
 	return &StartHandler{
-		userRepo:  userRepo,
-		eventRepo: eventRepo,
+		userRepo:   userRepo,
+		eventRepo:  eventRepo,
+		miniappURL: miniappURL,
 	}
 }
 
@@ -82,7 +85,7 @@ func (h *StartHandler) Handle(ctx context.Context, msg *models.Message) (string,
 Что ты хочешь сделать?`, firstName, event.Name, event.Description)
 
 	// Создаём клавиатуру с действиями
-	keyboard := keyboard.MainMenu()
+	markup := keyboard.MainMenu(h.miniappURL)
 
-	return text, &keyboard
+	return text, &markup
 }

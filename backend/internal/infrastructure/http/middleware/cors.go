@@ -10,7 +10,7 @@ func CORS(next http.Handler) http.Handler {
 		// Устанавливаем CORS заголовки
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+TelegramInitDataHeader)
 		w.Header().Set("Access-Control-Max-Age", "3600")
 
 		// Обрабатываем preflight запросы
@@ -28,7 +28,7 @@ func CORSWithOrigins(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			
+
 			// Проверяем, разрешён ли origin
 			allowed := false
 			for _, allowedOrigin := range allowedOrigins {
@@ -43,7 +43,7 @@ func CORSWithOrigins(allowedOrigins []string) func(http.Handler) http.Handler {
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+TelegramInitDataHeader)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Max-Age", "3600")
 

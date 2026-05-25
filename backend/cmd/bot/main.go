@@ -50,6 +50,7 @@ func main() {
 		telegram.Config{
 			Token:          cfg.Bot.Token,
 			Debug:          cfg.Bot.Debug,
+			MiniappURL:     cfg.Bot.MiniappURL,
 			SessionTimeout: cfg.Bot.SessionTimeout,
 		},
 		userRepo,
@@ -87,7 +88,7 @@ func main() {
 	case sig := <-sigChan:
 		log.Printf("Received signal: %v. Shutting down gracefully...", sig)
 		cancel()
-		
+
 		// Даём время на завершение работы
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()

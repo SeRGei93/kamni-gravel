@@ -61,9 +61,11 @@ type Server struct {
 	prizeDistributionHandler *handler.PrizeDistributionHandler
 	statsHandler             *handler.StatsHandler
 	telegramHandler          *handler.TelegramHandler
+	miniappHandler           *handler.MiniappHandler
 
 	// JWT Manager
-	jwtManager *jwt.Manager
+	jwtManager         *jwt.Manager
+	telegramWebAppAuth func(http.Handler) http.Handler
 }
 
 // Config представляет конфигурацию сервера
@@ -113,6 +115,7 @@ func NewServer(
 	getParticipantByIDHandler := query.NewGetParticipantByIDHandler(participantRepo)
 	getGiftsHandler := query.NewGetGiftsHandler(giftRepo, criteriaRepo)
 	getGiftByIDHandler := query.NewGetGiftByIDHandler(giftRepo, criteriaRepo)
+	getMiniappGiftsHandler := query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo)
 	getEventsHandler := query.NewGetEventsHandler(eventRepo)
 	getEventByIDHandler := query.NewGetEventByIDHandler(eventRepo)
 	getPrizeAssignmentsHandler := query.NewGetPrizeAssignmentsHandler(prizeAssignmentRepo)
@@ -203,6 +206,11 @@ func NewServer(
 	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo)
 	statsHandler := handler.NewStatsHandler(getStatsHandler)
 	telegramHandler := handler.NewTelegramHandler(cfg.BotToken)
+	miniappHandler := handler.NewMiniappHandler(
+		eventRepo,
+		getMiniappGiftsHandler,
+		cfg.BotToken,
+	)
 
 	// Создаём query handlers для распределения призов
 	getPrizeDistributionHandler := query.NewGetPrizeDistributionHandler(
@@ -250,7 +258,9 @@ func NewServer(
 		prizeDistributionHandler:      prizeDistributionHandler,
 		statsHandler:                  statsHandler,
 		telegramHandler:               telegramHandler,
+		miniappHandler:                miniappHandler,
 		jwtManager:                    jwtManager,
+		telegramWebAppAuth:            middleware.TelegramWebAppAuth(cfg.BotToken),
 	}
 
 	// Создаём router
@@ -339,6 +349,14 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 		// Telegram file routes (public read)
 		r.Get("/telegram/files/{fileId}", s.telegramHandler.GetFileURL)
 		r.Get("/telegram/files/{fileId}/info", s.telegramHandler.GetFileInfo)
+
+		// Telegram Mini App routes (protected by Telegram init data)
+		r.Route("/miniapp", func(r chi.Router) {
+			r.Use(s.telegramWebAppAuth)
+			r.Get("/session", s.miniappHandler.Session)
+			r.Get("/gifts", s.miniappHandler.Gifts)
+			r.Get("/telegram/files/{fileId}", s.miniappHandler.TelegramFile)
+		})
 
 		// Protected routes (require authentication and admin role)
 		r.Group(func(r chi.Router) {

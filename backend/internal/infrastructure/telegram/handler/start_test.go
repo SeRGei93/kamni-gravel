@@ -9,7 +9,7 @@ import (
 )
 
 func TestStartHandlerHandleMissingSender(t *testing.T) {
-	h := NewStartHandler(nil, nil)
+	h := NewStartHandler(nil, nil, "")
 
 	text, markup := h.Handle(context.Background(), &models.Message{
 		ID:   10,

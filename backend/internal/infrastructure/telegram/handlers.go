@@ -32,7 +32,7 @@ func (b *Bot) handleCommand(ctx context.Context, msg *models.Message) {
 
 // handleStartCommand обрабатывает команду /start
 func (b *Bot) handleStartCommand(ctx context.Context, msg *models.Message) {
-	startHandler := handler.NewStartHandler(b.userRepo, b.eventRepo)
+	startHandler := handler.NewStartHandler(b.userRepo, b.eventRepo, b.miniappURL)
 	text, markup := startHandler.Handle(ctx, msg)
 
 	if _, err := b.sendWithOptionalKeyboard(ctx, msg.Chat.ID, text, markup); err != nil {
@@ -479,7 +479,7 @@ func (b *Bot) getStartKeyboard(ctx context.Context) *models.InlineKeyboardMarkup
 	}
 
 	// Создаём клавиатуру с действиями
-	markup := keyboard.MainMenu()
+	markup := keyboard.MainMenu(b.miniappURL)
 	return &markup
 }
 

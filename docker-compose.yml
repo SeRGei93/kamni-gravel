@@ -40,6 +40,7 @@ services:
       - PUBLIC_CHAT_ID=${PUBLIC_CHAT_ID:-0}
       - BOT_DEBUG=${BOT_DEBUG:-false}
       - BOT_SESSION_TIMEOUT=${BOT_SESSION_TIMEOUT:-30m}
+      - MINIAPP_URL=${MINIAPP_URL:-}
       - FILE_STORAGE_PATH=${FILE_STORAGE_PATH:-/app/storage}
     volumes:
       - event_files:/app/storage

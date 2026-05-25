@@ -32,6 +32,14 @@ func ButtonURL(text, url string) models.InlineKeyboardButton {
 	}
 }
 
+// ButtonWebApp создаёт inline кнопку для запуска Telegram WebApp.
+func ButtonWebApp(text, webAppURL string) models.InlineKeyboardButton {
+	return models.InlineKeyboardButton{
+		Text:   text,
+		WebApp: &models.WebAppInfo{URL: webAppURL},
+	}
+}
+
 // AddRow добавляет новый ряд кнопок
 func (b *Builder) AddRow(buttons ...models.InlineKeyboardButton) *Builder {
 	b.rows = append(b.rows, buttons)
@@ -52,6 +60,13 @@ func (b *Builder) AddButtonURL(text, url string) *Builder {
 	return b
 }
 
+// AddButtonWebApp добавляет кнопку запуска Telegram WebApp в новый ряд.
+func (b *Builder) AddButtonWebApp(text, webAppURL string) *Builder {
+	button := ButtonWebApp(text, webAppURL)
+	b.rows = append(b.rows, []models.InlineKeyboardButton{button})
+	return b
+}
+
 // Build создаёт InlineKeyboardMarkup
 func (b *Builder) Build() models.InlineKeyboardMarkup {
 	return models.InlineKeyboardMarkup{
@@ -60,14 +75,20 @@ func (b *Builder) Build() models.InlineKeyboardMarkup {
 }
 
 // MainMenu создаёт главное меню
-func MainMenu() models.InlineKeyboardMarkup {
-	return NewBuilder().
+func MainMenu(miniappURL string) models.InlineKeyboardMarkup {
+	builder := NewBuilder().
 		AddRow(
 			Button("🚴 Зарегистрироваться", "register"),
 		).
 		AddRow(
 			Button("🎁 Добавить подарок", "add_gift"),
-		).
+		)
+
+	if miniappURL != "" {
+		builder.AddRow(ButtonWebApp("🎁 Смотреть подарки", miniappURL))
+	}
+
+	return builder.
 		AddRow(
 			Button("🏁 Отправить результат", "submit_result"),
 		).
