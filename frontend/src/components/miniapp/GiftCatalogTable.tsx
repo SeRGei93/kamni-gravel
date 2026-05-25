@@ -22,7 +22,7 @@ const bikeText = BIKE_TYPE_OPTIONS.reduce<Record<string, string>>((acc, option) 
 export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableProps) {
   return (
     <section
-      className={`overflow-hidden rounded-lg border border-[#1f211c]/20 bg-[#f4f0df] shadow-sm ${
+      className={`overflow-hidden rounded-lg border border-[#2a2720]/25 bg-[#fff0d0] shadow-sm ${
         isLoading ? "opacity-70" : ""
       }`}
       aria-busy={isLoading}
@@ -33,8 +33,8 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
           <col />
           <col className="w-28" />
         </colgroup>
-        <thead className="bg-[#252821]">
-          <tr className="border-b border-[#1f211c]/15 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-[#f4f0df]">
+        <thead className="bg-[#2a2720]">
+          <tr className="border-b border-[#2a2720]/15 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-[#fff0d0]">
             <th scope="col" className="px-1.5 py-2">
               Фото
             </th>
@@ -46,7 +46,7 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#1f211c]/10">
+        <tbody className="divide-y divide-[#2a2720]/10">
           {gifts.map((gift) => (
             <GiftTableRow key={gift.id} gift={gift} />
           ))}
@@ -64,15 +64,15 @@ function GiftTableRow({ gift }: { gift: Gift }) {
   return (
     <tr className="align-top">
       <td className="py-1.5 pl-2 pr-1">
-        <div className="h-10 w-10 overflow-hidden rounded-md border border-[#1f211c]/15 bg-[#d8c96f]/25">
+        <div className="h-10 w-10 overflow-hidden rounded-md border border-[#2a2720]/15 bg-[#dd7a3c]/20">
           <GiftImage giftId={gift.id} attachment={photo} />
         </div>
       </td>
       <td className="min-w-0 px-1.5 py-1.5">
-        <p className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#1f211c]">
+        <p className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#211c16]">
           {gift.description}
         </p>
-        <p className="mt-1 truncate text-[11px] leading-4 text-[#6f5b27]">от {donor}</p>
+        <p className="mt-1 truncate text-[11px] leading-4 text-[#8f3d24]">от {donor}</p>
       </td>
       <td className="px-1.5 py-1.5">
         <GiftCompactConditions gift={gift} />
@@ -90,7 +90,7 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
     .join(", ");
 
   return (
-    <div className="space-y-0.5 text-[10px] font-medium leading-[14px] text-[#3e4038]">
+    <div className="space-y-0.5 text-[10px] font-medium leading-[14px] text-[#4a3020]">
       <ConditionLine label="Пол" value={genderText[gender] ?? gender} />
       <ConditionLine label="Вело" value={bikeText[bikeType] ?? bikeType} />
       {gift.place !== undefined && <ConditionLine label="Место" value={String(gift.place)} />}
@@ -102,8 +102,8 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
 function ConditionLine({ label, value }: { label: string; value: string }) {
   return (
     <p className="min-w-0">
-      <span className="text-[#8f6c92]">{label}: </span>
-      <span className="break-words text-[#252821]">{value}</span>
+      <span className="text-[#c96534]">{label}: </span>
+      <span className="break-words text-[#2a2720]">{value}</span>
     </p>
   );
 }

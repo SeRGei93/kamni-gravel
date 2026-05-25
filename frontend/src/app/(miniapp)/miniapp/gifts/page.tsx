@@ -124,8 +124,9 @@ export default function MiniappGiftsPage() {
     <main
       className="min-h-screen"
       style={{
-        background: "var(--tg-theme-bg-color, #7f9294)",
-        color: "var(--tg-theme-text-color, #1f211c)",
+        background:
+          "linear-gradient(180deg, #2a2720 0%, #8f3d24 34%, #c96534 72%, #dd7a3c 100%)",
+        color: "#211c16",
       }}
     >
       <GiftFilters
@@ -161,15 +162,15 @@ function MiniappShellState({
   const isError = tone === "error";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#7f9294] px-5 py-8 text-[#1f211c]">
-      <section className="w-full max-w-sm rounded-lg border border-[#1f211c]/20 bg-[#f4f0df] p-5 shadow-sm">
+    <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#2a2720_0%,#9e4428_45%,#dd7a3c_100%)] px-5 py-8 text-[#211c16]">
+      <section className="w-full max-w-sm rounded-lg border border-[#2a2720]/25 bg-[#fff0d0] p-5 shadow-sm">
         <div
           className={`mb-4 h-2 w-16 rounded-full ${
-            isError ? "bg-[#b85733]" : "bg-[#9a812a]"
+            isError ? "bg-[#8f2f1d]" : "bg-[#dd7a3c]"
           }`}
         />
         <h1 className="text-xl font-semibold leading-7">{title}</h1>
-        <p className="mt-2 text-sm leading-5 text-[#4c4a40]">{text}</p>
+        <p className="mt-2 text-sm leading-5 text-[#624226]">{text}</p>
       </section>
     </main>
   );
@@ -177,8 +178,8 @@ function MiniappShellState({
 
 function MiniappCatalogLoading() {
   return (
-    <div className="overflow-hidden rounded-lg border border-[#1f211c]/20 bg-[#f4f0df] shadow-sm">
-      <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] border-b border-[#1f211c]/15 bg-[#252821] px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#f4f0df]">
+    <div className="overflow-hidden rounded-lg border border-[#2a2720]/25 bg-[#fff0d0] shadow-sm">
+      <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] border-b border-[#2a2720]/15 bg-[#2a2720] px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#fff0d0]">
         <span>Фото</span>
         <span>Подарок</span>
         <span>Условия</span>
@@ -186,16 +187,16 @@ function MiniappCatalogLoading() {
       {[0, 1, 2, 3, 4].map((item) => (
         <div
           key={item}
-          className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b border-[#1f211c]/10 px-2 py-1.5 last:border-b-0"
+          className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b border-[#2a2720]/10 px-2 py-1.5 last:border-b-0"
         >
-          <div className="h-10 w-10 animate-pulse rounded-md bg-[#c46a38]/30" />
+          <div className="h-10 w-10 animate-pulse rounded-md bg-[#dd7a3c]/35" />
           <div className="space-y-1.5 py-1 pr-2">
-            <div className="h-3.5 w-full animate-pulse rounded bg-[#9a812a]/25" />
-            <div className="h-3.5 w-2/3 animate-pulse rounded bg-[#8f6c92]/25" />
+            <div className="h-3.5 w-full animate-pulse rounded bg-[#dd7a3c]/30" />
+            <div className="h-3.5 w-2/3 animate-pulse rounded bg-[#d5a13a]/30" />
           </div>
           <div className="space-y-1 py-0.5">
-            <div className="h-3 w-16 animate-pulse rounded bg-[#9a812a]/25" />
-            <div className="h-3 w-20 animate-pulse rounded bg-[#8f6c92]/25" />
+            <div className="h-3 w-16 animate-pulse rounded bg-[#dd7a3c]/30" />
+            <div className="h-3 w-20 animate-pulse rounded bg-[#d5a13a]/30" />
           </div>
         </div>
       ))}

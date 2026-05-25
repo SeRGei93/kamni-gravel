@@ -25,7 +25,7 @@ export default function GiftFilters({
   onBikeTypeChange,
 }: GiftFiltersProps) {
   return (
-    <section className="sticky top-0 z-10 border-b border-[#1f211c]/20 bg-[#7f9294]/95 px-3 py-3 backdrop-blur">
+    <section className="sticky top-0 z-10 border-b border-[#2a2720]/25 bg-[#8f3d24]/95 px-3 py-3 backdrop-blur">
       <div className="mx-auto flex w-full max-w-md flex-col gap-3">
         <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
           {GENDER_OPTIONS.map((option) => {
@@ -38,8 +38,8 @@ export default function GiftFilters({
                 onClick={() => onGenderChange(value)}
                 className={`h-9 shrink-0 rounded-md border px-3 text-sm font-medium transition ${
                   gender === value
-                    ? "border-[#252821] bg-[#8f6c92] text-[#f4f0df]"
-                    : "border-[#1f211c]/15 bg-[#f4f0df] text-[#252821]"
+                    ? "border-[#2a2720] bg-[#dd7a3c] text-[#fff0d0]"
+                    : "border-[#2a2720]/20 bg-[#fff0d0] text-[#2a2720]"
                 }`}
               >
                 {genderLabels[value]}
@@ -59,8 +59,8 @@ export default function GiftFilters({
                 onClick={() => onBikeTypeChange(value)}
                 className={`h-9 shrink-0 rounded-md border px-3 text-sm font-medium transition ${
                   bikeType === value
-                    ? "border-[#252821] bg-[#9a812a] text-[#f4f0df]"
-                    : "border-[#1f211c]/15 bg-[#f4f0df] text-[#252821]"
+                    ? "border-[#2a2720] bg-[#d5a13a] text-[#211c16]"
+                    : "border-[#2a2720]/20 bg-[#fff0d0] text-[#2a2720]"
                 }`}
               >
                 {option.label}
