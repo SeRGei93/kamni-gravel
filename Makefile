@@ -1,4 +1,7 @@
-.PHONY: help build run-bot run-api migrate-up migrate-down migrate-status test clean docker-up docker-down docker-logs db-psql
+.PHONY: help build run-bot run-api migrate-up migrate-down migrate-status test clean docker-up docker-down docker-logs docker-prod-build docker-prod-up docker-prod-down docker-prod-logs ssl-cert ssl-renew db-psql
+
+COMPOSE ?= docker-compose
+PROD_COMPOSE = $(COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -34,33 +37,51 @@ clean: ## Clean build artifacts
 
 # Docker commands
 docker-up: ## Start all services with docker-compose
-	docker-compose up -d
+	$(COMPOSE) up -d
 
 docker-down: ## Stop all services
-	docker-compose down
+	$(COMPOSE) down
 
 docker-down-v: ## Stop all services and remove volumes
-	docker-compose down -v
+	$(COMPOSE) down -v
 
 docker-build: ## Build docker images
-	docker-compose build
+	$(COMPOSE) build
 
 docker-logs: ## Show docker logs
-	docker-compose logs -f
+	$(COMPOSE) logs -f
 
 docker-restart: ## Restart all services
-	docker-compose restart
+	$(COMPOSE) restart
+
+docker-prod-build: ## Build production images with production env
+	$(PROD_COMPOSE) build
+
+docker-prod-up: ## Start production services with nginx
+	$(PROD_COMPOSE) up -d --build
+
+docker-prod-down: ## Stop production services
+	$(PROD_COMPOSE) down
+
+docker-prod-logs: ## Show production logs
+	$(PROD_COMPOSE) logs -f
+
+ssl-cert: ## Issue initial Let's Encrypt certificate for PUBLIC_DOMAIN
+	./scripts/generate-ssl-cert.sh issue
+
+ssl-renew: ## Renew Let's Encrypt certificate for PUBLIC_DOMAIN
+	./scripts/generate-ssl-cert.sh renew
 
 # Database commands
 db-psql: ## Connect to PostgreSQL via psql (requires docker-compose running)
-	docker-compose exec postgres psql -U gravel -d gravel_bot
+	$(COMPOSE) exec postgres psql -U gravel -d gravel_bot
 
 db-backup: ## Backup database to ./backup/gravel_bot_backup.sql
 	mkdir -p backup
-	docker-compose exec -T postgres pg_dump -U gravel gravel_bot > backup/gravel_bot_backup_$(shell date +%Y%m%d_%H%M%S).sql
+	$(COMPOSE) exec -T postgres pg_dump -U gravel gravel_bot > backup/gravel_bot_backup_$(shell date +%Y%m%d_%H%M%S).sql
 
 db-restore: ## Restore database from backup (usage: make db-restore FILE=backup/file.sql)
-	docker-compose exec -T postgres psql -U gravel gravel_bot < $(FILE)
+	$(COMPOSE) exec -T postgres psql -U gravel gravel_bot < $(FILE)
 
 # Development
 dev-deps: ## Install development dependencies

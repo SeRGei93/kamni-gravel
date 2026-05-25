@@ -1,0 +1,47 @@
+services:
+  postgres:
+    ports: !reset []
+
+  backend-bot:
+    environment:
+      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}/miniapp/gifts}
+
+  backend-api:
+    ports: !reset []
+    environment:
+      - ALLOWED_ORIGINS=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
+
+  frontend:
+    build:
+      args:
+        - NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
+    ports: !reset []
+    environment:
+      - NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: gravel_nginx
+    restart: unless-stopped
+    environment:
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
+      - CLIENT_MAX_BODY_SIZE=${CLIENT_MAX_BODY_SIZE:-20m}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - backend-api
+      - frontend
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    container_name: gravel_certbot
+    profiles:
+      - certbot
+    volumes:
+      - ./nginx/certbot/www:/var/www/certbot
+      - ./nginx/certbot/conf:/etc/letsencrypt
