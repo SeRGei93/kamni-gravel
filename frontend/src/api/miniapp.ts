@@ -82,7 +82,7 @@ async function miniappFetch(
     return response;
   } catch (error) {
     if (error instanceof MiniappApiError) {
-      console.error('[miniapp] API request failed', {
+      console.warn('[miniapp] API request failed', {
         endpoint,
         status: error.status,
         statusText: error.statusText,
@@ -90,7 +90,7 @@ async function miniappFetch(
       throw error;
     }
 
-    console.error('[miniapp] API network failure', {
+    console.warn('[miniapp] API network failure', {
       endpoint,
       message: error instanceof Error ? error.message : 'Unknown error',
     });

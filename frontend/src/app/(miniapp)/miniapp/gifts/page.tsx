@@ -44,7 +44,7 @@ export default function MiniappGiftsPage() {
           setSession(data);
         }
       } catch (loadError) {
-        console.error("[miniapp] Session load failed", {
+        console.warn("[miniapp] Session load failed", {
           message: loadError instanceof Error ? loadError.message : "Unknown error",
         });
         if (!ignore) {
@@ -79,7 +79,7 @@ export default function MiniappGiftsPage() {
           setGifts(data.gifts);
         }
       } catch (loadError) {
-        console.error("[miniapp] Gift catalog load failed", {
+        console.warn("[miniapp] Gift catalog load failed", {
           gender,
           bikeType,
           message: loadError instanceof Error ? loadError.message : "Unknown error",
