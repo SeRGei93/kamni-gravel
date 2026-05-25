@@ -42,6 +42,16 @@ func TestGetMiniappGiftsHandlerReusesApprovedGiftsQueryAndFiltersCatalog(t *test
 				ReviewStatus:   entity.GiftReviewStatusApproved,
 				User:           &entity.User{ID: 125, FirstName: "Sam"},
 			},
+			{
+				ID:             4,
+				UserID:         126,
+				EventID:        77,
+				Description:    "Pending prize",
+				GenderFilter:   "male",
+				BikeTypeFilter: "gravel",
+				ReviewStatus:   entity.GiftReviewStatusPendingReview,
+				User:           &entity.User{ID: 126, FirstName: "Pat"},
+			},
 		},
 		attachments: map[uint][]*entity.GiftAttachment{
 			1: {{ID: 10, GiftID: 1, TelegramFileID: "file-1", FileType: "photo"}},
@@ -83,6 +93,32 @@ func TestGetMiniappGiftsHandlerReusesApprovedGiftsQueryAndFiltersCatalog(t *test
 	}
 	if gifts[1].ID != 3 {
 		t.Fatalf("generic gift should match selected filters, got gift ID %d", gifts[1].ID)
+	}
+}
+
+func TestGetMiniappGiftsHandlerFiltersGenderAndBikeTypeSemantics(t *testing.T) {
+	giftRepo := &miniappGiftRepoFake{
+		gifts: []*entity.Gift{
+			{ID: 1, EventID: 77, GenderFilter: "all", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 2, EventID: 77, GenderFilter: "male", BikeTypeFilter: "gravel", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 3, EventID: 77, GenderFilter: "female", BikeTypeFilter: "gravel", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 4, EventID: 77, GenderFilter: "male", BikeTypeFilter: "mtb", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 5, EventID: 77, GenderFilter: "male", BikeTypeFilter: "gravel", ReviewStatus: entity.GiftReviewStatusPendingReview},
+		},
+	}
+	handler := NewGetMiniappGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})
+
+	gifts, err := handler.Handle(context.Background(), GetMiniappGiftsQuery{
+		EventID:  77,
+		Gender:   "male",
+		BikeType: "gravel",
+	})
+	if err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+
+	if got := miniappGiftIDs(gifts); !equalUintSlices(got, []uint{1, 2}) {
+		t.Fatalf("filtered gift IDs mismatch: got %v, want %v", got, []uint{1, 2})
 	}
 }
 
@@ -159,7 +195,14 @@ func (r *miniappGiftRepoFake) FindByEventAndReviewStatus(ctx context.Context, ev
 	r.findByStatusCalled = true
 	r.eventID = eventID
 	r.reviewStatus = reviewStatus
-	return r.gifts, nil
+
+	filtered := make([]*entity.Gift, 0, len(r.gifts))
+	for _, gift := range r.gifts {
+		if gift.ReviewStatus == reviewStatus {
+			filtered = append(filtered, gift)
+		}
+	}
+	return filtered, nil
 }
 func (r *miniappGiftRepoFake) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
 	return nil, nil
@@ -203,4 +246,24 @@ func (r *miniappCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) (
 }
 func (r *miniappCriteriaRepoFake) FindByResult(ctx context.Context, resultID uint) ([]*entity.Criteria, error) {
 	return nil, nil
+}
+
+func miniappGiftIDs(gifts []*entity.Gift) []uint {
+	ids := make([]uint, len(gifts))
+	for i, gift := range gifts {
+		ids[i] = gift.ID
+	}
+	return ids
+}
+
+func equalUintSlices(a, b []uint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

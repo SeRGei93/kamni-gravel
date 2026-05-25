@@ -154,7 +154,7 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
 
 ### Phase 2: Frontend Miniapp Experience
 
-- [ ] 5. Add a typed miniapp API client and Telegram WebApp runtime helpers.
+- [x] 5. Add a typed miniapp API client and Telegram WebApp runtime helpers.
 
   Files:
   - `frontend/src/api/miniapp.ts`
@@ -175,7 +175,7 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
   - Use `console.error` for API failures without dumping raw init data.
   - Do not log blob URLs, raw init data, or full gift descriptions.
 
-- [ ] 6. Isolate miniapp routes from admin dashboard providers.
+- [x] 6. Isolate miniapp routes from admin dashboard providers.
 
   Files:
   - `frontend/src/app/layout.tsx`
@@ -193,7 +193,7 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
   - This task should not add runtime logs.
   - If temporary diagnostics are used while verifying provider behavior, remove them before completion.
 
-- [ ] 7. Build the miniapp route and layout.
+- [x] 7. Build the miniapp route and layout.
 
   Files:
   - `frontend/src/app/(miniapp)/layout.tsx`
@@ -213,13 +213,12 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
   - Client logs only lifecycle failures and failed API calls.
   - No raw init data, no file URLs, no full gift descriptions in logs.
 
-- [ ] 8. Build the gift catalog UI with images, conditions, and filters.
+- [x] 8. Build the gift catalog UI with images, conditions, and filters.
 
   Files:
-  - `frontend/src/components/miniapp/GiftCard.tsx`
+  - `frontend/src/components/miniapp/GiftCatalogTable.tsx`
   - `frontend/src/components/miniapp/GiftImage.tsx`
   - `frontend/src/components/miniapp/GiftFilters.tsx`
-  - `frontend/src/components/miniapp/GiftConditionList.tsx`
   - `frontend/src/components/miniapp/GiftEmptyState.tsx`
   - `frontend/src/app/(miniapp)/miniapp/gifts/page.tsx`
   - `frontend/src/constants/options.ts`
@@ -230,8 +229,8 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
   - Show all approved gifts returned by the backend for the active event and selected filters.
   - Add filter controls for gender and bike type using existing option values and labels where possible.
   - Filter changes should update the catalog without full page reload and should keep a stable mobile layout.
-  - Render each gift as a polished compact card:
-    - image preview first when a photo exists;
+  - Render gifts as a dense table-style list for fast vertical scanning:
+    - compact image thumbnail when a photo exists;
     - clear fallback visual when no image exists;
     - description;
     - donor display name when available;
@@ -253,7 +252,7 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
 
 ### Phase 3: Tests, Docs, Verification
 
-- [ ] 9. Add backend tests for miniapp auth, catalog visibility, filters, and handlers.
+- [x] 9. Add backend tests for miniapp auth, catalog visibility, filters, and handlers.
 
   Files:
   - `backend/internal/infrastructure/http/middleware/telegram_webapp_test.go`
@@ -274,7 +273,7 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
   - Tests should assert behavior, not log output.
   - Any test helper that creates init data must use synthetic bot tokens and users only.
 
-- [ ] 10. Update API docs and project docs.
+- [x] 10. Update API docs and project docs.
 
   Files:
   - `backend/docs/swagger.yaml`
@@ -293,7 +292,7 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
   - Documentation task has no runtime logs.
   - If examples include headers, use placeholders and never real init data.
 
-- [ ] 11. Run verification and fix regressions.
+- [x] 11. Run verification and fix regressions.
 
   Files:
   - No planned source file ownership; fix only files touched by previous tasks unless verification exposes a direct regression.
@@ -305,9 +304,10 @@ Build a Telegram Mini App for viewing the gift catalog. The first version is a r
   - Use Browser/Playwright for a mobile smoke check of `/miniapp/gifts` at about 390px width:
     - route renders without dashboard sidebar/header;
     - loading/error/empty states fit the viewport;
-    - gift cards do not overflow;
+    - table rows do not overflow;
     - filter controls are usable;
     - image fallback and image slots keep stable dimensions.
+  - Verification note: full `frontend` lint currently fails on existing dashboard/TailAdmin files outside this miniapp change; targeted miniapp eslint, frontend build, backend tests, and mobile smoke pass.
   - If Docker/runtime wiring changed substantially, run `make docker-up` and smoke-check:
     - bot starts with `MINIAPP_URL` set;
     - miniapp route renders;

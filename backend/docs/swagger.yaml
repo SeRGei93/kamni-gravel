@@ -16,6 +16,9 @@ info:
     
     ## Аутентификация
     Защищённые эндпоинты требуют JWT токен в заголовке Authorization: Bearer <token>
+
+    Telegram Mini App эндпоинты требуют заголовок X-Telegram-Init-Data.
+    Значение должно приходить из Telegram.WebApp.initData и не должно храниться на клиенте.
     
     ## Роли
     - **admin** - полный доступ ко всем операциям
@@ -54,6 +57,10 @@ tags:
     description: Назначение призов участникам
   - name: Stats
     description: Статистика
+  - name: Miniapp
+    description: Telegram Mini App для просмотра проверенных подарков
+  - name: Telegram
+    description: Работа с файлами Telegram
 
 paths:
   # ==================== AUTH ====================
@@ -940,6 +947,92 @@ paths:
                   by_gender:
                     type: object
 
+  # ==================== MINIAPP ====================
+  /miniapp/session:
+    get:
+      tags: [Miniapp]
+      summary: Сессия Telegram Mini App
+      description: Возвращает валидированного Telegram-пользователя и активное событие. Требует X-Telegram-Init-Data из Telegram.WebApp.initData.
+      security:
+        - TelegramWebAppInitData: []
+      responses:
+        '200':
+          description: Сессия miniapp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiniappSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /miniapp/gifts:
+    get:
+      tags: [Miniapp]
+      summary: Каталог проверенных подарков
+      description: Возвращает только подарки со статусом approved для активного события. Требует X-Telegram-Init-Data из Telegram.WebApp.initData.
+      security:
+        - TelegramWebAppInitData: []
+      parameters:
+        - name: gender
+          in: query
+          schema:
+            type: string
+            enum: [all, male, female]
+            default: all
+          description: Выбранный пол участника; male/female включает подарки с all или совпадающим фильтром.
+        - name: bike_type
+          in: query
+          schema:
+            type: string
+            enum: [all, gravel, mtb, road, single_speed, tandem]
+            default: all
+          description: Выбранный тип велосипеда; конкретный тип включает подарки с all или совпадающим фильтром.
+      responses:
+        '200':
+          description: Каталог подарков
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GiftList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /miniapp/telegram/files/{fileId}:
+    get:
+      tags: [Miniapp]
+      summary: Проксирование файла Telegram для miniapp
+      description: Стримит содержимое Telegram-файла через backend, не раскрывая URL с BOT_TOKEN. Требует X-Telegram-Init-Data из Telegram.WebApp.initData.
+      security:
+        - TelegramWebAppInitData: []
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Содержимое файла
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ==================== TELEGRAM FILES ====================
   /telegram/files/{fileId}:
     get:
@@ -997,6 +1090,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    TelegramWebAppInitData:
+      type: apiKey
+      in: header
+      name: X-Telegram-Init-Data
+      description: Значение Telegram.WebApp.initData из Telegram Mini App.
 
   parameters:
     EventId:
@@ -1087,6 +1185,43 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    MiniappSession:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/MiniappTelegramUser'
+        event:
+          $ref: '#/components/schemas/MiniappEvent'
+
+    MiniappTelegramUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        language_code:
+          type: string
+        photo_url:
+          type: string
+        is_premium:
+          type: boolean
+
+    MiniappEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
 
     EventTelegramTexts:
       type: object
@@ -1255,6 +1390,16 @@ components:
           format: date-time
         is_assigned:
           type: boolean
+
+    GiftList:
+      type: object
+      properties:
+        gifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Gift'
+        total:
+          type: integer
 
     Criteria:
       type: object

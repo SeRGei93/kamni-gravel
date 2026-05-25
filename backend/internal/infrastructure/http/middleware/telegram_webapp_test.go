@@ -74,6 +74,17 @@ func TestTelegramWebAppAuthRejectsInvalidInitData(t *testing.T) {
 			initData: initDataWithHash(t, signedInitData(t, token, validValues), "bad"),
 		},
 		{
+			name:     "missing hash",
+			initData: validValues.Encode(),
+		},
+		{
+			name: "malformed user payload",
+			initData: signedInitData(t, token, url.Values{
+				"auth_date": {strconv.FormatInt(now.Unix(), 10)},
+				"user":      {"not-json"},
+			}),
+		},
+		{
 			name: "expired auth date",
 			initData: signedInitData(t, token, url.Values{
 				"auth_date": {strconv.FormatInt(now.Add(-25*time.Hour).Unix(), 10)},

@@ -91,6 +91,18 @@ func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 	}
 }
 
+func TestMainMenuOmitsWebAppButtonWhenURLIsEmpty(t *testing.T) {
+	menu := MainMenu("")
+
+	for _, row := range menu.InlineKeyboard {
+		for _, button := range row {
+			if button.WebApp != nil {
+				t.Fatalf("unexpected web app button: %#v", button)
+			}
+		}
+	}
+}
+
 func TestBuilderCreatesRows(t *testing.T) {
 	menu := NewBuilder().
 		AddButton("A", "a").

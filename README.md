@@ -46,6 +46,7 @@ docker-compose up -d
 ```bash
 # Telegram Bot
 BOT_TOKEN=your_telegram_bot_token_here
+MINIAPP_URL=https://example.com/miniapp/gifts
 JWT_SECRET=your_jwt_secret_key_here
 
 # PostgreSQL
@@ -65,7 +66,15 @@ DB_SSLMODE=disable
 # API
 API_HOST=0.0.0.0
 API_PORT=8080
+NEXT_PUBLIC_API_URL=https://api.example.com
+ALLOWED_ORIGINS=https://example.com
 ```
+
+### Telegram Mini App
+
+`MINIAPP_URL` включает кнопку "Смотреть подарки" в Telegram-боте. Для реального Telegram Mini App URL должен быть публичным HTTPS-адресом frontend-маршрута `/miniapp/gifts`.
+
+В non-local окружениях `NEXT_PUBLIC_API_URL` тоже должен быть публичным HTTPS API URL, доступным из Telegram-клиента пользователя. Если `ALLOWED_ORIGINS` не равен `*`, добавьте origin miniapp frontend. Miniapp-запросы отправляют заголовок `X-Telegram-Init-Data` со значением из `Telegram.WebApp.initData`; backend валидирует этот заголовок перед доступом к `/api/miniapp/*`.
 
 ## Доступные команды
 
