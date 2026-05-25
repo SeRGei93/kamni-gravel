@@ -10,7 +10,7 @@ interface GiftCatalogTableProps {
 }
 
 const genderText: Record<GenderFilter, string> = {
-  all: "все",
+  all: "абсолют",
   male: "мужчины",
   female: "женщины",
 };
@@ -34,8 +34,8 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
           <col />
           <col className="w-28" />
         </colgroup>
-        <thead className="bg-[#111111]">
-          <tr className="border-b border-[#262626] text-left text-[10px] font-semibold uppercase text-white">
+        <thead className="bg-gray-50">
+          <tr className="border-b border-gray-200 text-left text-[10px] font-semibold uppercase text-gray-500">
             <th scope="col" className="px-1.5 py-2">
               Фото
             </th>
@@ -47,7 +47,7 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#e5e5e5]">
+        <tbody className="divide-y divide-gray-200">
           {gifts.map((gift) => (
             <GiftTableRow key={gift.id} gift={gift} />
           ))}
@@ -63,11 +63,11 @@ function GiftTableRow({ gift }: { gift: Gift }) {
   const donor = donorName || gift.username || `Участник ${gift.user_id}`;
 
   return (
-    <tr className="align-top hover:bg-[#fafafa]">
+    <tr className="align-top hover:bg-gray-50">
       <td className="py-1.5 pl-2 pr-1">
         <Link
           href={`/miniapp/gifts/${gift.id}`}
-          className="block h-10 w-10 overflow-hidden border border-[#d4d4d4] bg-[#fff7ed]"
+          className="block h-10 w-10 overflow-hidden rounded-lg border border-gray-200 bg-orange-50"
           aria-label={`Открыть подарок ${gift.id}`}
         >
           <GiftImage giftId={gift.id} attachment={photo} />
@@ -76,11 +76,11 @@ function GiftTableRow({ gift }: { gift: Gift }) {
       <td className="min-w-0 px-1.5 py-1.5">
         <Link
           href={`/miniapp/gifts/${gift.id}`}
-          className="line-clamp-1 break-words text-sm font-semibold leading-5 text-[#111111]"
+          className="line-clamp-1 break-words text-sm font-medium leading-5 text-gray-900"
         >
           {gift.description}
         </Link>
-        <p className="mt-1 truncate text-[11px] font-semibold uppercase leading-4 text-[#737373]">
+        <p className="mt-1 truncate text-[11px] font-medium leading-4 text-gray-500">
           от {donor}
         </p>
       </td>
@@ -100,14 +100,14 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
     .join(", ");
 
   return (
-    <div className="space-y-0.5 text-[10px] font-medium leading-[14px] text-[#404040]">
+    <div className="space-y-0.5 text-[10px] font-medium leading-[14px] text-gray-600">
       <ConditionLine label="Пол" value={genderText[gender] ?? gender} />
       <ConditionLine label="Вело" value={bikeText[bikeType] ?? bikeType} />
       {gift.place !== undefined && <ConditionLine label="Место" value={String(gift.place)} />}
       {criteriaText && <ConditionLine label="Кр." value={criteriaText} />}
       <Link
         href={`/miniapp/gifts/${gift.id}`}
-        className="inline-flex border border-[#f97316] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111111]"
+        className="inline-flex rounded-md border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600"
       >
         Открыть
       </Link>
@@ -118,8 +118,8 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
 function ConditionLine({ label, value }: { label: string; value: string }) {
   return (
     <p className="min-w-0">
-      <span className="text-[#f97316]">{label}: </span>
-      <span className="break-words text-[#111111]">{value}</span>
+      <span className="text-gray-400">{label}: </span>
+      <span className="break-words text-gray-800">{value}</span>
     </p>
   );
 }

@@ -62,10 +62,10 @@ func (h *GetMiniappGiftsHandler) Handle(ctx context.Context, query GetMiniappGif
 func filterMiniappGifts(gifts []*entity.Gift, genderFilter, bikeTypeFilter string) []*entity.Gift {
 	filtered := make([]*entity.Gift, 0, len(gifts))
 	for _, gift := range gifts {
-		if !matchesMiniappGiftFilter(gift.GenderFilter, genderFilter) {
+		if !matchesMiniappGenderFilter(gift.GenderFilter, genderFilter) {
 			continue
 		}
-		if !matchesMiniappGiftFilter(gift.BikeTypeFilter, bikeTypeFilter) {
+		if !matchesMiniappBikeTypeFilter(gift.BikeTypeFilter, bikeTypeFilter) {
 			continue
 		}
 		filtered = append(filtered, gift)
@@ -74,7 +74,20 @@ func filterMiniappGifts(gifts []*entity.Gift, genderFilter, bikeTypeFilter strin
 	return filtered
 }
 
-func matchesMiniappGiftFilter(giftFilter, selectedFilter string) bool {
+func matchesMiniappGenderFilter(giftFilter, selectedFilter string) bool {
+	giftFilter = strings.ToLower(strings.TrimSpace(giftFilter))
+	if giftFilter == "" {
+		giftFilter = "all"
+	}
+
+	if selectedFilter == "all" {
+		return giftFilter == "all"
+	}
+
+	return giftFilter == "all" || giftFilter == selectedFilter
+}
+
+func matchesMiniappBikeTypeFilter(giftFilter, selectedFilter string) bool {
 	giftFilter = strings.ToLower(strings.TrimSpace(giftFilter))
 	if giftFilter == "" {
 		giftFilter = "all"

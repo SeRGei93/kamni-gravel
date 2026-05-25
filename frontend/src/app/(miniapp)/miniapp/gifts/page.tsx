@@ -121,12 +121,7 @@ export default function MiniappGiftsPage() {
   }
 
   return (
-    <main
-      className="min-h-screen bg-[#070707] text-[#111111]"
-      style={{
-        color: "#111111",
-      }}
-    >
+    <main className="min-h-screen bg-gray-50 text-gray-900">
       <MiniappMasthead count={gifts.length} isLoading={isCatalogLoading} />
 
       <GiftFilters
@@ -137,7 +132,7 @@ export default function MiniappGiftsPage() {
         onBikeTypeChange={setBikeType}
       />
 
-      <section className="mx-auto flex w-full max-w-md flex-col gap-3 bg-white px-3 py-3">
+      <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
         {isCatalogLoading && gifts.length === 0 ? (
           <MiniappCatalogLoading />
         ) : gifts.length > 0 ? (
@@ -160,26 +155,21 @@ function MiniappMasthead({
   const countLabel = isLoading ? "--" : String(count).padStart(2, "0");
 
   return (
-    <section className="bg-[#070707] px-3 pb-3 pt-4 text-white">
-      <div className="mx-auto w-full max-w-md border border-white/15 px-3 py-3">
-        <p className="text-[10px] font-semibold uppercase text-[#b7a87f]">
+    <section className="bg-gray-50 px-3 pb-3 pt-4">
+      <div className="mx-auto w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p className="text-xs font-medium text-orange-600">
           Gravel Bot
         </p>
         <div className="mt-1 flex items-end justify-between gap-3">
-          <h1 className="text-[42px] font-black uppercase leading-none text-white">
-            Gifts
+          <h1 className="text-2xl font-semibold leading-8 text-gray-900">
+            Подарки
           </h1>
-          <div className="mb-1 border border-[#f97316] px-2 py-1 text-right">
-            <p className="text-[10px] font-semibold uppercase text-[#b7a87f]">
-              Total
+          <div className="mb-0.5 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-right">
+            <p className="text-[10px] font-medium text-orange-600">
+              Всего
             </p>
-            <p className="text-xl font-black leading-none text-[#f97316]">{countLabel}</p>
+            <p className="text-lg font-semibold leading-none text-orange-600">{countLabel}</p>
           </div>
-        </div>
-        <div className="mt-3 grid grid-cols-3 border border-white/15 text-center text-[10px] font-semibold uppercase text-white">
-          <span className="border-r border-white/15 py-1.5">Catalog</span>
-          <span className="border-r border-white/15 py-1.5 text-[#b7a87f]">Approved</span>
-          <span className="py-1.5">Mini App</span>
         </div>
       </div>
     </section>
@@ -198,15 +188,15 @@ function MiniappShellState({
   const isError = tone === "error";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#070707] px-5 py-8 text-[#111111]">
-      <section className="w-full max-w-sm border border-white/15 bg-white p-5 shadow-sm">
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-5 py-8 text-gray-900">
+      <section className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div
           className={`mb-4 h-2 w-16 rounded-full ${
-            isError ? "bg-[#ef4444]" : "bg-[#f97316]"
+            isError ? "bg-error-500" : "bg-orange-500"
           }`}
         />
         <h1 className="text-xl font-semibold leading-7">{title}</h1>
-        <p className="mt-2 text-sm leading-5 text-[#525252]">{text}</p>
+        <p className="mt-2 text-sm leading-5 text-gray-500">{text}</p>
       </section>
     </main>
   );
@@ -214,8 +204,8 @@ function MiniappShellState({
 
 function MiniappCatalogLoading() {
   return (
-    <div className="overflow-hidden border border-[#d4d4d4] bg-white shadow-sm">
-      <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] border-b border-[#262626] bg-[#111111] px-2 py-2 text-[10px] font-semibold uppercase text-white">
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] border-b border-gray-200 bg-gray-50 px-2 py-2 text-[10px] font-semibold uppercase text-gray-500">
         <span>Фото</span>
         <span>Подарок</span>
         <span>Условия</span>
@@ -223,9 +213,9 @@ function MiniappCatalogLoading() {
       {[0, 1, 2, 3, 4].map((item) => (
         <div
           key={item}
-          className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b border-[#e5e5e5] px-2 py-1.5 last:border-b-0"
+          className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b border-gray-200 px-2 py-1.5 last:border-b-0"
         >
-          <div className="h-10 w-10 animate-pulse rounded-md bg-[#fed7aa]" />
+          <div className="h-10 w-10 animate-pulse rounded-lg bg-orange-100" />
           <div className="space-y-1.5 py-1 pr-2">
             <div className="h-3.5 w-full animate-pulse rounded bg-[#e5e5e5]" />
             <div className="h-3.5 w-2/3 animate-pulse rounded bg-[#f3f4f6]" />

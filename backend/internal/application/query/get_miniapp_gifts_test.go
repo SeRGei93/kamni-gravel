@@ -122,6 +122,31 @@ func TestGetMiniappGiftsHandlerFiltersGenderAndBikeTypeSemantics(t *testing.T) {
 	}
 }
 
+func TestGetMiniappGiftsHandlerFiltersAbsoluteGenderSemantics(t *testing.T) {
+	giftRepo := &miniappGiftRepoFake{
+		gifts: []*entity.Gift{
+			{ID: 1, EventID: 77, GenderFilter: "all", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 2, EventID: 77, GenderFilter: "male", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 3, EventID: 77, GenderFilter: "female", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 4, EventID: 77, GenderFilter: "", BikeTypeFilter: "gravel", ReviewStatus: entity.GiftReviewStatusApproved},
+		},
+	}
+	handler := NewGetMiniappGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})
+
+	gifts, err := handler.Handle(context.Background(), GetMiniappGiftsQuery{
+		EventID:  77,
+		Gender:   "all",
+		BikeType: "all",
+	})
+	if err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+
+	if got := miniappGiftIDs(gifts); !equalUintSlices(got, []uint{1, 4}) {
+		t.Fatalf("absolute gift IDs mismatch: got %v, want %v", got, []uint{1, 4})
+	}
+}
+
 func TestGetMiniappGiftsHandlerDefaultsFiltersToAll(t *testing.T) {
 	giftRepo := &miniappGiftRepoFake{}
 	handler := NewGetMiniappGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})

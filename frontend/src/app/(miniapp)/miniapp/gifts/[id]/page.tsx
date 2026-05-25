@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { miniappApi } from "@/api/miniapp";
 import GiftDetailView from "@/components/miniapp/GiftDetailView";
-import type { Gift } from "@/types";
+import type { GenderFilter, Gift } from "@/types";
 import {
   expandTelegramWebApp,
   isTelegramWebAppAvailable,
@@ -40,8 +40,12 @@ export default function MiniappGiftDetailPage() {
       setError(null);
 
       try {
-        const data = await miniappApi.getGifts();
-        const selectedGift = data.gifts.find((item) => item.id === giftId) ?? null;
+        const genderFilters: GenderFilter[] = ["all", "male", "female"];
+        const giftLists = await Promise.all(
+          genderFilters.map((gender) => miniappApi.getGifts({ gender, bike_type: "all" }))
+        );
+        const selectedGift =
+          giftLists.flatMap((data) => data.gifts).find((item) => item.id === giftId) ?? null;
 
         if (!ignore) {
           setGift(selectedGift);
@@ -84,14 +88,14 @@ export default function MiniappGiftDetailPage() {
 
 function MiniappDetailState({ title, text }: { title: string; text: string }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#070707] px-5 py-8 text-[#111111]">
-      <section className="w-full max-w-sm border border-white/15 bg-white p-5 shadow-sm">
-        <div className="mb-4 h-2 w-16 bg-[#f97316]" />
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-5 py-8 text-gray-900">
+      <section className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 h-2 w-16 rounded-full bg-orange-500" />
         <h1 className="text-xl font-semibold leading-7">{title}</h1>
-        <p className="mt-2 text-sm leading-5 text-[#525252]">{text}</p>
+        <p className="mt-2 text-sm leading-5 text-gray-500">{text}</p>
         <Link
           href="/miniapp/gifts"
-          className="mt-4 inline-flex border border-[#111111] px-3 py-2 text-xs font-semibold uppercase text-[#111111]"
+          className="mt-4 inline-flex rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700"
         >
           Вернуться
         </Link>

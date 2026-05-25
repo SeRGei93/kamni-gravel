@@ -981,7 +981,7 @@ paths:
             type: string
             enum: [all, male, female]
             default: all
-          description: Выбранный пол участника; male/female включает подарки с all или совпадающим фильтром.
+          description: Выбранный зачёт участника; all означает абсолютный зачёт, male/female включает подарки абсолютного или совпадающего зачёта.
         - name: bike_type
           in: query
           schema:

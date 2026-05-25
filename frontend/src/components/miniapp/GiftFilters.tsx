@@ -12,7 +12,7 @@ interface GiftFiltersProps {
 }
 
 const genderLabels: Record<GenderFilter, string> = {
-  all: "Все",
+  all: "Абсолют",
   male: "Мужчины",
   female: "Женщины",
 };
@@ -25,7 +25,7 @@ export default function GiftFilters({
   onBikeTypeChange,
 }: GiftFiltersProps) {
   return (
-    <section className="sticky top-0 z-10 border-y border-[#262626] bg-[#070707]/95 px-3 py-3 backdrop-blur">
+    <section className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-3 py-3 backdrop-blur">
       <div className="mx-auto flex w-full max-w-md flex-col gap-3">
         <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
           {GENDER_OPTIONS.map((option) => {
@@ -36,10 +36,10 @@ export default function GiftFilters({
                 type="button"
                 disabled={isLoading}
                 onClick={() => onGenderChange(value)}
-                className={`h-8 shrink-0 border px-3 text-[11px] font-semibold uppercase transition ${
+                className={`h-9 shrink-0 rounded-lg border px-3 text-sm font-medium transition ${
                   gender === value
-                    ? "border-[#f97316] bg-[#f97316] text-white"
-                    : "border-white/25 bg-[#111111] text-white"
+                    ? "border-orange-500 bg-orange-50 text-orange-600"
+                    : "border-gray-200 bg-white text-gray-700"
                 }`}
               >
                 {genderLabels[value]}
@@ -57,10 +57,10 @@ export default function GiftFilters({
                 type="button"
                 disabled={isLoading}
                 onClick={() => onBikeTypeChange(value)}
-                className={`h-8 shrink-0 border px-3 text-[11px] font-semibold uppercase transition ${
+                className={`h-9 shrink-0 rounded-lg border px-3 text-sm font-medium transition ${
                   bikeType === value
-                    ? "border-[#b7a87f] bg-[#b7a87f] text-[#070707]"
-                    : "border-white/25 bg-[#111111] text-white"
+                    ? "border-brand-500 bg-brand-50 text-brand-500"
+                    : "border-gray-200 bg-white text-gray-700"
                 }`}
               >
                 {option.label}
