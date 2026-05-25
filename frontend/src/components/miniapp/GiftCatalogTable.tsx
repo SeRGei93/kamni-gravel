@@ -1,4 +1,7 @@
-import Link from "next/link";
+"use client";
+
+import type { KeyboardEvent } from "react";
+import { useRouter } from "next/navigation";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
 import type { BikeTypeFilter, GenderFilter, Gift } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
@@ -58,28 +61,43 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
 }
 
 function GiftTableRow({ gift }: { gift: Gift }) {
+  const router = useRouter();
   const photo = gift.attachments?.find((attachment) => attachment.file_type === "photo");
   const donorName = [gift.first_name, gift.last_name].filter(Boolean).join(" ");
   const donor = donorName || gift.username || `Участник ${gift.user_id}`;
+  const href = `/miniapp/gifts/${gift.id}`;
+
+  const openGift = () => {
+    router.push(href);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    openGift();
+  };
 
   return (
-    <tr className="align-top hover:bg-gray-50">
+    <tr
+      role="link"
+      tabIndex={0}
+      aria-label={`Открыть подарок ${gift.id}`}
+      onClick={openGift}
+      onKeyDown={handleKeyDown}
+      className="cursor-pointer align-top hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-200"
+    >
       <td className="py-1.5 pl-2 pr-1">
-        <Link
-          href={`/miniapp/gifts/${gift.id}`}
-          className="block h-10 w-10 overflow-hidden rounded-lg border border-gray-200 bg-orange-50"
-          aria-label={`Открыть подарок ${gift.id}`}
-        >
+        <div className="block h-10 w-10 overflow-hidden rounded-lg border border-gray-200 bg-orange-50">
           <GiftImage giftId={gift.id} attachment={photo} />
-        </Link>
+        </div>
       </td>
       <td className="min-w-0 px-1.5 py-1.5">
-        <Link
-          href={`/miniapp/gifts/${gift.id}`}
-          className="line-clamp-1 break-words text-sm font-medium leading-5 text-gray-900"
-        >
+        <p className="line-clamp-1 break-words text-sm font-medium leading-5 text-gray-900">
           {gift.description}
-        </Link>
+        </p>
         <p className="mt-1 truncate text-[11px] font-medium leading-4 text-gray-500">
           от {donor}
         </p>
@@ -105,12 +123,6 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
       <ConditionLine label="Вело" value={bikeText[bikeType] ?? bikeType} />
       {gift.place !== undefined && <ConditionLine label="Место" value={String(gift.place)} />}
       {criteriaText && <ConditionLine label="Кр." value={criteriaText} />}
-      <Link
-        href={`/miniapp/gifts/${gift.id}`}
-        className="inline-flex rounded-md border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600"
-      >
-        Открыть
-      </Link>
     </div>
   );
 }
