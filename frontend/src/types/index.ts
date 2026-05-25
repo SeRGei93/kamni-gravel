@@ -125,6 +125,27 @@ export interface GiftListResponse {
   total: number;
 }
 
+export interface MiniappTelegramUser {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  language_code?: string;
+  photo_url?: string;
+  is_premium: boolean;
+}
+
+export interface MiniappEvent {
+  id: number;
+  name: string;
+  description: string;
+}
+
+export interface MiniappSessionResponse {
+  user: MiniappTelegramUser;
+  event: MiniappEvent;
+}
+
 export interface Nomination {
   id: number;
   event_id: number;

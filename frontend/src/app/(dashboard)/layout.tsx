@@ -1,6 +1,8 @@
 "use client";
 
-import { useSidebar } from "@/context/SidebarContext";
+import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
+import { AuthProvider } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import AppHeader from "@/layout/AppHeader";
 import AppSidebar from "@/layout/AppSidebar";
 import Backdrop from "@/layout/Backdrop";
@@ -12,6 +14,18 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <SidebarProvider>
+          <DashboardShell>{children}</DashboardShell>
+        </SidebarProvider>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+function DashboardShell({ children }: { children: React.ReactNode }) {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   // Dynamic class for main content margin based on sidebar state
