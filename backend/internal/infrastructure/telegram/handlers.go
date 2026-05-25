@@ -319,21 +319,78 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 				b.eventRepo,
 				b.addGiftHandler,
 			)
-			text, _ := giftHandler.FinishAddGift(ctx, userID)
+			messageIDs := b.giftMessageIDs(userID)
+			text, markup := giftHandler.PreviewGift(userID)
 			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 				return
 			}
 
 			// Удаляем все промежуточные сообщения от бота (кроме фото)
-			for _, msgID := range b.giftMessageIDs(userID) {
+			for _, msgID := range messageIDs {
+				if msgID == msgRef.MessageID {
+					continue
+				}
 				_ = b.DeleteMessage(ctx, msgRef.ChatID, msgID)
 			}
 
 			// Удаляем текущее сообщение с кнопками
 			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 
-			// Отправляем финальное сообщение с благодарностью и стартовыми кнопками
+			// Отправляем сводку с явным подтверждением перед сохранением.
+			sentMsg, err := b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, markup)
+			if err == nil && sentMsg != nil && markup != nil {
+				b.setGiftMessageIDs(userID, []int{sentMsg.ID})
+			}
+		}
+
+	case session.StateAwaitingGiftConfirmation:
+		giftHandler := handler.NewGiftHandler(
+			b.sessionManager,
+			b.eventRepo,
+			b.addGiftHandler,
+		)
+
+		switch data {
+		case "confirm_gift":
+			messageIDs := b.giftMessageIDs(userID)
+			text, err := giftHandler.ConfirmAddGift(ctx, userID)
+			if err != nil {
+				_ = b.AnswerCallback(ctx, callback.ID, "Ошибка")
+				_, _ = b.SendMessage(ctx, msgRef.ChatID, text+"\n\nДанные сохранены. Попробуйте подтвердить ещё раз или отмените добавление.")
+				return
+			}
+			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
+				return
+			}
+			for _, msgID := range messageIDs {
+				if msgID == msgRef.MessageID {
+					continue
+				}
+				_ = b.DeleteMessage(ctx, msgRef.ChatID, msgID)
+			}
+			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx))
+
+		case "restart_gift":
+			messageIDs := b.giftMessageIDs(userID)
+			text, markup := giftHandler.RestartAddGift(ctx, userID)
+			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
+				return
+			}
+			for _, msgID := range messageIDs {
+				if msgID == msgRef.MessageID {
+					continue
+				}
+				_ = b.DeleteMessage(ctx, msgRef.ChatID, msgID)
+			}
+			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
+			sentMsg, err := b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, markup)
+			if err == nil && sentMsg != nil && markup != nil {
+				b.setGiftMessageIDs(userID, []int{sentMsg.ID})
+			}
+
+		default:
+			b.logDebug("Unsupported gift confirmation callback: user_id=%d data=%s", userID, data)
 		}
 
 	default:

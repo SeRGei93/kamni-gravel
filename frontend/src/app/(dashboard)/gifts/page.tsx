@@ -1,40 +1,34 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { giftsApi } from '@/api/gifts';
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
-import type { Gift, Event } from '@/types';
+import type { Gift, Event, GiftReviewStatus } from '@/types';
 import GiftsTable from '@/components/gifts/GiftsTable';
-import CreateGiftModal from '@/components/gifts/CreateGiftModal';
 import EditGiftModal from '@/components/gifts/EditGiftModal';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
-import Button from '@/components/ui/button/Button';
+import { GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
+
+type GiftReviewStatusFilter = 'all' | GiftReviewStatus;
 
 export default function GiftsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
+  const [allGifts, setAllGifts] = useState<Gift[]>([]);
+  const [reviewStatusFilter, setReviewStatusFilter] =
+    useState<GiftReviewStatusFilter>('all');
   const [assignedGiftIds, setAssignedGiftIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingGift, setEditingGift] = useState<Gift | null>(null);
 
   // Загрузка событий
   useEffect(() => {
     loadEvents();
   }, []);
-
-  // Загрузка подарков при изменении фильтров
-  useEffect(() => {
-    if (selectedEventId) {
-      loadGifts();
-    } else {
-      setGifts([]);
-    }
-  }, [selectedEventId]);
 
   const loadEvents = async () => {
     try {
@@ -53,16 +47,26 @@ export default function GiftsPage() {
     }
   };
 
-  const loadGifts = async () => {
+  const loadGifts = useCallback(async () => {
     if (!selectedEventId) return;
 
     try {
       setIsLoading(true);
       setError(null);
 
-      // Загружаем подарки
-      const response = await giftsApi.getByEvent(selectedEventId);
-      setGifts(response.gifts);
+      // Загружаем полный список для счётчиков и выбранный фильтр для таблицы.
+      const allResponse = await giftsApi.getByEvent(selectedEventId);
+      setAllGifts(allResponse.gifts);
+
+      if (reviewStatusFilter === 'all') {
+        setGifts(allResponse.gifts);
+      } else {
+        const response = await giftsApi.getByEvent(
+          selectedEventId,
+          reviewStatusFilter
+        );
+        setGifts(response.gifts);
+      }
 
       // Загружаем распределение призов
       try {
@@ -85,7 +89,17 @@ export default function GiftsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedEventId, reviewStatusFilter]);
+
+  // Загрузка подарков при изменении фильтров
+  useEffect(() => {
+    if (selectedEventId) {
+      loadGifts();
+    } else {
+      setGifts([]);
+      setAllGifts([]);
+    }
+  }, [selectedEventId, loadGifts]);
 
   const handleDelete = async (giftId: number) => {
     try {
@@ -99,32 +113,59 @@ export default function GiftsPage() {
     }
   };
 
+  const handleApprove = async (gift: Gift) => {
+    try {
+      await giftsApi.update(gift.id, {
+        description: gift.description,
+        gender_filter: gift.gender_filter || 'all',
+        bike_type_filter: gift.bike_type_filter || 'all',
+        review_status: 'approved',
+        place: gift.place ?? null,
+        criteria_ids: gift.criteria?.map((criteria) => criteria.id) || [],
+      });
+      await loadGifts();
+    } catch (err) {
+      setError('Ошибка проверки подарка');
+      console.error('Failed to approve gift:', err);
+      throw err;
+    }
+  };
+
   const eventOptions = events.map((e) => ({
     value: String(e.id),
     label: e.name,
   }));
+  const pendingReviewCount = gifts.filter(
+    (gift) => gift.review_status === 'pending_review'
+  ).length;
+  const totalPendingReviewCount = allGifts.filter(
+    (gift) => gift.review_status === 'pending_review'
+  ).length;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div>
         <div>
           <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
             Подарки
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Список подарков в призовом фонде
+            Подарки поступают из Telegram и проходят проверку администратора перед распределением
           </p>
         </div>
-        {selectedEventId && (
-          <Button onClick={() => setIsCreateModalOpen(true)}>
-            Добавить подарок
-          </Button>
-        )}
       </div>
 
       {error && (
         <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
           <p className="text-error-600 dark:text-error-400">{error}</p>
+        </div>
+      )}
+
+      {selectedEventId && totalPendingReviewCount > 0 && (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
+          <p className="text-sm font-medium text-warning-700 dark:text-orange-300">
+            На проверке {totalPendingReviewCount} подарков. До проверки они не участвуют в распределении.
+          </p>
         </div>
       )}
 
@@ -142,13 +183,27 @@ export default function GiftsPage() {
               }
             />
           </div>
+          <div>
+            <Label>Статус проверки</Label>
+            <Select
+              options={GIFT_REVIEW_STATUS_FILTER_OPTIONS}
+              defaultValue={reviewStatusFilter}
+              onChange={(value) =>
+                setReviewStatusFilter(value as GiftReviewStatusFilter)
+              }
+            />
+          </div>
         </div>
       </div>
 
       {/* Информация о количестве */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Найдено подарков: {gifts.length}
+          Показано подарков: {gifts.length}
+        </p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Всего: {allGifts.length} · На проверке: {totalPendingReviewCount}
+          {reviewStatusFilter !== 'all' && ` · В фильтре: ${pendingReviewCount}`}
         </p>
       </div>
 
@@ -158,18 +213,9 @@ export default function GiftsPage() {
         assignedGiftIds={assignedGiftIds}
         isLoading={isLoading}
         onEdit={(gift) => setEditingGift(gift)}
+        onApprove={handleApprove}
         onDelete={handleDelete}
       />
-
-      {/* Модальное окно создания подарка */}
-      {selectedEventId && (
-        <CreateGiftModal
-          isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-          eventId={selectedEventId}
-          onSuccess={loadGifts}
-        />
-      )}
 
       {/* Модальное окно редактирования подарка */}
       {editingGift && (

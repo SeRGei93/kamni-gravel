@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
@@ -15,10 +16,10 @@ type GetPrizeDistributionQuery struct {
 
 // GetPrizeDistributionHandler обрабатывает запрос на получение распределения призов
 type GetPrizeDistributionHandler struct {
-	resultRepo     repository.ResultRepository
-	giftRepo       repository.GiftRepository
+	resultRepo      repository.ResultRepository
+	giftRepo        repository.GiftRepository
 	participantRepo repository.ParticipantRepository
-	criteriaRepo   repository.CriteriaRepository
+	criteriaRepo    repository.CriteriaRepository
 }
 
 // NewGetPrizeDistributionHandler создаёт новый handler
@@ -29,10 +30,10 @@ func NewGetPrizeDistributionHandler(
 	criteriaRepo repository.CriteriaRepository,
 ) *GetPrizeDistributionHandler {
 	return &GetPrizeDistributionHandler{
-		resultRepo:     resultRepo,
-		giftRepo:       giftRepo,
+		resultRepo:      resultRepo,
+		giftRepo:        giftRepo,
 		participantRepo: participantRepo,
-		criteriaRepo:   criteriaRepo,
+		criteriaRepo:    criteriaRepo,
 	}
 }
 
@@ -44,10 +45,10 @@ func (h *GetPrizeDistributionHandler) Handle(ctx context.Context, query GetPrize
 		return nil, fmt.Errorf("failed to get results with places: %w", err)
 	}
 
-	// Получаем все подарки события
-	gifts, err := h.giftRepo.FindByEvent(ctx, query.EventID)
+	// В распределении участвуют только подарки, проверенные администратором.
+	gifts, err := h.giftRepo.FindByEventAndReviewStatus(ctx, query.EventID, entity.GiftReviewStatusApproved)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get gifts: %w", err)
+		return nil, fmt.Errorf("failed to get approved gifts: %w", err)
 	}
 
 	// Загружаем критерии для подарков
@@ -96,7 +97,7 @@ type PrizeDistributionResult struct {
 	PlaceByGender   int
 	ResultCriteria  []*entity.Criteria
 	MatchedGifts    []*entity.Gift // Все подходящие подарки
-	MatchReason     string // "criteria", "place", "no_match"
+	MatchReason     string         // "criteria", "place", "no_match"
 }
 
 // distributePrizes распределяет призы по алгоритму matching
@@ -144,14 +145,28 @@ func (h *GetPrizeDistributionHandler) distributePrizes(
 	return distribution
 }
 
-// findAllMatchingGifts находит ВСЕ подходящие подарки
+type giftMatchPriority int
+
+const (
+	giftMatchPriorityCriteriaPlace giftMatchPriority = iota
+	giftMatchPriorityCriteria
+	giftMatchPriorityPlace
+	giftMatchPriorityGeneric
+)
+
+// findAllMatchingGifts находит подходящие подарки лучшего приоритета.
 func (h *GetPrizeDistributionHandler) findAllMatchingGifts(
 	rwp *repository.ResultWithPlace,
 	participant *entity.Participant,
 	gifts []*entity.Gift,
 	usedGifts map[uint]bool,
 ) []*entity.Gift {
-	var matchedGifts []*entity.Gift
+	matchesByPriority := map[giftMatchPriority][]*entity.Gift{
+		giftMatchPriorityCriteriaPlace: {},
+		giftMatchPriorityCriteria:      {},
+		giftMatchPriorityPlace:         {},
+		giftMatchPriorityGeneric:       {},
+	}
 
 	for _, gift := range gifts {
 		// Пропускаем уже использованные
@@ -159,125 +174,76 @@ func (h *GetPrizeDistributionHandler) findAllMatchingGifts(
 			continue
 		}
 
-		// 1. Проверяем bike_type_filter (пустая строка = "all")
+		// Сначала применяем обязательные фильтры допуска: статус проверки, тип велосипеда и пол.
+		if gift.ReviewStatus != entity.GiftReviewStatusApproved {
+			continue
+		}
 		if gift.BikeTypeFilter != "" && gift.BikeTypeFilter != "all" && gift.BikeTypeFilter != string(participant.BikeType) {
 			continue
 		}
-
-		// 2. Проверяем gender_filter (пустая строка = "all")
 		if gift.GenderFilter != "" && gift.GenderFilter != "all" && gift.GenderFilter != string(participant.Gender) {
 			continue
 		}
 
-		// 3. Проверяем критерии (все должны совпадать)
-		if len(gift.Criteria) > 0 {
-			if !h.allCriteriaMatch(gift.Criteria, rwp.Result.Criteria) {
-				continue
-			}
+		priority, ok := h.classifyGiftMatch(gift, rwp)
+		if !ok {
+			continue
 		}
 
-		// 4. Проверяем place
-		if gift.Place != nil {
-			expectedPlace := h.getExpectedPlace(gift, rwp)
-			if *gift.Place != expectedPlace {
-				continue
-			}
-		}
-
-		// Подарок подходит - добавляем в список
-		matchedGifts = append(matchedGifts, gift)
+		matchesByPriority[priority] = append(matchesByPriority[priority], gift)
 	}
 
-	return matchedGifts
+	// Приоритет бизнес-логики: критерии важнее места. Место используется как
+	// вторичный уточняющий сигнал внутри критериальных совпадений, затем идут
+	// place-only и generic. Возвращаем все подарки только одного лучшего уровня,
+	// чтобы участник с критериальным подарком не получал впридачу generic/place-only.
+	priorities := []giftMatchPriority{
+		giftMatchPriorityCriteriaPlace,
+		giftMatchPriorityCriteria,
+		giftMatchPriorityPlace,
+		giftMatchPriorityGeneric,
+	}
+	for _, priority := range priorities {
+		matches := matchesByPriority[priority]
+		if len(matches) == 0 {
+			continue
+		}
+		sort.SliceStable(matches, func(i, j int) bool {
+			return matches[i].ID < matches[j].ID
+		})
+		return matches
+	}
+
+	return nil
 }
 
-// findMatchingGift находит первый подходящий подарок (для обратной совместимости)
-func (h *GetPrizeDistributionHandler) findMatchingGift(
-	rwp *repository.ResultWithPlace,
-	participant *entity.Participant,
-	gifts []*entity.Gift,
-	usedGifts map[uint]bool,
-) *entity.Gift {
-	matchedGifts := h.findAllMatchingGifts(rwp, participant, gifts, usedGifts)
-	if len(matchedGifts) == 0 {
-		return nil
-	}
-	return matchedGifts[0]
-}
+func (h *GetPrizeDistributionHandler) classifyGiftMatch(gift *entity.Gift, rwp *repository.ResultWithPlace) (giftMatchPriority, bool) {
+	hasCriteria := len(gift.Criteria) > 0
+	hasPlace := gift.Place != nil
 
-// Старая логика для совместимости
-func (h *GetPrizeDistributionHandler) findMatchingGiftOld(
-	rwp *repository.ResultWithPlace,
-	participant *entity.Participant,
-	gifts []*entity.Gift,
-	usedGifts map[uint]bool,
-) *entity.Gift {
-	// Фильтруем подарки по приоритету
-	var candidates []*entity.Gift
-
-	for _, gift := range gifts {
-		// Пропускаем уже использованные
-		if usedGifts[gift.ID] {
-			continue
-		}
-
-		// 1. Проверяем bike_type_filter
-		if gift.BikeTypeFilter != "all" && gift.BikeTypeFilter != string(participant.BikeType) {
-			continue
-		}
-
-		// 2. Проверяем gender_filter
-		if gift.GenderFilter != "all" && gift.GenderFilter != string(participant.Gender) {
-			continue
-		}
-
-		// 3. Проверяем критерии (все должны совпадать)
-		if len(gift.Criteria) > 0 {
-			if !h.allCriteriaMatch(gift.Criteria, rwp.Result.Criteria) {
-				continue
-			}
-		}
-
-		// 4. Проверяем place
-		if gift.Place != nil {
-			expectedPlace := h.getExpectedPlace(gift, rwp)
-			if *gift.Place != expectedPlace {
-				continue
-			}
-		}
-
-		candidates = append(candidates, gift)
+	if hasCriteria && !h.allCriteriaMatch(gift.Criteria, rwp.Result.Criteria) {
+		return 0, false
 	}
 
-	// Приоритет: сначала с критериями, потом с местом, потом остальные
-	if len(candidates) == 0 {
-		return nil
-	}
-
-	// Сортируем по приоритету
-	var bestGift *entity.Gift
-	for _, gift := range candidates {
-		if bestGift == nil {
-			bestGift = gift
-			continue
-		}
-
-		// Приоритет: критерии > место > остальные
-		bestHasCriteria := len(bestGift.Criteria) > 0
-		giftHasCriteria := len(gift.Criteria) > 0
-		bestHasPlace := bestGift.Place != nil
-		giftHasPlace := gift.Place != nil
-
-		if giftHasCriteria && !bestHasCriteria {
-			bestGift = gift
-		} else if giftHasCriteria == bestHasCriteria {
-			if giftHasPlace && !bestHasPlace {
-				bestGift = gift
-			}
+	placeMatches := false
+	if hasPlace {
+		expectedPlace := h.getExpectedPlace(gift, rwp)
+		placeMatches = *gift.Place == expectedPlace
+		if !placeMatches {
+			return 0, false
 		}
 	}
 
-	return bestGift
+	switch {
+	case hasCriteria && hasPlace:
+		return giftMatchPriorityCriteriaPlace, true
+	case hasCriteria:
+		return giftMatchPriorityCriteria, true
+	case hasPlace:
+		return giftMatchPriorityPlace, true
+	default:
+		return giftMatchPriorityGeneric, true
+	}
 }
 
 // allCriteriaMatch проверяет, что все критерии подарка присутствуют в результате
@@ -308,7 +274,7 @@ func (h *GetPrizeDistributionHandler) allCriteriaMatch(giftCriteria, resultCrite
 
 // getExpectedPlace возвращает ожидаемое место в зависимости от gender_filter подарка
 func (h *GetPrizeDistributionHandler) getExpectedPlace(gift *entity.Gift, rwp *repository.ResultWithPlace) int {
-	if gift.GenderFilter == "all" {
+	if gift.GenderFilter == "" || gift.GenderFilter == "all" {
 		return rwp.PlaceAbsolute
 	}
 	return rwp.PlaceByGender

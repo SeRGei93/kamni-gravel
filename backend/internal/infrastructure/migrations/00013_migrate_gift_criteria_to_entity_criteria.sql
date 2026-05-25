@@ -1,6 +1,6 @@
 -- +goose Up
--- Создаём новую таблицу entity_criteria
-CREATE TABLE entity_criteria (
+-- Создаём новую таблицу entity_criteria, если база ещё на старой схеме.
+CREATE TABLE IF NOT EXISTS entity_criteria (
     id SERIAL PRIMARY KEY,
     entity_type VARCHAR(50) NOT NULL CHECK(entity_type IN ('gift', 'result')),
     entity_id INTEGER NOT NULL,
@@ -9,17 +9,24 @@ CREATE TABLE entity_criteria (
     UNIQUE(entity_type, entity_id, criteria_id)
 );
 
-CREATE INDEX idx_entity_criteria_entity ON entity_criteria(entity_type, entity_id);
-CREATE INDEX idx_entity_criteria_criteria ON entity_criteria(criteria_id);
+CREATE INDEX IF NOT EXISTS idx_entity_criteria_entity ON entity_criteria(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_entity_criteria_criteria ON entity_criteria(criteria_id);
 
--- Мигрируем данные из gift_criteria в entity_criteria
-INSERT INTO entity_criteria (entity_type, entity_id, criteria_id)
-SELECT 'gift', gift_id, criteria_id
-FROM gift_criteria
-ON CONFLICT (entity_type, entity_id, criteria_id) DO NOTHING;
+-- Мигрируем данные из gift_criteria в entity_criteria только для баз со старой таблицей.
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF to_regclass('public.gift_criteria') IS NOT NULL THEN
+        INSERT INTO entity_criteria (entity_type, entity_id, criteria_id)
+        SELECT 'gift', gift_id, criteria_id
+        FROM gift_criteria
+        ON CONFLICT (entity_type, entity_id, criteria_id) DO NOTHING;
+    END IF;
+END $$;
+-- +goose StatementEnd
 
 -- Удаляем старую таблицу
-DROP TABLE gift_criteria;
+DROP TABLE IF EXISTS gift_criteria;
 
 -- +goose Down
 -- Восстанавливаем gift_criteria

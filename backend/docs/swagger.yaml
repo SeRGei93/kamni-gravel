@@ -199,6 +199,8 @@ paths:
                 active:
                   type: boolean
                   default: true
+                telegram_texts:
+                  $ref: '#/components/schemas/EventTelegramTexts'
       responses:
         '201':
           description: Событие создано
@@ -249,6 +251,8 @@ paths:
                   format: date-time
                 active:
                   type: boolean
+                telegram_texts:
+                  $ref: '#/components/schemas/EventTelegramTexts'
       responses:
         '200':
           description: Событие обновлено
@@ -267,6 +271,39 @@ paths:
       responses:
         '204':
           description: Событие удалено
+
+  /events/{id}/gpx-file:
+    post:
+      tags: [Events]
+      summary: Загрузить GPX файл события
+      description: Сохраняет GPX файл в общем файловом хранилище и обновляет gpx_file_path у события.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: GPX файл маршрута события
+      responses:
+        '200':
+          description: Событие с обновлённым путём к GPX файлу
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ==================== PARTICIPANTS ====================
   /events/{eventId}/participants:
@@ -523,6 +560,12 @@ paths:
       summary: Список подарков события
       parameters:
         - $ref: '#/components/parameters/EventId'
+        - name: review_status
+          in: query
+          schema:
+            type: string
+            enum: [pending_review, approved]
+          description: Фильтр по статусу проверки. Если не передан, возвращаются все подарки события.
       responses:
         '200':
           description: Список подарков
@@ -537,45 +580,6 @@ paths:
                       $ref: '#/components/schemas/Gift'
                   total:
                     type: integer
-
-    post:
-      tags: [Gifts]
-      summary: Добавить подарок
-      security:
-        - BearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/EventId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [user_id, description]
-              properties:
-                user_id:
-                  type: integer
-                  format: int64
-                description:
-                  type: string
-                  example: Велосипедный насос высокого давления
-                attachments:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      telegram_file_id:
-                        type: string
-                      file_type:
-                        type: string
-                        enum: [photo, document]
-      responses:
-        '201':
-          description: Подарок добавлен
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Gift'
 
   /gifts/{id}:
     get:
@@ -594,6 +598,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Gift'
+
+    put:
+      tags: [Gifts]
+      summary: Обновить подарок
+      description: Обновляет поля подарка и, если передан `criteria_ids`, атомарно заменяет критерии подарка.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+                gender_filter:
+                  type: string
+                  enum: [all, male, female]
+                bike_type_filter:
+                  type: string
+                  enum: [all, gravel, mtb, road, single_speed, tandem]
+                review_status:
+                  type: string
+                  enum: [pending_review, approved]
+                place:
+                  type: integer
+                  nullable: true
+                  description: Явный null очищает место, отсутствие поля сохраняет текущее значение
+                criteria_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Подарок обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gift'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
     delete:
       tags: [Gifts]
@@ -1026,12 +1079,41 @@ components:
           format: date-time
         gpx_file_path:
           type: string
+        telegram_texts:
+          $ref: '#/components/schemas/EventTelegramTexts'
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    EventTelegramTexts:
+      type: object
+      description: Редактируемые Telegram-тексты события для сценария добавления подарка.
+      properties:
+        gift_gender_step:
+          type: string
+        gift_bike_step:
+          type: string
+        gift_description_step:
+          type: string
+          description: Текст должен явно просить пользователя написать описание следующим сообщением.
+        gift_photo_step:
+          type: string
+        gift_photo_added:
+          type: string
+          description: Поддерживает плейсхолдер {photo_count}.
+        gift_preview:
+          type: string
+          description: Поддерживает плейсхолдеры {gender}, {bike_type}, {description}, {photo_count}, {photo_line}.
+        gift_success:
+          type: string
+          description: Поддерживает плейсхолдеры {gender}, {bike_type}, {description}, {photo_count}, {photo_line}.
+        gift_cancelled:
+          type: string
+        gift_session_error:
+          type: string
 
     Participant:
       type: object
@@ -1137,6 +1219,19 @@ components:
           type: integer
         description:
           type: string
+        gender_filter:
+          type: string
+          enum: [all, male, female]
+        bike_type_filter:
+          type: string
+          enum: [all, gravel, mtb, road, single_speed, tandem]
+        review_status:
+          type: string
+          enum: [pending_review, approved]
+          description: Статус проверки подарка администратором
+        place:
+          type: integer
+          nullable: true
         attachments:
           type: array
           items:

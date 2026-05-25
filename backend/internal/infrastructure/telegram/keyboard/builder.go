@@ -130,6 +130,19 @@ func GiftPhotoMenu() models.InlineKeyboardMarkup {
 		Build()
 }
 
+// GiftConfirmationMenu создаёт меню подтверждения подарка перед сохранением.
+func GiftConfirmationMenu() models.InlineKeyboardMarkup {
+	return NewBuilder().
+		AddRow(
+			Button("✅ Подтвердить", "confirm_gift"),
+			Button("🔄 Заполнить заново", "restart_gift"),
+		).
+		AddRow(
+			Button("❌ Отмена", "cancel"),
+		).
+		Build()
+}
+
 // ConfirmMenu создаёт меню подтверждения
 func ConfirmMenu(confirmData, cancelData string) models.InlineKeyboardMarkup {
 	return NewBuilder().

@@ -28,6 +28,17 @@ export const BIKE_TYPE_OPTIONS_WITHOUT_ALL = [
   { value: 'tandem', label: 'Тандем' },
 ];
 
+export const GIFT_REVIEW_STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'Все' },
+  { value: 'pending_review', label: 'На проверке' },
+  { value: 'approved', label: 'Проверен' },
+];
+
+export const GIFT_REVIEW_STATUS_OPTIONS = [
+  { value: 'pending_review', label: 'Новый / на проверке' },
+  { value: 'approved', label: 'Проверен' },
+];
+
 export const CRITERIA_TYPE_OPTIONS = [
   { value: 'speed', label: 'Скорость' },
   { value: 'photo', label: 'Фото' },

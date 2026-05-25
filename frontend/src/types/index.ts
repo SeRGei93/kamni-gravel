@@ -6,6 +6,7 @@ export type GenderFilter = 'all' | 'male' | 'female';
 export type BikeTypeFilter = 'all' | 'gravel' | 'mtb' | 'road' | 'single_speed' | 'tandem';
 export type FileType = 'photo' | 'document';
 export type CriteriaType = 'speed' | 'photo' | 'beer' | 'custom';
+export type GiftReviewStatus = 'pending_review' | 'approved';
 
 export interface User {
   id: number;
@@ -73,8 +74,21 @@ export interface Event {
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;
+  telegram_texts: EventTelegramTexts;
   created_at: string;
   updated_at: string;
+}
+
+export interface EventTelegramTexts {
+  gift_gender_step: string;
+  gift_bike_step: string;
+  gift_description_step: string;
+  gift_photo_step: string;
+  gift_photo_added: string;
+  gift_preview: string;
+  gift_success: string;
+  gift_cancelled: string;
+  gift_session_error: string;
 }
 
 export interface EventListResponse {
@@ -99,6 +113,7 @@ export interface Gift {
   description: string;
   gender_filter?: GenderFilter;
   bike_type_filter?: BikeTypeFilter;
+  review_status: GiftReviewStatus;
   place?: number;
   attachments?: GiftAttachment[];
   criteria?: Criteria[];
@@ -170,6 +185,7 @@ export interface CreateEventRequest {
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;
+  telegram_texts?: EventTelegramTexts;
 }
 
 export interface UpdateEventRequest {
@@ -179,6 +195,7 @@ export interface UpdateEventRequest {
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;
+  telegram_texts?: EventTelegramTexts;
 }
 
 export interface CreateNominationRequest {
@@ -258,23 +275,13 @@ export interface UpdateCriteriaRequest {
   criteria_type?: CriteriaType;
 }
 
-export interface CreateGiftRequest {
-  user_id: number;
-  description: string;
-  attachments?: GiftAttachmentRequest[];
-}
-
 export interface UpdateGiftRequest {
   description?: string;
   gender_filter?: GenderFilter;
   bike_type_filter?: BikeTypeFilter;
+  review_status?: GiftReviewStatus;
   place?: number | null;
   criteria_ids?: number[];
-}
-
-export interface GiftAttachmentRequest {
-  telegram_file_id: string;
-  file_type: FileType;
 }
 
 export interface PrizeDistribution {

@@ -11,8 +11,19 @@ import Badge from '@/components/ui/badge/Badge';
 import { giftsApi } from '@/api/gifts';
 import { criteriaApi } from '@/api/criteria';
 import { getCriteriaColor } from '@/utils/criteria';
-import type { Gift, Criteria, UpdateGiftRequest, GenderFilter, BikeTypeFilter } from '@/types';
-import { GENDER_OPTIONS, BIKE_TYPE_OPTIONS } from '@/constants';
+import type {
+  Gift,
+  Criteria,
+  UpdateGiftRequest,
+  GenderFilter,
+  BikeTypeFilter,
+  GiftReviewStatus,
+} from '@/types';
+import {
+  GENDER_OPTIONS,
+  BIKE_TYPE_OPTIONS,
+  GIFT_REVIEW_STATUS_OPTIONS,
+} from '@/constants';
 
 interface EditGiftModalProps {
   isOpen: boolean;
@@ -30,6 +41,8 @@ export default function EditGiftModal({
   const [description, setDescription] = useState('');
   const [genderFilter, setGenderFilter] = useState<GenderFilter>('all');
   const [bikeTypeFilter, setBikeTypeFilter] = useState<BikeTypeFilter>('all');
+  const [reviewStatus, setReviewStatus] =
+    useState<GiftReviewStatus>('pending_review');
   const [place, setPlace] = useState('');
   const [allCriteria, setAllCriteria] = useState<Criteria[]>([]);
   const [selectedCriteriaIds, setSelectedCriteriaIds] = useState<number[]>([]);
@@ -43,6 +56,7 @@ export default function EditGiftModal({
       setDescription(gift.description);
       setGenderFilter(gift.gender_filter || 'all');
       setBikeTypeFilter(gift.bike_type_filter || 'all');
+      setReviewStatus(gift.review_status);
       setPlace(gift.place?.toString() || '');
       setSelectedCriteriaIds(gift.criteria?.map((c) => c.id) || []);
       loadCriteria();
@@ -91,6 +105,7 @@ export default function EditGiftModal({
         description: description.trim(),
         gender_filter: genderFilter || 'all',
         bike_type_filter: bikeTypeFilter || 'all',
+        review_status: reviewStatus,
         place: place ? parseInt(place, 10) : null,
         criteria_ids: selectedCriteriaIds,
       };
@@ -147,7 +162,7 @@ export default function EditGiftModal({
                 />
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <Label>Фильтр по полу</Label>
                   <Select
@@ -171,6 +186,16 @@ export default function EditGiftModal({
                     placeholder="Например: 1, 2, 3"
                     value={place}
                     onChange={(e) => setPlace(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Статус проверки</Label>
+                  <Select
+                    options={GIFT_REVIEW_STATUS_OPTIONS}
+                    defaultValue={reviewStatus}
+                    onChange={(value) =>
+                      setReviewStatus(value as GiftReviewStatus)
+                    }
                   />
                 </div>
               </div>

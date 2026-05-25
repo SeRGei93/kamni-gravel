@@ -14,10 +14,8 @@ export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   
   const { isOpen: isCreateOpen, openModal: openCreateModal, closeModal: closeCreateModal } = useModal();
-  const { isOpen: isEditOpen, openModal: openEditModal, closeModal: closeEditModal } = useModal();
 
   useEffect(() => {
     loadEvents();
@@ -37,7 +35,10 @@ export default function EventsPage() {
     }
   };
 
-  const handleCreate = async (data: CreateEventRequest | UpdateEventRequest) => {
+  const handleCreate = async (
+    data: CreateEventRequest | UpdateEventRequest,
+    gpxFile?: File
+  ) => {
     try {
       // При создании все поля обязательны
       const createData: CreateEventRequest = {
@@ -46,34 +47,16 @@ export default function EventsPage() {
         active: data.active ?? true,
         start_date: data.start_date,
         end_date: data.end_date,
-        gpx_file_path: data.gpx_file_path,
       };
-      await eventsApi.create(createData);
+      const event = await eventsApi.create(createData);
+      if (gpxFile) {
+        await eventsApi.uploadGpxFile(event.id, gpxFile);
+      }
       closeCreateModal();
       await loadEvents();
     } catch (err) {
       setError('Ошибка создания события');
       console.error('Failed to create event:', err);
-      throw err;
-    }
-  };
-
-  const handleEdit = (event: Event) => {
-    setEditingEvent(event);
-    openEditModal();
-  };
-
-  const handleUpdate = async (data: UpdateEventRequest) => {
-    if (!editingEvent) return;
-
-    try {
-      await eventsApi.update(editingEvent.id, data);
-      closeEditModal();
-      setEditingEvent(null);
-      await loadEvents();
-    } catch (err) {
-      setError('Ошибка обновления события');
-      console.error('Failed to update event:', err);
       throw err;
     }
   };
@@ -91,11 +74,6 @@ export default function EventsPage() {
 
   const handleCancelCreate = () => {
     closeCreateModal();
-  };
-
-  const handleCancelEdit = () => {
-    closeEditModal();
-    setEditingEvent(null);
   };
 
   return (
@@ -124,7 +102,6 @@ export default function EventsPage() {
       <EventsTable
         events={events}
         isLoading={isLoading}
-        onEdit={handleEdit}
         onDelete={handleDelete}
       />
 
@@ -144,29 +121,6 @@ export default function EventsPage() {
               onSubmit={handleCreate}
               onCancel={handleCancelCreate}
             />
-          </div>
-        </div>
-      </Modal>
-
-      {/* Модальное окно редактирования */}
-      <Modal isOpen={isEditOpen} onClose={closeEditModal} className="max-w-2xl m-4">
-        <div className="no-scrollbar relative w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-4 dark:bg-gray-900 lg:p-11">
-          <div className="px-2 pr-14">
-            <h4 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white/90">
-              Редактировать событие
-            </h4>
-            <p className="mb-6 text-sm text-gray-500 dark:text-gray-400 lg:mb-7">
-              Измените данные события
-            </p>
-          </div>
-          <div className="px-2">
-            {editingEvent && (
-              <EventForm
-                event={editingEvent}
-                onSubmit={handleUpdate}
-                onCancel={handleCancelEdit}
-              />
-            )}
           </div>
         </div>
       </Modal>

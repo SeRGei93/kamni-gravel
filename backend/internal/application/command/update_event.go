@@ -12,13 +12,14 @@ import (
 
 // UpdateEventCommand представляет команду обновления события
 type UpdateEventCommand struct {
-	EventID     uint
-	Name        *string
-	Description *string
-	Active      *bool
-	StartDate   *time.Time
-	EndDate     *time.Time
-	GPXFilePath *string
+	EventID       uint
+	Name          *string
+	Description   *string
+	Active        *bool
+	StartDate     *time.Time
+	EndDate       *time.Time
+	GPXFilePath   *string
+	TelegramTexts *entity.EventTelegramTexts
 }
 
 // UpdateEventHandler обрабатывает обновление события
@@ -83,6 +84,10 @@ func (h *UpdateEventHandler) Handle(ctx context.Context, cmd UpdateEventCommand)
 
 	if cmd.GPXFilePath != nil {
 		event.GPXFilePath = *cmd.GPXFilePath
+	}
+
+	if cmd.TelegramTexts != nil {
+		event.TelegramTexts = entity.NormalizeEventTelegramTexts(*cmd.TelegramTexts)
 	}
 
 	// Валидация дат

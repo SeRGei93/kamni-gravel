@@ -2,15 +2,19 @@ package query
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 )
 
+var ErrInvalidGiftReviewStatusFilter = errors.New("invalid gift review status filter")
+
 // GetGiftsQuery представляет запрос на получение подарков
 type GetGiftsQuery struct {
-	EventID uint
+	EventID      uint
+	ReviewStatus *entity.GiftReviewStatus
 }
 
 // GetGiftsHandler обрабатывает запрос на получение подарков
@@ -33,9 +37,22 @@ func NewGetGiftsHandler(
 // Handle выполняет запрос на получение подарков
 func (h *GetGiftsHandler) Handle(ctx context.Context, query GetGiftsQuery) ([]*entity.Gift, error) {
 	// Получаем все подарки события
-	gifts, err := h.giftRepo.FindByEvent(ctx, query.EventID)
+	var gifts []*entity.Gift
+	var err error
+	if query.ReviewStatus != nil {
+		if !query.ReviewStatus.IsValid() {
+			return nil, ErrInvalidGiftReviewStatusFilter
+		}
+		gifts, err = h.giftRepo.FindByEventAndReviewStatus(ctx, query.EventID, *query.ReviewStatus)
+	} else {
+		gifts, err = h.giftRepo.FindByEvent(ctx, query.EventID)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to find gifts: %w", err)
+		reviewStatus := ""
+		if query.ReviewStatus != nil {
+			reviewStatus = query.ReviewStatus.String()
+		}
+		return nil, fmt.Errorf("failed to find gifts for event %d review_status=%s: %w", query.EventID, reviewStatus, err)
 	}
 
 	// Загружаем критерии для каждого подарка

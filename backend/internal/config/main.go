@@ -14,8 +14,9 @@ type Config struct {
 	Env string
 	DB  DBConfig
 
-	Bot BotConfig
-	API APIConfig
+	Bot   BotConfig
+	API   APIConfig
+	Files FileStorageConfig
 }
 
 // DBConfig представляет конфигурацию подключения к базе данных
@@ -30,21 +31,26 @@ type DBConfig struct {
 
 // BotConfig представляет конфигурацию Telegram бота
 type BotConfig struct {
-	Token         string
-	AdminChat     int64
-	PublicChat    int64
-	Debug         bool
+	Token          string
+	AdminChat      int64
+	PublicChat     int64
+	Debug          bool
 	SessionTimeout time.Duration
 }
 
 // APIConfig представляет конфигурацию HTTP API сервера
 type APIConfig struct {
-	Host          string
-	Port          int
-	JWTSecret     string
-	JWTAccessTTL  time.Duration
+	Host           string
+	Port           int
+	JWTSecret      string
+	JWTAccessTTL   time.Duration
 	JWTRefreshTTL  time.Duration
 	AllowedOrigins []string
+}
+
+// FileStorageConfig представляет конфигурацию локального файлового хранилища
+type FileStorageConfig struct {
+	Path string
 }
 
 // MustLoad загружает конфигурацию из переменных окружения
@@ -77,6 +83,10 @@ func MustLoad(_ string) *Config {
 			JWTAccessTTL:   getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
 			JWTRefreshTTL:  getEnvDuration("JWT_REFRESH_TTL", 168*time.Hour),
 			AllowedOrigins: parseAllowedOrigins(getEnv("ALLOWED_ORIGINS", "*")),
+		},
+
+		Files: FileStorageConfig{
+			Path: getEnv("FILE_STORAGE_PATH", "storage"),
 		},
 	}
 
@@ -166,7 +176,7 @@ func parseAllowedOrigins(value string) []string {
 	if value == "*" {
 		return []string{"*"}
 	}
-	
+
 	origins := strings.Split(value, ",")
 	result := make([]string, 0, len(origins))
 	for _, origin := range origins {
@@ -175,11 +185,11 @@ func parseAllowedOrigins(value string) []string {
 			result = append(result, origin)
 		}
 	}
-	
+
 	if len(result) == 0 {
 		return []string{"*"}
 	}
-	
+
 	return result
 }
 

@@ -14,14 +14,15 @@ import (
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/http/handler"
 	"gravel_bot/internal/infrastructure/http/middleware"
+	"gravel_bot/internal/infrastructure/storage"
 	"gravel_bot/internal/pkg/jwt"
 )
 
 // Server представляет HTTP сервер
 type Server struct {
-	router              *chi.Mux
-	httpServer          *http.Server
-	
+	router     *chi.Mux
+	httpServer *http.Server
+
 	// Repositories
 	userRepo            repository.UserRepository
 	eventRepo           repository.EventRepository
@@ -29,13 +30,12 @@ type Server struct {
 	resultRepo          repository.ResultRepository
 	giftRepo            repository.GiftRepository
 	criteriaRepo        repository.CriteriaRepository
-	giftCriteriaRepo    repository.GiftCriteriaRepository
 	prizeAssignmentRepo repository.PrizeAssignmentRepository
 	adminRepo           repository.AdminRepository
 
 	// Command handlers
 	registerParticipantHandler *command.RegisterParticipantHandler
-	addGiftHandler             *command.AddGiftHandler
+	updateGiftHandler          *command.UpdateGiftHandler
 	submitResultHandler        *command.SubmitResultHandler
 	assignPrizeHandler         *command.AssignPrizeHandler
 
@@ -68,13 +68,14 @@ type Server struct {
 
 // Config представляет конфигурацию сервера
 type Config struct {
-	Host           string
-	Port           int
-	AllowedOrigins []string
-	JWTSecret      string
-	JWTAccessTTL   time.Duration
-	JWTRefreshTTL  time.Duration
-	BotToken       string // Токен Telegram бота для получения файлов
+	Host            string
+	Port            int
+	AllowedOrigins  []string
+	JWTSecret       string
+	JWTAccessTTL    time.Duration
+	JWTRefreshTTL   time.Duration
+	BotToken        string // Токен Telegram бота для получения файлов
+	FileStoragePath string
 }
 
 // NewServer создаёт новый HTTP сервер
@@ -86,7 +87,6 @@ func NewServer(
 	resultRepo repository.ResultRepository,
 	giftRepo repository.GiftRepository,
 	criteriaRepo repository.CriteriaRepository,
-	giftCriteriaRepo repository.GiftCriteriaRepository,
 	prizeAssignmentRepo repository.PrizeAssignmentRepository,
 	adminRepo repository.AdminRepository,
 ) *Server {
@@ -95,12 +95,6 @@ func NewServer(
 		userRepo,
 		eventRepo,
 		participantRepo,
-	)
-
-	addGiftHandler := command.NewAddGiftHandler(
-		userRepo,
-		eventRepo,
-		giftRepo,
 	)
 
 	submitResultHandler := command.NewSubmitResultHandler(
@@ -142,6 +136,9 @@ func NewServer(
 	createCriteriaHandler := command.NewCreateCriteriaHandler(criteriaRepo)
 	updateCriteriaHandler := command.NewUpdateCriteriaHandler(criteriaRepo)
 
+	// Создаём command handlers для gifts
+	updateGiftHandler := command.NewUpdateGiftHandler(giftRepo)
+
 	// Создаём query handlers для criteria
 	getCriteriaHandler := query.NewGetCriteriaHandler(criteriaRepo)
 	getCriteriaByIDHandler := query.NewGetCriteriaByIDHandler(criteriaRepo)
@@ -155,12 +152,14 @@ func NewServer(
 
 	// Создаём HTTP handlers
 	authHandler := handler.NewAuthHandler(adminRepo, jwtManager)
+	eventFileStorage := storage.NewLocalFileStorage(cfg.FileStoragePath)
 	eventsHandler := handler.NewEventsHandler(
 		eventRepo,
 		getEventsHandler,
 		getEventByIDHandler,
 		createEventHandler,
 		updateEventHandler,
+		eventFileStorage,
 	)
 	// Создаём query handlers для распределения призов (нужны для participantsHandler)
 	getPrizeDistributionHandlerTemp := query.NewGetPrizeDistributionHandler(
@@ -169,7 +168,7 @@ func NewServer(
 		participantRepo,
 		criteriaRepo,
 	)
-	
+
 	participantsHandler := handler.NewParticipantsHandler(
 		participantRepo,
 		resultRepo,
@@ -184,11 +183,9 @@ func NewServer(
 	)
 	giftsHandler := handler.NewGiftsHandler(
 		giftRepo,
-		giftCriteriaRepo,
-		criteriaRepo,
 		getGiftsHandler,
 		getGiftByIDHandler,
-		addGiftHandler,
+		updateGiftHandler,
 	)
 	criteriaHandler := handler.NewCriteriaHandler(
 		criteriaRepo,
@@ -206,7 +203,7 @@ func NewServer(
 	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo)
 	statsHandler := handler.NewStatsHandler(getStatsHandler)
 	telegramHandler := handler.NewTelegramHandler(cfg.BotToken)
-	
+
 	// Создаём query handlers для распределения призов
 	getPrizeDistributionHandler := query.NewGetPrizeDistributionHandler(
 		resultRepo,
@@ -215,7 +212,7 @@ func NewServer(
 		criteriaRepo,
 	)
 	getResultsWithPlacesHandler := query.NewGetResultsWithPlacesHandler(resultRepo)
-	
+
 	prizeDistributionHandler := handler.NewPrizeDistributionHandler(
 		getPrizeDistributionHandler,
 		getResultsWithPlacesHandler,
@@ -228,11 +225,10 @@ func NewServer(
 		resultRepo:                    resultRepo,
 		giftRepo:                      giftRepo,
 		criteriaRepo:                  criteriaRepo,
-		giftCriteriaRepo:              giftCriteriaRepo,
 		prizeAssignmentRepo:           prizeAssignmentRepo,
 		adminRepo:                     adminRepo,
 		registerParticipantHandler:    registerParticipantHandler,
-		addGiftHandler:                addGiftHandler,
+		updateGiftHandler:             updateGiftHandler,
 		submitResultHandler:           submitResultHandler,
 		assignPrizeHandler:            assignPrizeHandler,
 		getParticipantsHandler:        getParticipantsHandler,
@@ -251,7 +247,7 @@ func NewServer(
 		giftsHandler:                  giftsHandler,
 		criteriaHandler:               criteriaHandler,
 		prizeAssignmentsHandler:       prizeAssignmentsHandler,
-		prizeDistributionHandler:     prizeDistributionHandler,
+		prizeDistributionHandler:      prizeDistributionHandler,
 		statsHandler:                  statsHandler,
 		telegramHandler:               telegramHandler,
 		jwtManager:                    jwtManager,
@@ -280,7 +276,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 	// Middleware
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logger)
-	
+
 	if len(cfg.AllowedOrigins) > 0 {
 		r.Use(middleware.CORSWithOrigins(cfg.AllowedOrigins))
 	} else {
@@ -318,7 +314,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 		// Results routes (public read, protected write)
 		r.Get("/participants/{participantId}/results", s.resultsHandler.GetByParticipant)
 		r.Get("/results/{id}", s.resultsHandler.GetByID)
-		
+
 		// Prize Distribution routes (public read)
 		r.Get("/events/{id}/prize-distribution", s.prizeDistributionHandler.GetPrizeDistribution)
 		r.Get("/events/{id}/results", s.prizeDistributionHandler.GetResultsWithPlaces)
@@ -352,6 +348,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			// Events admin routes
 			r.Post("/events", s.eventsHandler.Create)
 			r.Put("/events/{id}", s.eventsHandler.Update)
+			r.Post("/events/{id}/gpx-file", s.eventsHandler.UploadGPXFile)
 			r.Delete("/events/{id}", s.eventsHandler.Delete)
 
 			// Participants admin routes
@@ -367,7 +364,6 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Delete("/results/{id}/criteria/{criteriaId}", s.resultsHandler.RemoveCriteria)
 
 			// Gifts admin routes
-			r.Post("/events/{eventId}/gifts", s.giftsHandler.Create)
 			r.Put("/gifts/{id}", s.giftsHandler.Update)
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)
 

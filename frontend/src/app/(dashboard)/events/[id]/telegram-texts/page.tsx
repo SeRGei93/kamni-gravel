@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { eventsApi } from '@/api/events';
-import EventForm from '@/components/events/EventForm';
-import type { CreateEventRequest, Event, UpdateEventRequest } from '@/types';
+import EventTelegramTextsForm from '@/components/events/EventTelegramTextsForm';
+import type { Event, EventTelegramTexts } from '@/types';
 
-export default function EventEditPage() {
+export default function EventTelegramTextsPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const eventId = useMemo(() => Number(params.id), [params.id]);
@@ -39,21 +39,18 @@ export default function EventEditPage() {
     loadEvent();
   }, [loadEvent]);
 
-  const handleSubmit = async (
-    data: CreateEventRequest | UpdateEventRequest,
-    gpxFile?: File
-  ) => {
+  const handleSubmit = async (telegramTexts: EventTelegramTexts) => {
     try {
       setIsSaving(true);
       setError(null);
-      await eventsApi.update(eventId, data);
-      if (gpxFile) {
-        await eventsApi.uploadGpxFile(eventId, gpxFile);
-      }
+      const updated = await eventsApi.update(eventId, {
+        telegram_texts: telegramTexts,
+      });
+      setEvent(updated);
       router.push('/events');
     } catch (err) {
-      setError('Ошибка сохранения события');
-      console.error('Failed to update event:', err);
+      setError('Ошибка сохранения текстов');
+      console.error('Failed to update event telegram texts:', err);
       throw err;
     } finally {
       setIsSaving(false);
@@ -76,7 +73,7 @@ export default function EventEditPage() {
     <div className="space-y-6">
       <div>
         <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
-          Редактировать событие
+          Тексты Telegram
         </h1>
         <p className="text-gray-600 dark:text-gray-400">
           {event ? event.name : `Событие #${eventId}`}
@@ -90,14 +87,12 @@ export default function EventEditPage() {
       )}
 
       {event && (
-        <div className="max-w-2xl rounded-xl border border-gray-200 bg-white p-5 dark:border-white/[0.05] dark:bg-white/[0.03] lg:p-6">
-          <EventForm
-            event={event}
-            onSubmit={handleSubmit}
-            onCancel={handleCancel}
-            isLoading={isSaving}
-          />
-        </div>
+        <EventTelegramTextsForm
+          texts={event.telegram_texts}
+          onSubmit={handleSubmit}
+          onCancel={handleCancel}
+          isLoading={isSaving}
+        />
       )}
     </div>
   );

@@ -11,7 +11,8 @@ import (
 )
 
 var (
-	ErrEmptyDescription = errors.New("gift description cannot be empty")
+	ErrEmptyDescription          = errors.New("gift description cannot be empty")
+	ErrInvalidAttachmentFileType = errors.New("gift attachment file type must be photo or document")
 )
 
 // AddGiftCommand представляет команду добавления подарка
@@ -86,27 +87,40 @@ func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entit
 		Description:    cmd.Description,
 		GenderFilter:   genderFilter,
 		BikeTypeFilter: bikeTypeFilter,
+		ReviewStatus:   entity.GiftReviewStatusPendingReview,
 		CreatedAt:      time.Now(),
 		User:           user,
 	}
 
-	// Сохраняем подарок в БД
-	if err := h.giftRepo.Create(ctx, gift); err != nil {
-		return nil, fmt.Errorf("failed to create gift: %w", err)
-	}
-
-	// Добавляем прикреплённые файлы
+	// Готовим прикреплённые файлы до создания domain entities с невалидным типом.
+	attachments := make([]*entity.GiftAttachment, 0, len(cmd.Attachments))
 	for _, attachData := range cmd.Attachments {
-		attachment := &entity.GiftAttachment{
-			GiftID:         gift.ID,
+		if !isValidGiftAttachmentFileType(attachData.FileType) {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidAttachmentFileType, attachData.FileType)
+		}
+		attachments = append(attachments, &entity.GiftAttachment{
 			TelegramFileID: attachData.TelegramFileID,
 			FileType:       attachData.FileType,
-		}
-		if err := h.giftRepo.AddAttachment(ctx, attachment); err != nil {
-			return nil, fmt.Errorf("failed to add attachment: %w", err)
-		}
-		gift.Attachments = append(gift.Attachments, *attachment)
+		})
+	}
+
+	// Сохраняем подарок и файлы атомарно.
+	if err := h.giftRepo.CreateWithAttachments(ctx, gift, attachments); err != nil {
+		return nil, fmt.Errorf("failed to create gift with attachments: %w", err)
+	}
+
+	gift.Attachments = make([]entity.GiftAttachment, len(attachments))
+	for i, attachment := range attachments {
+		gift.Attachments[i] = *attachment
 	}
 
 	return gift, nil
+}
+
+func isValidGiftAttachmentFileType(fileType string) bool {
+	switch fileType {
+	case "photo", "document":
+		return true
+	}
+	return false
 }

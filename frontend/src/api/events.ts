@@ -1,4 +1,4 @@
-import { get, post, put, del } from './client';
+import { get, post, postForm, put, del } from './client';
 import type {
   Event,
   EventListResponse,
@@ -23,6 +23,12 @@ export const eventsApi = {
 
   async update(id: number, data: UpdateEventRequest): Promise<Event> {
     return put<Event>(`${EVENTS_PREFIX}/${id}`, data);
+  },
+
+  async uploadGpxFile(id: number, file: File): Promise<Event> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return postForm<Event>(`${EVENTS_PREFIX}/${id}/gpx-file`, formData);
   },
 
   async delete(id: number): Promise<void> {

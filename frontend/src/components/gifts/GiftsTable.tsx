@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
 import Badge from '../ui/badge/Badge';
 import Button from '../ui/button/Button';
-import { TrashBinIcon, PencilIcon } from '@/icons';
+import { TrashBinIcon, PencilIcon, CheckLineIcon } from '@/icons';
 import { telegramApi } from '@/api/telegram';
 import { getCriteriaColor } from '@/utils/criteria';
 import type { Gift } from '@/types';
@@ -15,6 +15,7 @@ interface GiftsTableProps {
   assignedGiftIds?: Set<number>;
   isLoading?: boolean;
   onEdit?: (gift: Gift) => void;
+  onApprove?: (gift: Gift) => Promise<void>;
   onDelete?: (giftId: number) => void;
 }
 
@@ -23,9 +24,11 @@ export default function GiftsTable({
   assignedGiftIds,
   isLoading,
   onEdit,
+  onApprove,
   onDelete,
 }: GiftsTableProps) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
 
   const handleDelete = async (giftId: number) => {
     if (!confirm('Вы уверены, что хотите удалить этот подарок?')) {
@@ -39,6 +42,19 @@ export default function GiftsTable({
       }
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleApprove = async (gift: Gift) => {
+    if (!onApprove) {
+      return;
+    }
+
+    setApprovingId(gift.id);
+    try {
+      await onApprove(gift);
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -69,9 +85,8 @@ export default function GiftsTable({
 
     if (gifts.length > 0) {
       loadPhotoUrls();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }
-  }, [gifts]);
+  }, [gifts, photoUrls]);
 
   if (isLoading) {
     return (
@@ -92,7 +107,7 @@ export default function GiftsTable({
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
       <div className="max-w-full overflow-x-auto">
-        <div className="min-w-[1000px]">
+        <div className="min-w-[1120px]">
           <Table>
             <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
               <TableRow>
@@ -113,6 +128,12 @@ export default function GiftsTable({
                   className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
                 >
                   От кого
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Статус
                 </TableCell>
                 <TableCell
                   isHeader
@@ -149,6 +170,7 @@ export default function GiftsTable({
                 const photoUrl = firstPhoto
                   ? photoUrls[firstPhoto.telegram_file_id] || null
                   : null;
+                const isPendingReview = gift.review_status === 'pending_review';
 
                 return (
                   <TableRow
@@ -201,6 +223,14 @@ export default function GiftsTable({
                       </div>
                     </TableCell>
                     <TableCell className="px-5 py-4 text-start">
+                      <Badge
+                        color={isPendingReview ? 'warning' : 'success'}
+                        size="sm"
+                      >
+                        {isPendingReview ? 'Новый / на проверке' : 'Проверен'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
                       {gift.criteria && gift.criteria.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {gift.criteria.slice(0, 3).map((c) => (
@@ -227,12 +257,18 @@ export default function GiftsTable({
                     <TableCell className="px-5 py-4 text-start">
                       <div className="flex items-center gap-2">
                         <div className={`h-2.5 w-2.5 rounded-full ${
-                          assignedGiftIds && assignedGiftIds.has(gift.id)
+                          isPendingReview
+                            ? 'bg-warning-500'
+                            : assignedGiftIds && assignedGiftIds.has(gift.id)
                             ? 'bg-success-500'
                             : 'bg-error-500'
                         }`} />
                         <span className="text-sm text-gray-800 dark:text-white/90">
-                          {assignedGiftIds && assignedGiftIds.has(gift.id) ? 'Да' : 'Нет'}
+                          {isPendingReview
+                            ? 'На проверке / Не участвует'
+                            : assignedGiftIds && assignedGiftIds.has(gift.id)
+                              ? 'Да'
+                              : 'Нет'}
                         </span>
                       </div>
                     </TableCell>
@@ -243,6 +279,16 @@ export default function GiftsTable({
                     </TableCell>
                     <TableCell className="px-5 py-4 text-start">
                       <div className="flex items-center gap-2">
+                        {isPendingReview && onApprove && (
+                          <Button
+                            size="sm"
+                            startIcon={<CheckLineIcon />}
+                            onClick={() => handleApprove(gift)}
+                            disabled={approvingId === gift.id}
+                          >
+                            {approvingId === gift.id ? '...' : 'Проверить'}
+                          </Button>
+                        )}
                         {onEdit && (
                           <Button
                             size="sm"

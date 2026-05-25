@@ -17,12 +17,13 @@ var (
 
 // CreateEventCommand представляет команду создания события
 type CreateEventCommand struct {
-	Name        string
-	Description string
-	Active      bool
-	StartDate   *time.Time
-	EndDate     *time.Time
-	GPXFilePath string
+	Name          string
+	Description   string
+	Active        bool
+	StartDate     *time.Time
+	EndDate       *time.Time
+	GPXFilePath   string
+	TelegramTexts entity.EventTelegramTexts
 }
 
 // CreateEventHandler обрабатывает создание события
@@ -73,14 +74,15 @@ func (h *CreateEventHandler) Handle(ctx context.Context, cmd CreateEventCommand)
 	// Создаём событие
 	now := time.Now()
 	event := &entity.Event{
-		Name:        cmd.Name,
-		Description: cmd.Description,
-		Active:      cmd.Active,
-		StartDate:   cmd.StartDate,
-		EndDate:     cmd.EndDate,
-		GPXFilePath: cmd.GPXFilePath,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		Name:          cmd.Name,
+		Description:   cmd.Description,
+		Active:        cmd.Active,
+		StartDate:     cmd.StartDate,
+		EndDate:       cmd.EndDate,
+		GPXFilePath:   cmd.GPXFilePath,
+		TelegramTexts: entity.NormalizeEventTelegramTexts(cmd.TelegramTexts),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	// Сохраняем событие в БД

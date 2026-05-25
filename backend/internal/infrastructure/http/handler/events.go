@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,9 +17,16 @@ import (
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/application/query"
+	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/http/response"
 )
+
+const maxEventGPXFileSize = 20 << 20 // 20 MiB
+
+type eventFileStorage interface {
+	SaveEventFile(ctx context.Context, eventID uint, originalName string, src io.Reader) (string, error)
+}
 
 // parseDate парсит дату в формате RFC3339 или YYYY-MM-DD
 // Если передан формат YYYY-MM-DD, преобразует в начало дня в UTC
@@ -51,6 +62,7 @@ type EventsHandler struct {
 	getEventByIDHandler *query.GetEventByIDHandler
 	createEventHandler  *command.CreateEventHandler
 	updateEventHandler  *command.UpdateEventHandler
+	eventFileStorage    eventFileStorage
 }
 
 // NewEventsHandler создаёт новый handler
@@ -60,6 +72,7 @@ func NewEventsHandler(
 	getEventByIDHandler *query.GetEventByIDHandler,
 	createEventHandler *command.CreateEventHandler,
 	updateEventHandler *command.UpdateEventHandler,
+	eventFileStorage eventFileStorage,
 ) *EventsHandler {
 	return &EventsHandler{
 		eventRepo:           eventRepo,
@@ -67,6 +80,7 @@ func NewEventsHandler(
 		getEventByIDHandler: getEventByIDHandler,
 		createEventHandler:  createEventHandler,
 		updateEventHandler:  updateEventHandler,
+		eventFileStorage:    eventFileStorage,
 	}
 }
 
@@ -132,12 +146,13 @@ func (h *EventsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 // CreateRequest представляет запрос на создание события
 type CreateEventRequest struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Active      bool       `json:"active"`
-	StartDate   *string    `json:"start_date,omitempty"` // ISO 8601 format
-	EndDate     *string    `json:"end_date,omitempty"`    // ISO 8601 format
-	GPXFilePath string     `json:"gpx_file_path,omitempty"`
+	Name          string                    `json:"name"`
+	Description   string                    `json:"description"`
+	Active        bool                      `json:"active"`
+	StartDate     *string                   `json:"start_date,omitempty"` // ISO 8601 format
+	EndDate       *string                   `json:"end_date,omitempty"`   // ISO 8601 format
+	GPXFilePath   string                    `json:"gpx_file_path,omitempty"`
+	TelegramTexts entity.EventTelegramTexts `json:"telegram_texts,omitempty"`
 }
 
 // Create обрабатывает POST /api/events - создание события
@@ -170,12 +185,13 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Вызываем command handler
 	event, err := h.createEventHandler.Handle(r.Context(), command.CreateEventCommand{
-		Name:        req.Name,
-		Description: req.Description,
-		Active:      req.Active,
-		StartDate:   startDate,
-		EndDate:     endDate,
-		GPXFilePath: req.GPXFilePath,
+		Name:          req.Name,
+		Description:   req.Description,
+		Active:        req.Active,
+		StartDate:     startDate,
+		EndDate:       endDate,
+		GPXFilePath:   req.GPXFilePath,
+		TelegramTexts: req.TelegramTexts,
 	})
 	if err != nil {
 		log.Printf("Error creating event: %v", err)
@@ -196,12 +212,13 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRequest представляет запрос на обновление события
 type UpdateEventRequest struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Active      *bool   `json:"active,omitempty"`
-	StartDate   *string `json:"start_date,omitempty"` // ISO 8601 format
-	EndDate     *string `json:"end_date,omitempty"`    // ISO 8601 format
-	GPXFilePath *string `json:"gpx_file_path,omitempty"`
+	Name          *string                    `json:"name,omitempty"`
+	Description   *string                    `json:"description,omitempty"`
+	Active        *bool                      `json:"active,omitempty"`
+	StartDate     *string                    `json:"start_date,omitempty"` // ISO 8601 format
+	EndDate       *string                    `json:"end_date,omitempty"`   // ISO 8601 format
+	GPXFilePath   *string                    `json:"gpx_file_path,omitempty"`
+	TelegramTexts *entity.EventTelegramTexts `json:"telegram_texts,omitempty"`
 }
 
 // Update обрабатывает PUT /api/events/:id - обновление события
@@ -242,13 +259,14 @@ func (h *EventsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Вызываем command handler
 	event, err := h.updateEventHandler.Handle(r.Context(), command.UpdateEventCommand{
-		EventID:     uint(id),
-		Name:        req.Name,
-		Description: req.Description,
-		Active:      req.Active,
-		StartDate:   startDate,
-		EndDate:     endDate,
-		GPXFilePath: req.GPXFilePath,
+		EventID:       uint(id),
+		Name:          req.Name,
+		Description:   req.Description,
+		Active:        req.Active,
+		StartDate:     startDate,
+		EndDate:       endDate,
+		GPXFilePath:   req.GPXFilePath,
+		TelegramTexts: req.TelegramTexts,
 	})
 	if err != nil {
 		log.Printf("Error updating event: %v", err)
@@ -264,6 +282,79 @@ func (h *EventsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Возвращаем обновлённое событие
+	response.Success(w, dto.FromEvent(event))
+}
+
+// UploadGPXFile обрабатывает POST /api/events/:id/gpx-file - загрузка GPX файла события
+func (h *EventsHandler) UploadGPXFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		response.BadRequest(w, "Invalid event ID")
+		return
+	}
+	eventID := uint(id)
+
+	if h.eventFileStorage == nil {
+		log.Printf("Event file storage is not configured")
+		response.InternalServerError(w, "File storage is not configured")
+		return
+	}
+
+	if _, err := h.eventRepo.FindByID(r.Context(), eventID); err != nil {
+		log.Printf("Event not found for GPX upload: event_id=%d error=%v", eventID, err)
+		response.NotFound(w, "Event not found")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxEventGPXFileSize)
+	if err := r.ParseMultipartForm(maxEventGPXFileSize); err != nil {
+		response.BadRequest(w, "Invalid multipart form or file is too large")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.BadRequest(w, "GPX file is required")
+		return
+	}
+	defer file.Close()
+
+	fileName := strings.TrimSpace(header.Filename)
+	if fileName == "" {
+		response.BadRequest(w, "File name is required")
+		return
+	}
+	if strings.ToLower(filepath.Ext(fileName)) != ".gpx" {
+		response.BadRequest(w, "Only .gpx files are allowed")
+		return
+	}
+
+	filePath, err := h.eventFileStorage.SaveEventFile(r.Context(), eventID, fileName, file)
+	if err != nil {
+		log.Printf("Error saving event GPX file: event_id=%d file=%q error=%v", eventID, fileName, err)
+		response.InternalServerError(w, "Failed to save GPX file")
+		return
+	}
+
+	event, err := h.updateEventHandler.Handle(r.Context(), command.UpdateEventCommand{
+		EventID:     eventID,
+		GPXFilePath: &filePath,
+	})
+	if err != nil {
+		log.Printf("Error updating event GPX path: event_id=%d path=%q error=%v", eventID, filePath, err)
+		switch err {
+		case command.ErrEventNotFound:
+			response.NotFound(w, err.Error())
+		default:
+			response.InternalServerError(w, "Failed to update event GPX path")
+		}
+		return
+	}
+
 	response.Success(w, dto.FromEvent(event))
 }
 

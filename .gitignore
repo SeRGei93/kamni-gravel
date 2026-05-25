@@ -73,6 +73,7 @@ pnpm-debug.log*
 *.sqlite3
 data/
 /data
+/storage
 
 # Docker
 *.log

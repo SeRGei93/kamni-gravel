@@ -42,20 +42,20 @@ func main() {
 	resultRepo := postgres.NewResultRepository(db)
 	giftRepo := postgres.NewGiftRepository(db)
 	criteriaRepo := postgres.NewCriteriaRepository(db)
-	giftCriteriaRepo := postgres.NewGiftCriteriaRepository(db)
 	prizeAssignmentRepo := postgres.NewPrizeAssignmentRepository(db)
 	adminRepo := postgres.NewAdminRepository(db)
 
 	// Создаём HTTP сервер
 	server := http.NewServer(
 		http.Config{
-			Host:           cfg.API.Host,
-			Port:           cfg.API.Port,
-			JWTSecret:      cfg.API.JWTSecret,
-			JWTAccessTTL:   cfg.API.JWTAccessTTL,
-			JWTRefreshTTL:  cfg.API.JWTRefreshTTL,
-			AllowedOrigins: cfg.API.AllowedOrigins,
-			BotToken:       cfg.Bot.Token,
+			Host:            cfg.API.Host,
+			Port:            cfg.API.Port,
+			JWTSecret:       cfg.API.JWTSecret,
+			JWTAccessTTL:    cfg.API.JWTAccessTTL,
+			JWTRefreshTTL:   cfg.API.JWTRefreshTTL,
+			AllowedOrigins:  cfg.API.AllowedOrigins,
+			BotToken:        cfg.Bot.Token,
+			FileStoragePath: cfg.Files.Path,
 		},
 		userRepo,
 		eventRepo,
@@ -63,7 +63,6 @@ func main() {
 		resultRepo,
 		giftRepo,
 		criteriaRepo,
-		giftCriteriaRepo,
 		prizeAssignmentRepo,
 		adminRepo,
 	)

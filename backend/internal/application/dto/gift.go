@@ -15,9 +15,10 @@ type GiftDTO struct {
 	LastName       string               `json:"last_name,omitempty"`
 	EventID        uint                 `json:"event_id"`
 	Description    string               `json:"description"`
-	GenderFilter   string               `json:"gender_filter,omitempty"`   // all, male, female
+	GenderFilter   string               `json:"gender_filter,omitempty"`    // all, male, female
 	BikeTypeFilter string               `json:"bike_type_filter,omitempty"` // all, gravel, mtb, road, single_speed, tandem
-	Place          *int                 `json:"place,omitempty"`           // место (позиция)
+	ReviewStatus   string               `json:"review_status"`
+	Place          *int                 `json:"place,omitempty"` // место (позиция)
 	Attachments    []*GiftAttachmentDTO `json:"attachments,omitempty"`
 	Criteria       []*CriteriaDTO       `json:"criteria,omitempty"`
 	CreatedAt      time.Time            `json:"created_at"`
@@ -40,6 +41,7 @@ func FromGift(g *entity.Gift) *GiftDTO {
 		Description:    g.Description,
 		GenderFilter:   g.GenderFilter,
 		BikeTypeFilter: g.BikeTypeFilter,
+		ReviewStatus:   g.ReviewStatus.String(),
 		Place:          g.Place,
 		CreatedAt:      g.CreatedAt,
 	}

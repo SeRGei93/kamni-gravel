@@ -1,6 +1,40 @@
 package entity
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// GiftReviewStatus представляет статус проверки подарка администратором.
+type GiftReviewStatus string
+
+const (
+	GiftReviewStatusPendingReview GiftReviewStatus = "pending_review"
+	GiftReviewStatusApproved      GiftReviewStatus = "approved"
+)
+
+// NewGiftReviewStatus создаёт и валидирует статус проверки подарка.
+func NewGiftReviewStatus(value string) (GiftReviewStatus, error) {
+	status := GiftReviewStatus(value)
+	if !status.IsValid() {
+		return "", fmt.Errorf("invalid gift review status: %s", value)
+	}
+	return status, nil
+}
+
+// IsValid проверяет валидность статуса проверки подарка.
+func (s GiftReviewStatus) IsValid() bool {
+	switch s {
+	case GiftReviewStatusPendingReview, GiftReviewStatusApproved:
+		return true
+	}
+	return false
+}
+
+// String возвращает строковое представление статуса проверки подарка.
+func (s GiftReviewStatus) String() string {
+	return string(s)
+}
 
 // Gift представляет подарок от участника
 type Gift struct {
@@ -10,7 +44,8 @@ type Gift struct {
 	Description    string
 	GenderFilter   string // all, male, female
 	BikeTypeFilter string // all, gravel, mtb, road, single_speed, tandem
-	Place          *int   // место (позиция), nil если не задано
+	ReviewStatus   GiftReviewStatus
+	Place          *int // место (позиция), nil если не задано
 	CreatedAt      time.Time
 
 	// Связанные сущности

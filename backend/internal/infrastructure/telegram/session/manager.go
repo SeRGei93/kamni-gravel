@@ -17,6 +17,7 @@ const (
 	StateAwaitingGiftBikeType     SessionState = "awaiting_gift_bike_type"
 	StateAwaitingGiftDesc         SessionState = "awaiting_gift_desc"
 	StateAwaitingGiftPhoto        SessionState = "awaiting_gift_photo"
+	StateAwaitingGiftConfirmation SessionState = "awaiting_gift_confirmation"
 	StateAwaitingResultLink       SessionState = "awaiting_result_link"
 )
 
@@ -41,10 +42,10 @@ func NewManager(timeout time.Duration) *Manager {
 		sessions: make(map[int64]*Session),
 		timeout:  timeout,
 	}
-	
+
 	// Запускаем очистку устаревших сессий
 	go m.cleanupLoop(context.Background())
-	
+
 	return m
 }
 

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Input from '../form/input/InputField';
 import Label from '../form/Label';
 import TextArea from '../form/input/TextArea';
+import FileInput from '../form/input/FileInput';
 import Switch from '../form/switch/Switch';
 import Button from '../ui/button/Button';
 import DatePicker from '../form/date-picker';
@@ -11,7 +12,10 @@ import type { Event, CreateEventRequest, UpdateEventRequest } from '@/types';
 
 interface EventFormProps {
   event?: Event;
-  onSubmit: (data: CreateEventRequest | UpdateEventRequest) => Promise<void>;
+  onSubmit: (
+    data: CreateEventRequest | UpdateEventRequest,
+    gpxFile?: File
+  ) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -31,7 +35,7 @@ export default function EventForm({
   const [endDate, setEndDate] = useState<string>(
     event?.end_date ? new Date(event.end_date).toISOString().split('T')[0] : ''
   );
-  const [gpxFilePath, setGpxFilePath] = useState(event?.gpx_file_path || '');
+  const [gpxFile, setGpxFile] = useState<File | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,10 +46,9 @@ export default function EventForm({
       active,
       start_date: startDate || undefined,
       end_date: endDate || undefined,
-      gpx_file_path: gpxFilePath || undefined,
     };
 
-    await onSubmit(data);
+    await onSubmit(data, gpxFile || undefined);
   };
 
   return (
@@ -107,14 +110,21 @@ export default function EventForm({
       </div>
 
       <div>
-        <Label>Путь к GPX файлу</Label>
-        <Input
-          type="text"
-          placeholder="/path/to/file.gpx"
-          defaultValue={gpxFilePath}
-          onChange={(e) => setGpxFilePath(e.target.value)}
+        <Label>GPX файл</Label>
+        <FileInput
+          accept=".gpx"
+          onChange={(e) => setGpxFile(e.target.files?.[0] || null)}
           disabled={isLoading}
         />
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {gpxFile ? (
+            <span>Будет загружен: {gpxFile.name}</span>
+          ) : event?.gpx_file_path ? (
+            <span>Текущий файл: {event.gpx_file_path}</span>
+          ) : (
+            <span>Выберите GPX файл маршрута. Он будет сохранён в общем хранилище событий.</span>
+          )}
+        </div>
       </div>
 
       <div>
