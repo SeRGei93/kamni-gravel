@@ -111,9 +111,9 @@ Miniapp-запросы отправляют заголовок `X-Telegram-Init-
 make ssl-cert
 ```
 
-Скрипт `scripts/generate-ssl-cert.sh` создает временный self-signed сертификат, поднимает nginx для HTTP-01 challenge, запрашивает реальный сертификат через certbot и перезагружает nginx. Для проверки без боевого лимита Let's Encrypt можно поставить `SSL_STAGING=true`.
+Скрипт `scripts/generate-ssl-cert.sh` временно останавливает nginx, запускает certbot в standalone-режиме на `80/tcp`, запрашивает реальный сертификат и после успеха поднимает nginx обратно. Для проверки без боевого лимита Let's Encrypt можно поставить `SSL_STAGING=true`.
 
-Сертификаты сохраняются локально на сервере в `nginx/certbot/conf` и монтируются в nginx/certbot как `/etc/letsencrypt`. Эта директория добавлена в `.gitignore`. Повторный `make ssl-cert` не перевыпускает сертификат, если существующий сертификат еще валиден дольше `SSL_RENEW_BEFORE_SECONDS` секунд, по умолчанию 30 дней.
+Сертификаты сохраняются локально на сервере в `nginx/certbot/conf` и монтируются в nginx и certbot как `/etc/letsencrypt`. Эта директория добавлена в `.gitignore`. Повторный `make ssl-cert` не перевыпускает сертификат, если существующий сертификат еще валиден дольше `SSL_RENEW_BEFORE_SECONDS` секунд, по умолчанию 30 дней.
 
 Запуск production:
 

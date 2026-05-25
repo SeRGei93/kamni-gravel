@@ -16,6 +16,7 @@ CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 SSL_STAGING="${SSL_STAGING:-false}"
 SSL_RSA_KEY_SIZE="${SSL_RSA_KEY_SIZE:-4096}"
 SSL_RENEW_BEFORE_SECONDS="${SSL_RENEW_BEFORE_SECONDS:-2592000}"
+CERTBOT_IMAGE="${CERTBOT_IMAGE:-certbot/certbot:v2.11.0}"
 
 if [[ -z "$PUBLIC_DOMAIN" ]]; then
   echo "PUBLIC_DOMAIN is required" >&2
@@ -28,63 +29,67 @@ if [[ "${1:-issue}" != "renew" && -z "$CERTBOT_EMAIL" ]]; then
 fi
 
 compose=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
-certbot_webroot="$ROOT_DIR/nginx/certbot/www"
 letsencrypt_dir="$ROOT_DIR/nginx/certbot/conf"
 live_dir="$letsencrypt_dir/live/$PUBLIC_DOMAIN"
 renewal_conf="$letsencrypt_dir/renewal/$PUBLIC_DOMAIN.conf"
 cert_path="$live_dir/fullchain.pem"
 
-mkdir -p "$certbot_webroot" "$letsencrypt_dir"
-
-if [[ "${1:-issue}" == "renew" ]]; then
-  "${compose[@]}" --profile certbot run --rm certbot renew --webroot -w /var/www/certbot
-  "${compose[@]}" exec nginx nginx -s reload
-  exit 0
-fi
-
-if [[ -f "$cert_path" ]] && openssl x509 -checkend "$SSL_RENEW_BEFORE_SECONDS" -noout -in "$cert_path" >/dev/null; then
-  echo "Existing certificate for $PUBLIC_DOMAIN is still valid; skipping issue."
-  "${compose[@]}" up -d --no-deps nginx
-  exit 0
-fi
-
-if [[ -f "$renewal_conf" ]]; then
-  "${compose[@]}" up -d --no-deps nginx
-  "${compose[@]}" --profile certbot run --rm certbot renew \
-    --cert-name "$PUBLIC_DOMAIN" \
-    --webroot \
-    --webroot-path /var/www/certbot
-  "${compose[@]}" exec nginx nginx -s reload
-  exit 0
-fi
-
-if [[ ! -f "$renewal_conf" ]]; then
-  mkdir -p "$live_dir"
-  openssl req \
-    -x509 \
-    -nodes \
-    -newkey rsa:2048 \
-    -days 1 \
-    -keyout "$live_dir/privkey.pem" \
-    -out "$live_dir/fullchain.pem" \
-    -subj "/CN=$PUBLIC_DOMAIN"
-fi
-
-"${compose[@]}" up -d --no-deps nginx
-
-rm -rf \
-  "$letsencrypt_dir/live/$PUBLIC_DOMAIN" \
-  "$letsencrypt_dir/archive/$PUBLIC_DOMAIN" \
-  "$renewal_conf"
+mkdir -p "$letsencrypt_dir"
 
 staging_args=()
 if [[ "$SSL_STAGING" == "true" ]]; then
   staging_args=(--staging)
 fi
 
-"${compose[@]}" --profile certbot run --rm certbot certonly \
-  --webroot \
-  --webroot-path /var/www/certbot \
+if [[ "$SSL_STAGING" != "true" && -f "$renewal_conf" ]] && grep -qi "staging" "$renewal_conf"; then
+  echo "Removing staging certificate lineage for $PUBLIC_DOMAIN before production issue."
+  rm -rf \
+    "$letsencrypt_dir/live/$PUBLIC_DOMAIN" \
+    "$letsencrypt_dir/archive/$PUBLIC_DOMAIN" \
+    "$renewal_conf"
+fi
+
+if [[ "${1:-issue}" == "renew" ]]; then
+  "${compose[@]}" stop nginx || true
+  docker run --rm \
+    -p 80:80 \
+    -v "$letsencrypt_dir:/etc/letsencrypt" \
+    "$CERTBOT_IMAGE" renew \
+    --standalone \
+    --preferred-challenges http \
+    "${staging_args[@]}"
+  "${compose[@]}" up -d nginx
+  exit 0
+fi
+
+if [[ -f "$cert_path" ]] && openssl x509 -checkend "$SSL_RENEW_BEFORE_SECONDS" -noout -in "$cert_path" >/dev/null; then
+  echo "Existing certificate for $PUBLIC_DOMAIN is still valid; skipping issue."
+  "${compose[@]}" up -d nginx
+  exit 0
+fi
+
+if [[ -f "$renewal_conf" ]]; then
+  "${compose[@]}" stop nginx || true
+  docker run --rm \
+    -p 80:80 \
+    -v "$letsencrypt_dir:/etc/letsencrypt" \
+    "$CERTBOT_IMAGE" renew \
+    --cert-name "$PUBLIC_DOMAIN" \
+    --standalone \
+    --preferred-challenges http \
+    "${staging_args[@]}"
+  "${compose[@]}" up -d nginx
+  exit 0
+fi
+
+"${compose[@]}" stop nginx || true
+
+docker run --rm \
+  -p 80:80 \
+  -v "$letsencrypt_dir:/etc/letsencrypt" \
+  "$CERTBOT_IMAGE" certonly \
+  --standalone \
+  --preferred-challenges http \
   --email "$CERTBOT_EMAIL" \
   --agree-tos \
   --no-eff-email \
@@ -94,4 +99,4 @@ fi
   "${staging_args[@]}" \
   -d "$PUBLIC_DOMAIN"
 
-"${compose[@]}" exec nginx nginx -s reload
+"${compose[@]}" up -d nginx

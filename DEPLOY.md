@@ -10,7 +10,7 @@
 gravel.example.com A <server-ip>
 ```
 
-Откройте входящие порты:
+Откройте входящие порты. `80/tcp` нужен для первичного выпуска и продления Let's Encrypt сертификата:
 
 ```text
 80/tcp
@@ -71,7 +71,7 @@ ALLOWED_ORIGINS=https://gravel.example.com
 make ssl-cert
 ```
 
-Сертификат сохраняется в:
+На время выпуска скрипт останавливает nginx и запускает certbot в standalone-режиме на `80/tcp`. Сертификат сохраняется в:
 
 ```text
 nginx/certbot/conf
