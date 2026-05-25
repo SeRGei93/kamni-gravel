@@ -88,14 +88,14 @@ export default function MiniappGiftDetailPage() {
 
 function MiniappDetailState({ title, text }: { title: string; text: string }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-5 py-8 text-gray-900">
-      <section className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <main className="flex min-h-screen items-center justify-center bg-gray-950 px-5 py-8 text-gray-100" style={{ colorScheme: "dark" }}>
+      <section className="w-full max-w-sm rounded-xl border border-gray-800 bg-gray-900 p-5 shadow-sm">
         <div className="mb-4 h-2 w-16 rounded-full bg-orange-500" />
-        <h1 className="text-xl font-semibold leading-7">{title}</h1>
-        <p className="mt-2 text-sm leading-5 text-gray-500">{text}</p>
+        <h1 className="text-xl font-semibold leading-7 text-white">{title}</h1>
+        <p className="mt-2 text-sm leading-5 text-gray-400">{text}</p>
         <Link
           href="/miniapp/gifts"
-          className="mt-4 inline-flex rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700"
+          className="mt-4 inline-flex rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-200"
         >
           Вернуться
         </Link>

@@ -9,7 +9,7 @@ export default function MiniappLayout({
   return (
     <>
       <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
-      <div className="min-h-screen bg-white text-gray-900 antialiased">
+      <div className="min-h-screen bg-gray-950 text-gray-100 antialiased" style={{ colorScheme: "dark" }}>
         {children}
       </div>
     </>

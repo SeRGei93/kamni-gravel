@@ -147,6 +147,31 @@ func TestGetMiniappGiftsHandlerFiltersAbsoluteGenderSemantics(t *testing.T) {
 	}
 }
 
+func TestGetMiniappGiftsHandlerSortsPlacedGiftsAscending(t *testing.T) {
+	giftRepo := &miniappGiftRepoFake{
+		gifts: []*entity.Gift{
+			{ID: 1, EventID: 77, GenderFilter: "all", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved, Place: intPtr(3)},
+			{ID: 2, EventID: 77, GenderFilter: "all", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 3, EventID: 77, GenderFilter: "all", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved, Place: intPtr(1)},
+			{ID: 4, EventID: 77, GenderFilter: "all", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved, Place: intPtr(2)},
+		},
+	}
+	handler := NewGetMiniappGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})
+
+	gifts, err := handler.Handle(context.Background(), GetMiniappGiftsQuery{
+		EventID:  77,
+		Gender:   "all",
+		BikeType: "all",
+	})
+	if err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+
+	if got := miniappGiftIDs(gifts); !equalUintSlices(got, []uint{3, 4, 1, 2}) {
+		t.Fatalf("sorted gift IDs mismatch: got %v, want %v", got, []uint{3, 4, 1, 2})
+	}
+}
+
 func TestGetMiniappGiftsHandlerDefaultsFiltersToAll(t *testing.T) {
 	giftRepo := &miniappGiftRepoFake{}
 	handler := NewGetMiniappGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})
@@ -291,4 +316,8 @@ func equalUintSlices(a, b []uint) bool {
 		}
 	}
 	return true
+}
+
+func intPtr(value int) *int {
+	return &value
 }

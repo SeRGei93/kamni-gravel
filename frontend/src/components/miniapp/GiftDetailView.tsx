@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
-import type { BikeTypeFilter, GenderFilter, Gift } from "@/types";
+import type { BikeTypeFilter, GenderFilter, Gift, GiftAttachment } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
 import GiftImage from "./GiftImage";
 
@@ -20,7 +20,7 @@ const bikeText = BIKE_TYPE_OPTIONS.reduce<Record<string, string>>((acc, option) 
 }, {});
 
 export default function GiftDetailView({ gift }: GiftDetailViewProps) {
-  const photo = gift.attachments?.find((attachment) => attachment.file_type === "photo");
+  const photos = gift.attachments?.filter((attachment) => attachment.file_type === "photo") ?? [];
   const donorName = [gift.first_name, gift.last_name].filter(Boolean).join(" ");
   const donor = donorName || gift.username || `Участник ${gift.user_id}`;
   const gender = (gift.gender_filter || "all") as GenderFilter;
@@ -28,40 +28,38 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
   const criteria = gift.criteria ?? [];
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-900">
-      <section className="border-b border-gray-200 bg-white px-3 py-3">
+    <main className="min-h-screen bg-gray-950 text-gray-100" style={{ colorScheme: "dark" }}>
+      <section className="border-b border-gray-800 bg-gray-900 px-3 py-3">
         <div className="mx-auto flex w-full max-w-md items-center justify-between gap-3">
           <Link
             href="/miniapp/gifts"
-            className="inline-flex rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700"
+            className="inline-flex rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-200"
           >
             Назад
           </Link>
-          <h1 className="truncate text-lg font-semibold text-gray-900">
+          <h1 className="truncate text-lg font-semibold text-white">
             Подарок
           </h1>
         </div>
       </section>
 
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
-        <article className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="aspect-[4/3] border-b border-gray-200 bg-orange-50">
-            <GiftImage giftId={gift.id} attachment={photo} />
-          </div>
+        <article className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-sm">
+          <GiftPhotoGallery giftId={gift.id} photos={photos} />
 
           <div className="space-y-4 p-3">
             <div>
-              <p className="text-xs font-medium text-orange-600">
+              <p className="text-xs font-medium text-orange-400">
                 Описание
               </p>
-              <p className="mt-2 whitespace-pre-wrap break-words text-base font-medium leading-6 text-gray-900">
+              <p className="mt-2 whitespace-pre-wrap break-words text-base font-medium leading-6 text-white">
                 {gift.description}
               </p>
             </div>
 
             <DetailRow label="От кого" value={donor} />
 
-            <div className="grid grid-cols-2 rounded-lg border border-gray-200 text-sm">
+            <div className="grid grid-cols-2 rounded-lg border border-gray-800 text-sm">
               <DetailCell label="Пол" value={genderText[gender] ?? gender} />
               <DetailCell label="Велосипед" value={bikeText[bikeType] ?? bikeType} />
               {gift.place !== undefined && (
@@ -71,14 +69,14 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
 
             {criteria.length > 0 ? (
               <div>
-                <p className="text-[10px] font-semibold uppercase text-[#737373]">
+                <p className="text-[10px] font-semibold uppercase text-gray-400">
                   Критерии
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {criteria.map((criterion) => (
                     <span
                       key={criterion.id}
-                      className="rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700"
+                      className="rounded-md border border-orange-900/70 bg-orange-950/35 px-2 py-1 text-xs font-medium text-orange-300"
                     >
                       {criterion.name || getCriteriaTypeLabel(criterion.criteria_type)}
                     </span>
@@ -86,7 +84,7 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
                 </div>
               </div>
             ) : (
-              <p className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-500">
+              <p className="rounded-lg border border-gray-800 px-3 py-2 text-xs font-medium text-gray-400">
                 Без дополнительных критериев.
               </p>
             )}
@@ -97,11 +95,42 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
   );
 }
 
+function GiftPhotoGallery({
+  giftId,
+  photos,
+}: {
+  giftId: number;
+  photos: GiftAttachment[];
+}) {
+  const [primaryPhoto, ...secondaryPhotos] = photos;
+
+  return (
+    <div className="border-b border-gray-800 bg-gray-800">
+      <div className="aspect-[4/3]">
+        <GiftImage giftId={giftId} attachment={primaryPhoto} />
+      </div>
+
+      {secondaryPhotos.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 border-t border-gray-800 p-2">
+          {secondaryPhotos.map((photo) => (
+            <div
+              key={photo.id}
+              className="aspect-square overflow-hidden rounded-lg border border-gray-800 bg-gray-800"
+            >
+              <GiftImage giftId={giftId} attachment={photo} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-gray-200 px-3 py-2">
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className="mt-1 break-words text-sm font-medium text-gray-900">{value}</p>
+    <div className="rounded-lg border border-gray-800 px-3 py-2">
+      <p className="text-xs font-medium text-gray-400">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-white">{value}</p>
     </div>
   );
 }
@@ -117,12 +146,12 @@ function DetailCell({
 }) {
   return (
     <div
-      className={`border-gray-200 px-3 py-2 ${
+      className={`border-gray-800 px-3 py-2 ${
         wide ? "col-span-2 border-t" : "border-r last:border-r-0"
       }`}
     >
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className="mt-1 break-words font-medium text-gray-900">{value}</p>
+      <p className="text-xs font-medium text-gray-400">{label}</p>
+      <p className="mt-1 break-words font-medium text-white">{value}</p>
     </div>
   );
 }

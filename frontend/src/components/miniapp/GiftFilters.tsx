@@ -17,6 +17,13 @@ const genderLabels: Record<GenderFilter, string> = {
   female: "Женщины",
 };
 
+const filterButtonClass =
+  "h-9 shrink-0 rounded-lg border px-3 text-sm font-medium transition active:scale-[0.98]";
+const activeFilterClass =
+  "border-orange-500 bg-orange-500 text-white shadow-sm shadow-orange-950/50";
+const inactiveFilterClass =
+  "border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700 hover:bg-gray-800";
+
 export default function GiftFilters({
   gender,
   bikeType,
@@ -25,21 +32,24 @@ export default function GiftFilters({
   onBikeTypeChange,
 }: GiftFiltersProps) {
   return (
-    <section className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-3 py-3 backdrop-blur">
+    <section
+      aria-busy={isLoading}
+      className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 py-3 backdrop-blur"
+    >
       <div className="mx-auto flex w-full max-w-md flex-col gap-3">
         <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
           {GENDER_OPTIONS.map((option) => {
             const value = option.value as GenderFilter;
+            const isActive = gender === value;
+
             return (
               <button
                 key={option.value}
                 type="button"
-                disabled={isLoading}
+                aria-pressed={isActive}
                 onClick={() => onGenderChange(value)}
-                className={`h-9 shrink-0 rounded-lg border px-3 text-sm font-medium transition ${
-                  gender === value
-                    ? "border-orange-500 bg-orange-50 text-orange-600"
-                    : "border-gray-200 bg-white text-gray-700"
+                className={`${filterButtonClass} ${
+                  isActive ? activeFilterClass : inactiveFilterClass
                 }`}
               >
                 {genderLabels[value]}
@@ -51,16 +61,16 @@ export default function GiftFilters({
         <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
           {BIKE_TYPE_OPTIONS.map((option) => {
             const value = option.value as BikeTypeFilter;
+            const isActive = bikeType === value;
+
             return (
               <button
                 key={option.value}
                 type="button"
-                disabled={isLoading}
+                aria-pressed={isActive}
                 onClick={() => onBikeTypeChange(value)}
-                className={`h-9 shrink-0 rounded-lg border px-3 text-sm font-medium transition ${
-                  bikeType === value
-                    ? "border-brand-500 bg-brand-50 text-brand-500"
-                    : "border-gray-200 bg-white text-gray-700"
+                className={`${filterButtonClass} ${
+                  isActive ? activeFilterClass : inactiveFilterClass
                 }`}
               >
                 {option.label}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"gravel_bot/internal/domain/entity"
@@ -56,7 +57,10 @@ func (h *GetMiniappGiftsHandler) Handle(ctx context.Context, query GetMiniappGif
 		return nil, fmt.Errorf("failed to find miniapp gifts for event %d gender=%s bike_type=%s: %w", query.EventID, genderFilter, bikeTypeFilter, err)
 	}
 
-	return filterMiniappGifts(gifts, genderFilter, bikeTypeFilter), nil
+	filteredGifts := filterMiniappGifts(gifts, genderFilter, bikeTypeFilter)
+	sortMiniappGiftsByPlace(filteredGifts)
+
+	return filteredGifts, nil
 }
 
 func filterMiniappGifts(gifts []*entity.Gift, genderFilter, bikeTypeFilter string) []*entity.Gift {
@@ -72,6 +76,28 @@ func filterMiniappGifts(gifts []*entity.Gift, genderFilter, bikeTypeFilter strin
 	}
 
 	return filtered
+}
+
+func sortMiniappGiftsByPlace(gifts []*entity.Gift) {
+	sort.SliceStable(gifts, func(i, j int) bool {
+		leftPlace := gifts[i].Place
+		rightPlace := gifts[j].Place
+
+		if leftPlace == nil && rightPlace == nil {
+			return false
+		}
+		if leftPlace == nil {
+			return false
+		}
+		if rightPlace == nil {
+			return true
+		}
+		if *leftPlace == *rightPlace {
+			return false
+		}
+
+		return *leftPlace < *rightPlace
+	})
 }
 
 func matchesMiniappGenderFilter(giftFilter, selectedFilter string) bool {

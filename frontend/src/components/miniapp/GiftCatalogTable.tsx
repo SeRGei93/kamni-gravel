@@ -26,7 +26,7 @@ const bikeText = BIKE_TYPE_OPTIONS.reduce<Record<string, string>>((acc, option) 
 export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableProps) {
   return (
     <section
-      className={`overflow-hidden border border-[#d4d4d4] bg-white shadow-sm ${
+      className={`overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-sm ${
         isLoading ? "opacity-70" : ""
       }`}
       aria-busy={isLoading}
@@ -37,8 +37,8 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
           <col />
           <col className="w-28" />
         </colgroup>
-        <thead className="bg-gray-50">
-          <tr className="border-b border-gray-200 text-left text-[10px] font-semibold uppercase text-gray-500">
+        <thead className="bg-gray-950">
+          <tr className="border-b border-gray-800 text-left text-[10px] font-semibold uppercase text-gray-400">
             <th scope="col" className="px-1.5 py-2">
               Фото
             </th>
@@ -50,7 +50,7 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-gray-800">
           {gifts.map((gift) => (
             <GiftTableRow key={gift.id} gift={gift} />
           ))}
@@ -87,18 +87,18 @@ function GiftTableRow({ gift }: { gift: Gift }) {
       aria-label={`Открыть подарок ${gift.id}`}
       onClick={openGift}
       onKeyDown={handleKeyDown}
-      className="cursor-pointer align-top hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-200"
+      className="cursor-pointer align-top hover:bg-gray-800/70 focus:outline-none focus:ring-2 focus:ring-orange-500"
     >
       <td className="py-1.5 pl-2 pr-1">
-        <div className="block h-10 w-10 overflow-hidden rounded-lg border border-gray-200 bg-orange-50">
+        <div className="block h-10 w-10 overflow-hidden rounded-lg border border-gray-800 bg-gray-800">
           <GiftImage giftId={gift.id} attachment={photo} />
         </div>
       </td>
       <td className="min-w-0 px-1.5 py-1.5">
-        <p className="line-clamp-1 break-words text-sm font-medium leading-5 text-gray-900">
+        <p className="line-clamp-1 break-words text-sm font-medium leading-5 text-white">
           {gift.description}
         </p>
-        <p className="mt-1 truncate text-[11px] font-medium leading-4 text-gray-500">
+        <p className="mt-1 truncate text-[11px] font-medium leading-4 text-gray-400">
           от {donor}
         </p>
       </td>
@@ -118,7 +118,7 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
     .join(", ");
 
   return (
-    <div className="space-y-0.5 text-[10px] font-medium leading-[14px] text-gray-600">
+    <div className="space-y-0.5 text-[10px] font-medium leading-[14px] text-gray-400">
       <ConditionLine label="Пол" value={genderText[gender] ?? gender} />
       <ConditionLine label="Вело" value={bikeText[bikeType] ?? bikeType} />
       {gift.place !== undefined && <ConditionLine label="Место" value={String(gift.place)} />}
@@ -130,8 +130,8 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
 function ConditionLine({ label, value }: { label: string; value: string }) {
   return (
     <p className="min-w-0">
-      <span className="text-gray-400">{label}: </span>
-      <span className="break-words text-gray-800">{value}</span>
+      <span className="text-gray-500">{label}: </span>
+      <span className="break-words text-gray-200">{value}</span>
     </p>
   );
 }

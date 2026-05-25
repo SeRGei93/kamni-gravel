@@ -121,7 +121,7 @@ export default function MiniappGiftsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-900">
+    <main className="min-h-screen bg-gray-950 text-gray-100" style={{ colorScheme: "dark" }}>
       <MiniappMasthead count={gifts.length} isLoading={isCatalogLoading} />
 
       <GiftFilters
@@ -155,20 +155,20 @@ function MiniappMasthead({
   const countLabel = isLoading ? "--" : String(count).padStart(2, "0");
 
   return (
-    <section className="bg-gray-50 px-3 pb-3 pt-4">
-      <div className="mx-auto w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <p className="text-xs font-medium text-orange-600">
+    <section className="bg-gray-950 px-3 pb-3 pt-4">
+      <div className="mx-auto w-full max-w-md rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-sm">
+        <p className="text-xs font-medium text-orange-400">
           Gravel Bot
         </p>
         <div className="mt-1 flex items-end justify-between gap-3">
-          <h1 className="text-2xl font-semibold leading-8 text-gray-900">
+          <h1 className="text-2xl font-semibold leading-8 text-white">
             Подарки
           </h1>
-          <div className="mb-0.5 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-right">
-            <p className="text-[10px] font-medium text-orange-600">
+          <div className="mb-0.5 rounded-lg border border-orange-900/70 bg-orange-950/35 px-2.5 py-1.5 text-right">
+            <p className="text-[10px] font-medium text-orange-300">
               Всего
             </p>
-            <p className="text-lg font-semibold leading-none text-orange-600">{countLabel}</p>
+            <p className="text-lg font-semibold leading-none text-orange-400">{countLabel}</p>
           </div>
         </div>
       </div>
@@ -188,15 +188,15 @@ function MiniappShellState({
   const isError = tone === "error";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-5 py-8 text-gray-900">
-      <section className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <main className="flex min-h-screen items-center justify-center bg-gray-950 px-5 py-8 text-gray-100" style={{ colorScheme: "dark" }}>
+      <section className="w-full max-w-sm rounded-xl border border-gray-800 bg-gray-900 p-5 shadow-sm">
         <div
           className={`mb-4 h-2 w-16 rounded-full ${
             isError ? "bg-error-500" : "bg-orange-500"
           }`}
         />
-        <h1 className="text-xl font-semibold leading-7">{title}</h1>
-        <p className="mt-2 text-sm leading-5 text-gray-500">{text}</p>
+        <h1 className="text-xl font-semibold leading-7 text-white">{title}</h1>
+        <p className="mt-2 text-sm leading-5 text-gray-400">{text}</p>
       </section>
     </main>
   );
@@ -204,8 +204,8 @@ function MiniappShellState({
 
 function MiniappCatalogLoading() {
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] border-b border-gray-200 bg-gray-50 px-2 py-2 text-[10px] font-semibold uppercase text-gray-500">
+    <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-sm">
+      <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] border-b border-gray-800 bg-gray-950 px-2 py-2 text-[10px] font-semibold uppercase text-gray-400">
         <span>Фото</span>
         <span>Подарок</span>
         <span>Условия</span>
@@ -213,16 +213,16 @@ function MiniappCatalogLoading() {
       {[0, 1, 2, 3, 4].map((item) => (
         <div
           key={item}
-          className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b border-gray-200 px-2 py-1.5 last:border-b-0"
+          className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b border-gray-800 px-2 py-1.5 last:border-b-0"
         >
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-orange-100" />
+          <div className="h-10 w-10 animate-pulse rounded-lg bg-orange-950/60" />
           <div className="space-y-1.5 py-1 pr-2">
-            <div className="h-3.5 w-full animate-pulse rounded bg-[#e5e5e5]" />
-            <div className="h-3.5 w-2/3 animate-pulse rounded bg-[#f3f4f6]" />
+            <div className="h-3.5 w-full animate-pulse rounded bg-gray-800" />
+            <div className="h-3.5 w-2/3 animate-pulse rounded bg-gray-800" />
           </div>
           <div className="space-y-1 py-0.5">
-            <div className="h-3 w-16 animate-pulse rounded bg-[#e5e5e5]" />
-            <div className="h-3 w-20 animate-pulse rounded bg-[#f3f4f6]" />
+            <div className="h-3 w-16 animate-pulse rounded bg-gray-800" />
+            <div className="h-3 w-20 animate-pulse rounded bg-gray-800" />
           </div>
         </div>
       ))}
