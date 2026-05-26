@@ -1,31 +1,32 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
+import Link from 'next/link';
 import Image from 'next/image';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
 import Badge from '../ui/badge/Badge';
 import Button from '../ui/button/Button';
-import { TrashBinIcon, PencilIcon, CheckLineIcon } from '@/icons';
-import { telegramApi } from '@/api/telegram';
+import { TrashBinIcon, CheckLineIcon } from '@/icons';
 import { getCriteriaColor } from '@/utils/criteria';
 import type { Gift } from '@/types';
+import { useGiftPhotoUrls } from './useGiftPhotoUrls';
 
 interface GiftsTableProps {
   gifts: Gift[];
   assignedGiftIds?: Set<number>;
   isLoading?: boolean;
-  onEdit?: (gift: Gift) => void;
   onApprove?: (gift: Gift) => Promise<void>;
   onDelete?: (giftId: number) => void;
+  editQueryString?: string;
 }
 
 export default function GiftsTable({
   gifts,
   assignedGiftIds,
   isLoading,
-  onEdit,
   onApprove,
   onDelete,
+  editQueryString,
 }: GiftsTableProps) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [approvingId, setApprovingId] = useState<number | null>(null);
@@ -58,35 +59,17 @@ export default function GiftsTable({
     }
   };
 
-  // Состояние для хранения URL фото
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
-
-  // Загружаем URL фото при изменении списка подарков
-  useEffect(() => {
-    const loadPhotoUrls = async () => {
-      const urls: Record<string, string> = {};
-      
-      for (const gift of gifts) {
-        const photo = gift.attachments?.find((a) => a.file_type === 'photo');
-        if (photo && !photoUrls[photo.telegram_file_id]) {
-          try {
-            const url = await telegramApi.getFileURL(photo.telegram_file_id);
-            urls[photo.telegram_file_id] = url;
-          } catch (err) {
-            console.error(`Failed to load photo for file ${photo.telegram_file_id}:`, err);
-          }
-        }
-      }
-
-      if (Object.keys(urls).length > 0) {
-        setPhotoUrls((prev) => ({ ...prev, ...urls }));
-      }
-    };
-
-    if (gifts.length > 0) {
-      loadPhotoUrls();
-    }
-  }, [gifts, photoUrls]);
+  const photoUrlTargets = useMemo(
+    () =>
+      gifts.flatMap((gift) => {
+        const photo = gift.attachments?.find(
+          (attachment) => attachment.file_type === 'photo'
+        );
+        return photo ? [{ giftId: gift.id, attachment: photo }] : [];
+      }),
+    [gifts]
+  );
+  const photoUrls = useGiftPhotoUrls(photoUrlTargets);
 
   if (isLoading) {
     return (
@@ -168,7 +151,7 @@ export default function GiftsTable({
                   (a) => a.file_type === 'photo'
                 );
                 const photoUrl = firstPhoto
-                  ? photoUrls[firstPhoto.telegram_file_id] || null
+                  ? photoUrls[firstPhoto.id]?.url || null
                   : null;
                 const isPendingReview = gift.review_status === 'pending_review';
 
@@ -289,16 +272,14 @@ export default function GiftsTable({
                             {approvingId === gift.id ? '...' : 'Проверить'}
                           </Button>
                         )}
-                        {onEdit && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            startIcon={<PencilIcon />}
-                            onClick={() => onEdit(gift)}
-                          >
+                        <Link
+                          href={`/gifts/${gift.id}${
+                            editQueryString ? `?${editQueryString}` : ''
+                          }`}
+                          className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 transition hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700 dark:hover:bg-white/[0.03] dark:hover:text-gray-300"
+                        >
                             Редактировать
-                          </Button>
-                        )}
+                        </Link>
                         {onDelete && (
                           <Button
                             size="sm"

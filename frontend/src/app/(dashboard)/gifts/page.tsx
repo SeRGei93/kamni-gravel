@@ -1,29 +1,93 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { giftsApi } from '@/api/gifts';
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
 import type { Gift, Event, GiftReviewStatus } from '@/types';
 import GiftsTable from '@/components/gifts/GiftsTable';
-import EditGiftModal from '@/components/gifts/EditGiftModal';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
 import { GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
 
 type GiftReviewStatusFilter = 'all' | GiftReviewStatus;
 
+function parseReviewStatusFilter(value: string | null): GiftReviewStatusFilter {
+  return value === 'pending_review' || value === 'approved' ? value : 'all';
+}
+
+function parseEventId(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const eventId = Number(value);
+  return Number.isInteger(eventId) && eventId > 0 ? eventId : null;
+}
+
 export default function GiftsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const eventIdParam = searchParams.get('event_id');
+  const reviewStatusParam = searchParams.get('review_status');
+
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [allGifts, setAllGifts] = useState<Gift[]>([]);
   const [reviewStatusFilter, setReviewStatusFilter] =
-    useState<GiftReviewStatusFilter>('all');
+    useState<GiftReviewStatusFilter>(
+      parseReviewStatusFilter(reviewStatusParam)
+    );
   const [assignedGiftIds, setAssignedGiftIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingGift, setEditingGift] = useState<Gift | null>(null);
+
+  const listQueryString = useMemo(() => {
+    const params = new URLSearchParams();
+
+    if (selectedEventId) {
+      params.set('event_id', String(selectedEventId));
+    }
+    if (reviewStatusFilter !== 'all') {
+      params.set('review_status', reviewStatusFilter);
+    }
+
+    return params.toString();
+  }, [selectedEventId, reviewStatusFilter]);
+
+  const updateListQuery = useCallback(
+    (next: {
+      eventId?: number | null;
+      reviewStatus?: GiftReviewStatusFilter;
+    }) => {
+      const params = new URLSearchParams(searchParams.toString());
+
+      if ('eventId' in next) {
+        if (next.eventId) {
+          params.set('event_id', String(next.eventId));
+        } else {
+          params.delete('event_id');
+        }
+      }
+
+      if ('reviewStatus' in next) {
+        if (next.reviewStatus && next.reviewStatus !== 'all') {
+          params.set('review_status', next.reviewStatus);
+        } else {
+          params.delete('review_status');
+        }
+      }
+
+      const query = params.toString();
+      router.replace(`${pathname}${query ? `?${query}` : ''}`, {
+        scroll: false,
+      });
+    },
+    [pathname, router, searchParams]
+  );
 
   // Загрузка событий
   useEffect(() => {
@@ -34,18 +98,36 @@ export default function GiftsPage() {
     try {
       const response = await eventsApi.getAll();
       setEvents(response.events);
-      // Автоматически выбираем первое активное событие
-      const activeEvent = response.events.find((e) => e.active);
-      if (activeEvent) {
-        setSelectedEventId(activeEvent.id);
-      } else if (response.events.length > 0) {
-        setSelectedEventId(response.events[0].id);
-      }
     } catch (err) {
       setError('Ошибка загрузки событий');
       console.error('Failed to load events:', err);
     }
   };
+
+  useEffect(() => {
+    const nextReviewStatus = parseReviewStatusFilter(reviewStatusParam);
+    setReviewStatusFilter((current) =>
+      current === nextReviewStatus ? current : nextReviewStatus
+    );
+  }, [reviewStatusParam]);
+
+  useEffect(() => {
+    if (events.length === 0) {
+      setSelectedEventId(null);
+      return;
+    }
+
+    const requestedEventId = parseEventId(eventIdParam);
+    const eventFromUrl = requestedEventId
+      ? events.find((event) => event.id === requestedEventId)
+      : undefined;
+    const activeEvent = events.find((event) => event.active);
+    const nextEventId = (eventFromUrl || activeEvent || events[0]).id;
+
+    setSelectedEventId((current) =>
+      current === nextEventId ? current : nextEventId
+    );
+  }, [events, eventIdParam]);
 
   const loadGifts = useCallback(async () => {
     if (!selectedEventId) return;
@@ -80,12 +162,21 @@ export default function GiftsPage() {
         });
         setAssignedGiftIds(assignedIds);
       } catch (err) {
-        console.error('Failed to load prize distribution:', err);
+        console.error('Failed to load prize distribution:', {
+          event_id: selectedEventId,
+          operation: 'load_prize_distribution',
+          error: err,
+        });
         setAssignedGiftIds(new Set());
       }
     } catch (err) {
       setError('Ошибка загрузки подарков');
-      console.error('Failed to load gifts:', err);
+      console.error('Failed to load gifts:', {
+        event_id: selectedEventId,
+        review_status: reviewStatusFilter,
+        operation: 'load_gifts',
+        error: err,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +199,12 @@ export default function GiftsPage() {
       await loadGifts();
     } catch (err) {
       setError('Ошибка удаления подарка');
-      console.error('Failed to delete gift:', err);
+      console.error('Failed to delete gift:', {
+        gift_id: giftId,
+        event_id: selectedEventId,
+        operation: 'delete_gift',
+        error: err,
+      });
       throw err;
     }
   };
@@ -126,7 +222,12 @@ export default function GiftsPage() {
       await loadGifts();
     } catch (err) {
       setError('Ошибка проверки подарка');
-      console.error('Failed to approve gift:', err);
+      console.error('Failed to approve gift:', {
+        gift_id: gift.id,
+        event_id: selectedEventId,
+        operation: 'approve_gift',
+        error: err,
+      });
       throw err;
     }
   };
@@ -177,20 +278,26 @@ export default function GiftsPage() {
             <Select
               options={eventOptions}
               placeholder="Выберите событие"
+              key={`event-${selectedEventId ?? 'empty'}`}
               defaultValue={selectedEventId ? String(selectedEventId) : ''}
-              onChange={(value) =>
-                setSelectedEventId(value ? Number(value) : null)
-              }
+              onChange={(value) => {
+                const nextEventId = value ? Number(value) : null;
+                setSelectedEventId(nextEventId);
+                updateListQuery({ eventId: nextEventId });
+              }}
             />
           </div>
           <div>
             <Label>Статус проверки</Label>
             <Select
               options={GIFT_REVIEW_STATUS_FILTER_OPTIONS}
+              key={`review-status-${reviewStatusFilter}`}
               defaultValue={reviewStatusFilter}
-              onChange={(value) =>
-                setReviewStatusFilter(value as GiftReviewStatusFilter)
-              }
+              onChange={(value) => {
+                const nextReviewStatus = parseReviewStatusFilter(value);
+                setReviewStatusFilter(nextReviewStatus);
+                updateListQuery({ reviewStatus: nextReviewStatus });
+              }}
             />
           </div>
         </div>
@@ -212,20 +319,10 @@ export default function GiftsPage() {
         gifts={gifts}
         assignedGiftIds={assignedGiftIds}
         isLoading={isLoading}
-        onEdit={(gift) => setEditingGift(gift)}
         onApprove={handleApprove}
         onDelete={handleDelete}
+        editQueryString={listQueryString}
       />
-
-      {/* Модальное окно редактирования подарка */}
-      {editingGift && (
-        <EditGiftModal
-          isOpen={!!editingGift}
-          onClose={() => setEditingGift(null)}
-          gift={editingGift}
-          onSuccess={loadGifts}
-        />
-      )}
     </div>
   );
 }

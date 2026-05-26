@@ -16,12 +16,14 @@ export interface TelegramFileURLResponse {
 export const telegramApi = {
   async getFileURL(fileId: string): Promise<string> {
     const response = await get<TelegramFileURLResponse>(
-      `${TELEGRAM_PREFIX}/files/${fileId}`
+      `${TELEGRAM_PREFIX}/files/${encodeURIComponent(fileId)}`
     );
     return response.url;
   },
 
   async getFileInfo(fileId: string): Promise<TelegramFileInfo> {
-    return get<TelegramFileInfo>(`${TELEGRAM_PREFIX}/files/${fileId}/info`);
+    return get<TelegramFileInfo>(
+      `${TELEGRAM_PREFIX}/files/${encodeURIComponent(fileId)}/info`
+    );
   },
 };
