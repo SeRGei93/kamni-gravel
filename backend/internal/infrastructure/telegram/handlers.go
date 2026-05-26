@@ -415,39 +415,12 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 	state := b.sessionManager.GetState(userID)
 
 	switch state {
-	case session.StateAwaitingGiftDesc:
-		// Обрабатываем описание подарка
-		giftHandler := handler.NewGiftHandler(
-			b.sessionManager,
-			b.eventRepo,
-			b.addGiftHandler,
-		)
-		text, markup := giftHandler.HandleGiftDescription(ctx, userID, msg.Text)
-
-		// Отправляем новое сообщение и сохраняем его ID для последующего удаления (не сообщения пользователя!)
-		sentMsg, err := b.sendWithOptionalKeyboard(ctx, msg.Chat.ID, text, markup)
-		if err == nil && sentMsg != nil {
-			b.appendGiftMessageID(userID, sentMsg.ID)
-		}
-
-	case session.StateAwaitingGiftPhoto:
-		// Обрабатываем фото подарка
-		if len(msg.Photo) > 0 {
-			// Берём фото наибольшего размера
-			photo := msg.Photo[len(msg.Photo)-1]
-			giftHandler := handler.NewGiftHandler(
-				b.sessionManager,
-				b.eventRepo,
-				b.addGiftHandler,
-			)
-			text := giftHandler.HandleGiftPhoto(userID, photo.FileID)
-
-			// Отправляем подтверждение и сохраняем его ID для удаления
-			sentMsg, err := b.SendMessage(ctx, msg.Chat.ID, text)
-			if err == nil && sentMsg != nil {
-				b.appendGiftMessageID(userID, sentMsg.ID)
-			}
-		}
+	case session.StateAwaitingGiftGender,
+		session.StateAwaitingGiftBikeType,
+		session.StateAwaitingGiftDesc,
+		session.StateAwaitingGiftPhoto,
+		session.StateAwaitingGiftConfirmation:
+		b.handleGiftMessage(ctx, msg, userID, state)
 
 	case session.StateAwaitingResultLink:
 		// Обрабатываем ссылку на результат
@@ -463,6 +436,99 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 	default:
 		// Если нет активного состояния, предлагаем использовать /start
 		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
+	}
+}
+
+func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID int64, state session.SessionState) {
+	giftHandler := handler.NewGiftHandler(
+		b.sessionManager,
+		b.eventRepo,
+		b.addGiftHandler,
+	)
+	mediaGroupID := ""
+	chatID := int64(0)
+	if msg != nil {
+		mediaGroupID = msg.MediaGroupID
+		chatID = msg.Chat.ID
+	}
+
+	mediaGroupAlreadyReplied := b.giftMediaGroupAlreadyReplied(userID, state, msg)
+	action := giftMessageAction(state, msg, mediaGroupAlreadyReplied)
+	if action.OutOfOrder {
+		b.logDebug(
+			"Gift flow out-of-order input: user_id=%d state=%s update_kind=%s media_group_id=%s",
+			userID,
+			state,
+			action.UpdateKind,
+			mediaGroupID,
+		)
+	}
+	if action.MissingInput {
+		log.Printf(
+			"Gift flow input missing expected content: user_id=%d state=%s update_kind=%s media_group_id=%s",
+			userID,
+			state,
+			action.UpdateKind,
+			mediaGroupID,
+		)
+	}
+
+	var replyText string
+	var replyMarkup *models.InlineKeyboardMarkup
+	if action.ProcessDescription {
+		replyText, replyMarkup = giftHandler.HandleGiftDescription(ctx, userID, action.Description)
+	}
+
+	photoCount := 0
+	if action.ProcessPhoto {
+		photoCount = giftHandler.AppendGiftPhoto(userID, action.PhotoFileID)
+		b.logDebug(
+			"Gift photo message processed: user_id=%d state=%s update_kind=%s media_group_id=%s photo_count=%d",
+			userID,
+			state,
+			action.UpdateKind,
+			mediaGroupID,
+			photoCount,
+		)
+	}
+
+	if action.SuppressReply {
+		return
+	}
+
+	switch action.Reply {
+	case giftMessageReplyGiftGenderStep:
+		replyText, replyMarkup = giftHandler.GiftGenderPrompt(userID)
+	case giftMessageReplyGiftBikeStep:
+		replyText, replyMarkup = giftHandler.GiftBikeTypePrompt(userID)
+	case giftMessageReplyGiftDescriptionStep:
+		replyText, replyMarkup = giftHandler.GiftDescriptionPrompt(userID)
+	case giftMessageReplyGiftPhotoStep:
+		if replyText == "" {
+			replyText, replyMarkup = giftHandler.GiftPhotoPrompt(userID)
+		}
+	case giftMessageReplyGiftPhotoAdded:
+		replyText = giftHandler.GiftPhotoAddedText(userID, photoCount)
+		replyMarkup = nil
+	case giftMessageReplyGiftConfirmationStep:
+		replyText, replyMarkup = giftHandler.GiftConfirmationPrompt(userID)
+	case giftMessageReplyNone:
+		return
+	}
+
+	if replyText == "" {
+		b.logDebug("Gift flow response skipped: user_id=%d state=%s reason=empty_reply", userID, state)
+		return
+	}
+
+	if chatID == 0 {
+		log.Printf("Gift flow response skipped: user_id=%d state=%s reason=missing_chat", userID, state)
+		return
+	}
+
+	sentMsg, err := b.sendWithOptionalKeyboard(ctx, chatID, replyText, replyMarkup)
+	if err == nil && sentMsg != nil {
+		b.appendGiftMessageID(userID, sentMsg.ID)
 	}
 }
 
@@ -514,4 +580,44 @@ func (b *Bot) giftMessageIDs(userID int64) []int {
 	}
 
 	return messageIDs
+}
+
+func (b *Bot) giftMediaGroupAlreadyReplied(userID int64, state session.SessionState, msg *models.Message) bool {
+	if msg == nil || strings.TrimSpace(msg.MediaGroupID) == "" {
+		return false
+	}
+
+	current := giftMediaGroupReplyState{
+		MediaGroupID:   msg.MediaGroupID,
+		ChatID:         msg.Chat.ID,
+		FirstMessageID: msg.ID,
+		State:          state,
+	}
+
+	const key = "gift_media_group_reply"
+	replyStateRaw, ok := b.sessionManager.GetData(userID, key)
+	if !ok {
+		b.sessionManager.SetData(userID, key, current)
+		return false
+	}
+
+	replyState, ok := replyStateRaw.(giftMediaGroupReplyState)
+	if !ok {
+		log.Printf("Invalid gift media group reply state: user_id=%d state=%s key=%s type=%T", userID, state, key, replyStateRaw)
+		b.sessionManager.SetData(userID, key, current)
+		return false
+	}
+
+	if replyState.MediaGroupID == current.MediaGroupID && replyState.ChatID == current.ChatID {
+		b.logDebug(
+			"Gift media group response suppressed: user_id=%d state=%s media_group_id=%s",
+			userID,
+			state,
+			msg.MediaGroupID,
+		)
+		return true
+	}
+
+	b.sessionManager.SetData(userID, key, current)
+	return false
 }

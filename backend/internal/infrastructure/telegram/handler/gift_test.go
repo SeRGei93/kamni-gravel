@@ -59,7 +59,7 @@ func TestGiftHandlerHandleGiftDescriptionSetsPhotoState(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	h := NewGiftHandler(manager, nil, nil)
 
-	text, markup := h.HandleGiftDescription(context.Background(), 123, "Bottle cage")
+	text, markup := h.HandleGiftDescription(context.Background(), 123, "  Bottle cage  ")
 
 	if text == "" {
 		t.Fatal("text mismatch: got empty text")
@@ -77,6 +77,63 @@ func TestGiftHandlerHandleGiftDescriptionSetsPhotoState(t *testing.T) {
 	}
 	if descriptionRaw != "Bottle cage" {
 		t.Fatalf("gift_description mismatch: got %v, want Bottle cage", descriptionRaw)
+	}
+}
+
+func TestGiftHandlerHandleGiftDescriptionRejectsEmptyInput(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	h := NewGiftHandler(manager, nil, nil)
+	userID := int64(123)
+
+	manager.SetState(userID, session.StateAwaitingGiftDesc)
+
+	text, markup := h.HandleGiftDescription(context.Background(), userID, " \n\t ")
+
+	if text == "" {
+		t.Fatal("text mismatch: got empty text")
+	}
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil")
+	}
+	if got := manager.GetState(userID); got != session.StateAwaitingGiftDesc {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftDesc)
+	}
+	if _, ok := manager.GetData(userID, "gift_description"); ok {
+		t.Fatal("gift_description should not be stored for empty input")
+	}
+}
+
+func TestGiftHandlerDescriptionCaptionAndPhotoStoresBoth(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	h := NewGiftHandler(manager, nil, nil)
+	userID := int64(123)
+
+	manager.SetState(userID, session.StateAwaitingGiftDesc)
+
+	_, _ = h.HandleGiftDescription(context.Background(), userID, "Bottle cage")
+	photoCount := h.AppendGiftPhoto(userID, "telegram-file-id")
+
+	if photoCount != 1 {
+		t.Fatalf("photo count mismatch: got %d, want 1", photoCount)
+	}
+	if got := manager.GetState(userID); got != session.StateAwaitingGiftPhoto {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftPhoto)
+	}
+
+	descriptionRaw, ok := manager.GetData(userID, "gift_description")
+	if !ok {
+		t.Fatal("gift_description missing from session")
+	}
+	if descriptionRaw != "Bottle cage" {
+		t.Fatalf("gift_description mismatch: got %v, want Bottle cage", descriptionRaw)
+	}
+
+	attachments := giftAttachmentsFromSession(t, manager, userID)
+	if len(attachments) != 1 {
+		t.Fatalf("attachment count mismatch: got %d, want 1", len(attachments))
+	}
+	if attachments[0].TelegramFileID != "telegram-file-id" {
+		t.Fatalf("telegram file id mismatch: got %q", attachments[0].TelegramFileID)
 	}
 }
 
@@ -107,6 +164,57 @@ func TestGiftHandlerHandleGiftPhotoTracksAttachment(t *testing.T) {
 	}
 	if attachments[0].FileType != "photo" {
 		t.Fatalf("file type mismatch: got %q, want photo", attachments[0].FileType)
+	}
+}
+
+func TestGiftHandlerAppendGiftPhotoPreservesExistingDescription(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	h := NewGiftHandler(manager, nil, nil)
+	userID := int64(123)
+
+	manager.SetState(userID, session.StateAwaitingGiftPhoto)
+	manager.SetData(userID, "gift_description", "Bottle cage")
+
+	photoCount := h.AppendGiftPhoto(userID, "telegram-file-id")
+
+	if photoCount != 1 {
+		t.Fatalf("photo count mismatch: got %d, want 1", photoCount)
+	}
+	descriptionRaw, ok := manager.GetData(userID, "gift_description")
+	if !ok {
+		t.Fatal("gift_description missing from session")
+	}
+	if descriptionRaw != "Bottle cage" {
+		t.Fatalf("gift_description mismatch: got %v, want Bottle cage", descriptionRaw)
+	}
+}
+
+func TestGiftHandlerGiftPromptsReturnContextualMarkup(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	h := NewGiftHandler(manager, nil, nil)
+	userID := int64(123)
+
+	tests := []struct {
+		name string
+		run  func() (string, *models.InlineKeyboardMarkup)
+	}{
+		{name: "gender", run: func() (string, *models.InlineKeyboardMarkup) { return h.GiftGenderPrompt(userID) }},
+		{name: "bike", run: func() (string, *models.InlineKeyboardMarkup) { return h.GiftBikeTypePrompt(userID) }},
+		{name: "description", run: func() (string, *models.InlineKeyboardMarkup) { return h.GiftDescriptionPrompt(userID) }},
+		{name: "photo", run: func() (string, *models.InlineKeyboardMarkup) { return h.GiftPhotoPrompt(userID) }},
+		{name: "confirmation", run: func() (string, *models.InlineKeyboardMarkup) { return h.GiftConfirmationPrompt(userID) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, markup := tt.run()
+			if text == "" {
+				t.Fatal("text mismatch: got empty text")
+			}
+			if markup == nil {
+				t.Fatal("markup mismatch: got nil")
+			}
+		})
 	}
 }
 
@@ -239,6 +347,21 @@ func giftCallbackData(menu models.InlineKeyboardMarkup) []string {
 		}
 	}
 	return data
+}
+
+func giftAttachmentsFromSession(t *testing.T, manager *session.Manager, userID int64) []command.GiftAttachmentData {
+	t.Helper()
+
+	attachmentsRaw, ok := manager.GetData(userID, "gift_attachments")
+	if !ok {
+		t.Fatal("gift_attachments missing from session")
+	}
+
+	attachments, ok := attachmentsRaw.([]command.GiftAttachmentData)
+	if !ok {
+		t.Fatalf("gift_attachments type mismatch: got %T", attachmentsRaw)
+	}
+	return attachments
 }
 
 type giftConfirmUserRepoFake struct {

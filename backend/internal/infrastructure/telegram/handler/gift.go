@@ -110,30 +110,38 @@ func (h *GiftHandler) HandleGiftBikeTypeSelection(ctx context.Context, userID in
 	h.sessionManager.SetData(userID, "gift_bike_type", bikeType)
 	h.sessionManager.SetState(userID, session.StateAwaitingGiftDesc)
 
-	texts := h.giftTexts(userID)
-	text := texts.GiftDescriptionStep
-
-	keyboard := keyboard.CancelMenu()
-
-	return text, &keyboard
+	return h.GiftDescriptionPrompt(userID)
 }
 
 // HandleGiftDescription обрабатывает описание подарка
 func (h *GiftHandler) HandleGiftDescription(ctx context.Context, userID int64, description string) (string, *models.InlineKeyboardMarkup) {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		log.Printf("Gift description input missing text: user_id=%d state=%s", userID, h.sessionManager.GetState(userID))
+		return h.GiftDescriptionPrompt(userID)
+	}
+
 	// Сохраняем описание
 	h.sessionManager.SetData(userID, "gift_description", description)
 	h.sessionManager.SetState(userID, session.StateAwaitingGiftPhoto)
 
-	texts := h.giftTexts(userID)
-	text := texts.GiftPhotoStep
-
-	keyboard := keyboard.GiftPhotoMenu()
-
-	return text, &keyboard
+	return h.GiftPhotoPrompt(userID)
 }
 
 // HandleGiftPhoto обрабатывает фото подарка
 func (h *GiftHandler) HandleGiftPhoto(userID int64, fileID string) string {
+	count := h.AppendGiftPhoto(userID, fileID)
+	return h.GiftPhotoAddedText(userID, count)
+}
+
+// AppendGiftPhoto добавляет фото к текущей сессии подарка и возвращает новое количество фото.
+func (h *GiftHandler) AppendGiftPhoto(userID int64, fileID string) int {
+	fileID = strings.TrimSpace(fileID)
+	if fileID == "" {
+		log.Printf("Gift photo input missing file id: user_id=%d state=%s", userID, h.sessionManager.GetState(userID))
+		return h.giftPhotoCount(userID)
+	}
+
 	// Получаем существующие фото
 	attachmentsRaw, ok := h.sessionManager.GetData(userID, "gift_attachments")
 	var attachments []command.GiftAttachmentData
@@ -154,10 +162,101 @@ func (h *GiftHandler) HandleGiftPhoto(userID int64, fileID string) string {
 
 	h.sessionManager.SetData(userID, "gift_attachments", attachments)
 
+	return len(attachments)
+}
+
+func (h *GiftHandler) giftPhotoCount(userID int64) int {
+	attachmentsRaw, ok := h.sessionManager.GetData(userID, "gift_attachments")
+	if !ok {
+		return 0
+	}
+
+	attachments, ok := attachmentsRaw.([]command.GiftAttachmentData)
+	if !ok {
+		log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_attachments type=%T", userID, h.sessionManager.GetState(userID), attachmentsRaw)
+		return 0
+	}
+
+	return len(attachments)
+}
+
+// GiftPhotoAddedText возвращает текст подтверждения добавления фото.
+func (h *GiftHandler) GiftPhotoAddedText(userID int64, photoCount int) string {
 	texts := h.giftTexts(userID)
 	return renderTelegramText(texts.GiftPhotoAdded, map[string]string{
-		"photo_count": fmt.Sprintf("%d", len(attachments)),
+		"photo_count": fmt.Sprintf("%d", photoCount),
 	})
+}
+
+// GiftGenderPrompt возвращает текущую подсказку выбора пола подарка без изменения сессии.
+func (h *GiftHandler) GiftGenderPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
+	texts := h.giftTexts(userID)
+	text := texts.GiftGenderStep
+
+	keyboard := keyboard.NewBuilder().
+		AddRow(
+			keyboard.Button("👨 Мужской", "gift_gender_male"),
+			keyboard.Button("👩 Женский", "gift_gender_female"),
+		).
+		AddRow(
+			keyboard.Button("👥 Любой", "gift_gender_all"),
+		).
+		AddRow(
+			keyboard.Button("❌ Отмена", "cancel"),
+		).
+		Build()
+
+	return text, &keyboard
+}
+
+// GiftBikeTypePrompt возвращает текущую подсказку выбора велосипеда подарка без изменения сессии.
+func (h *GiftHandler) GiftBikeTypePrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
+	texts := h.giftTexts(userID)
+	text := texts.GiftBikeStep
+
+	keyboard := keyboard.NewBuilder().
+		AddRow(
+			keyboard.Button("🚵 Гравийник", "gift_bike_gravel"),
+			keyboard.Button("🏔 МТБ", "gift_bike_mtb"),
+		).
+		AddRow(
+			keyboard.Button("🚴 Шоссе", "gift_bike_road"),
+			keyboard.Button("⚡️ Фикс", "gift_bike_single_speed"),
+		).
+		AddRow(
+			keyboard.Button("👥 Тандем", "gift_bike_tandem"),
+		).
+		AddRow(
+			keyboard.Button("🚲 Любой", "gift_bike_all"),
+		).
+		AddRow(
+			keyboard.Button("❌ Отмена", "cancel"),
+		).
+		Build()
+
+	return text, &keyboard
+}
+
+// GiftDescriptionPrompt возвращает текущую подсказку ввода описания подарка без изменения сессии.
+func (h *GiftHandler) GiftDescriptionPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
+	texts := h.giftTexts(userID)
+	text := texts.GiftDescriptionStep
+	keyboard := keyboard.CancelMenu()
+	return text, &keyboard
+}
+
+// GiftPhotoPrompt возвращает текущую подсказку добавления фото подарка без изменения сессии.
+func (h *GiftHandler) GiftPhotoPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
+	texts := h.giftTexts(userID)
+	text := texts.GiftPhotoStep
+	keyboard := keyboard.GiftPhotoMenu()
+	return text, &keyboard
+}
+
+// GiftConfirmationPrompt возвращает подсказку подтверждения без изменения сессии.
+func (h *GiftHandler) GiftConfirmationPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
+	markup := keyboard.GiftConfirmationMenu()
+	return "Подарок уже заполнен. Подтвердите отправку кнопками ниже или отмените добавление.", &markup
 }
 
 // PreviewGift показывает сводку подарка и переводит сессию в ожидание подтверждения.
