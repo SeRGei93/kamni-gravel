@@ -63,6 +63,23 @@ const DEFAULT_TELEGRAM_TEXTS: EventTelegramTexts = {
   gift_cancelled: 'Добавление приза отменено.',
   gift_session_error:
     'Ошибка: данные приза не найдены или повреждены. Начните добавление приза заново.',
+  result_prompt: `🏁 Отправка результата
+
+Отправьте ссылку на вашу активность Strava.
+
+Пример:
+https://www.strava.com/activities/123456789`,
+  result_invalid_link:
+    'Отправьте ссылку на активность Strava.\nПример:\nhttps://www.strava.com/activities/123456789',
+  result_success:
+    '✅ Результат принят!\n\nСсылка: {result_link}\n\nВаше время будет обработано администратором. Следите за обновлениями! 🏆',
+  result_already_sent: 'Вы уже отправили результат!',
+  result_not_registered:
+    'Вы не зарегистрированы на это событие. Сначала пройдите регистрацию.',
+  result_start_missing:
+    'Подача результата пока недоступна: время старта события не настроено. Обратитесь к организатору.',
+  result_not_started:
+    'Подача результата откроется после старта события: {start_time} (Минск UTC+3).',
 };
 
 const TEXT_FIELDS: Array<{
@@ -80,6 +97,13 @@ const TEXT_FIELDS: Array<{
   { key: 'gift_success', label: 'Успешное добавление', rows: 11, wide: true },
   { key: 'gift_cancelled', label: 'Отмена', rows: 2 },
   { key: 'gift_session_error', label: 'Ошибка сессии', rows: 2 },
+  { key: 'result_prompt', label: 'Результат: запрос ссылки', rows: 6, wide: true },
+  { key: 'result_invalid_link', label: 'Результат: неверная ссылка', rows: 3 },
+  { key: 'result_success', label: 'Результат: принято', rows: 6, wide: true },
+  { key: 'result_already_sent', label: 'Результат: уже отправлен', rows: 2 },
+  { key: 'result_not_registered', label: 'Результат: участник не зарегистрирован', rows: 3 },
+  { key: 'result_start_missing', label: 'Результат: старт не настроен', rows: 3 },
+  { key: 'result_not_started', label: 'Результат: старт ещё не наступил', rows: 3 },
 ];
 
 function normalizeTexts(texts?: Partial<EventTelegramTexts>): EventTelegramTexts {
@@ -129,12 +153,14 @@ export default function EventTelegramTextsForm({
 
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Плейсхолдеры для предпросмотра и успешного добавления:{' '}
+          Плейсхолдеры для призов и результатов:{' '}
           <span className="font-mono">{'{gender}'}</span>,{' '}
           <span className="font-mono">{'{bike_type}'}</span>,{' '}
           <span className="font-mono">{'{description}'}</span>,{' '}
           <span className="font-mono">{'{photo_count}'}</span>,{' '}
-          <span className="font-mono">{'{photo_line}'}</span>.
+          <span className="font-mono">{'{photo_line}'}</span>,{' '}
+          <span className="font-mono">{'{result_link}'}</span>,{' '}
+          <span className="font-mono">{'{start_time}'}</span>.
         </p>
       </div>
 

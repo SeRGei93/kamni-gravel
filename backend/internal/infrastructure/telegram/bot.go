@@ -93,6 +93,7 @@ func NewBot(
 
 	submitResultHandler := command.NewSubmitResultHandler(
 		participantRepo,
+		eventRepo,
 		resultRepo,
 	)
 

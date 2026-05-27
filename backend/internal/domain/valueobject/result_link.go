@@ -2,11 +2,12 @@ package valueobject
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
 
-// ResultLink представляет ссылку на результат (Strava/Komoot)
+// ResultLink представляет ссылку на результат Strava.
 type ResultLink struct {
 	URL      string
 	Platform Platform
@@ -17,59 +18,74 @@ type Platform string
 
 const (
 	PlatformStrava Platform = "strava"
-	PlatformKomoot Platform = "komoot"
 	PlatformNone   Platform = ""
 )
 
 var (
-	stravaRe    = regexp.MustCompile(`^https?://(www\.)?strava\.com/activities/\d+$`)
-	stravaAppRe = regexp.MustCompile(`^https?://(www\.)?strava\.app\.link/[A-Za-z0-9]+$`)
-	komootRe    = regexp.MustCompile(`^https?://(www\.)?komoot\.com/tour/\d+$`)
+	stravaActivityIDRe = regexp.MustCompile(`^\d+$`)
+	stravaAppTokenRe   = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
 // NewResultLink создаёт и валидирует ссылку на результат
-func NewResultLink(url string) (*ResultLink, error) {
-	url = strings.TrimSpace(strings.ToLower(url))
-	
-	if url == "" {
+func NewResultLink(rawURL string) (*ResultLink, error) {
+	rawURL = strings.TrimSpace(rawURL)
+
+	if rawURL == "" {
 		return nil, fmt.Errorf("result link cannot be empty")
 	}
-	
-	// Проверяем Strava
-	if stravaRe.MatchString(url) || stravaAppRe.MatchString(url) {
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Strava URL format. Example: https://www.strava.com/activities/14758223172")
+	}
+
+	parsedURL.Scheme = strings.ToLower(parsedURL.Scheme)
+	host := strings.ToLower(parsedURL.Hostname())
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return nil, fmt.Errorf("invalid Strava URL format. Example: https://www.strava.com/activities/14758223172")
+	}
+	if host == "" || parsedURL.Port() != "" || parsedURL.User != nil {
+		return nil, fmt.Errorf("invalid Strava URL format. Example: https://www.strava.com/activities/14758223172")
+	}
+
+	parsedURL.Host = host
+
+	if isStravaActivityURL(host, parsedURL.Path) || isStravaAppURL(host, parsedURL.Path) {
 		return &ResultLink{
-			URL:      url,
+			URL:      parsedURL.String(),
 			Platform: PlatformStrava,
 		}, nil
 	}
-	
-	// Проверяем Komoot
-	if komootRe.MatchString(url) {
-		return &ResultLink{
-			URL:      url,
-			Platform: PlatformKomoot,
-		}, nil
-	}
-	
-	// Если содержит strava или komoot, но формат неверный
-	if strings.Contains(url, "strava.com") {
+
+	if strings.Contains(host, "strava") {
 		return nil, fmt.Errorf("invalid Strava URL format. Example: https://www.strava.com/activities/14758223172")
 	}
-	if strings.Contains(url, "komoot.com") {
-		return nil, fmt.Errorf("invalid Komoot URL format. Example: https://www.komoot.com/tour/2308024419")
+
+	return nil, fmt.Errorf("unsupported platform. Only Strava links are accepted")
+}
+
+func isStravaActivityURL(host string, path string) bool {
+	if host != "strava.com" && host != "www.strava.com" {
+		return false
 	}
-	
-	return nil, fmt.Errorf("unsupported platform. Only Strava and Komoot links are accepted")
+
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	return len(parts) == 2 && parts[0] == "activities" && stravaActivityIDRe.MatchString(parts[1])
+}
+
+func isStravaAppURL(host string, path string) bool {
+	if host != "strava.app.link" && host != "www.strava.app.link" {
+		return false
+	}
+
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	return len(parts) == 1 && stravaAppTokenRe.MatchString(parts[0])
 }
 
 // IsStrava проверяет, является ли ссылка Strava
 func (rl *ResultLink) IsStrava() bool {
 	return rl.Platform == PlatformStrava
-}
-
-// IsKomoot проверяет, является ли ссылка Komoot
-func (rl *ResultLink) IsKomoot() bool {
-	return rl.Platform == PlatformKomoot
 }
 
 // String возвращает URL

@@ -572,6 +572,7 @@ paths:
     post:
       tags: [Results]
       summary: Добавить результат участнику
+      description: Принимает только ссылки на активности Strava. Подача результата доступна только после времени старта события, указанного в Минске UTC+3.
       security:
         - BearerAuth: []
       parameters:
@@ -590,7 +591,7 @@ paths:
               properties:
                 result_link:
                   type: string
-                  description: Ссылка на результат (Strava/Komoot)
+                  description: Ссылка на активность Strava
                   example: https://www.strava.com/activities/123456789
       responses:
         '201':
@@ -599,6 +600,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Result'
+        '400':
+          description: Некорректная ссылка результата. Принимаются только ссылки Strava.
+        '404':
+          description: Участник не найден
+        '409':
+          description: Подача результата ещё недоступна или время старта события не настроено
 
   /results/{id}:
     get:
@@ -1417,7 +1424,7 @@ components:
           $ref: '#/components/schemas/Gender'
         result_link:
           type: string
-          description: Ссылка на результат (Strava/Komoot)
+          description: Ссылка на активность Strava
         is_finished:
           type: boolean
           description: Финишировал ли участник (есть актуальный результат)
@@ -1461,7 +1468,7 @@ components:
           type: integer
         result_link:
           type: string
-          description: Ссылка на результат (Strava/Komoot)
+          description: Ссылка на активность Strava
         elapsed_time_sec:
           type: integer
           description: Общее время в секундах

@@ -7,6 +7,7 @@ import Badge from '../ui/badge/Badge';
 import Button from '../ui/button/Button';
 import { TrashBinIcon } from '@/icons';
 import type { Event } from '@/types';
+import { formatMinskDateTime } from '@/utils/minskTime';
 
 interface EventsTableProps {
   events: Event[];
@@ -74,7 +75,13 @@ export default function EventsTable({
                 isHeader
                 className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
               >
-                Даты
+                Старт
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
+                Финиш
               </TableCell>
               <TableCell
                 isHeader
@@ -118,19 +125,12 @@ export default function EventsTable({
                 </TableCell>
                 <TableCell className="px-5 py-4 text-start">
                   <div className="text-sm text-gray-800 dark:text-white/90">
-                    {event.start_date && (
-                      <div>
-                        Начало:{' '}
-                        {new Date(event.start_date).toLocaleDateString('ru-RU')}
-                      </div>
-                    )}
-                    {event.end_date && (
-                      <div>
-                        Окончание:{' '}
-                        {new Date(event.end_date).toLocaleDateString('ru-RU')}
-                      </div>
-                    )}
-                    {!event.start_date && !event.end_date && '-'}
+                    {formatMinskDateTime(event.start_date)}
+                  </div>
+                </TableCell>
+                <TableCell className="px-5 py-4 text-start">
+                  <div className="text-sm text-gray-800 dark:text-white/90">
+                    {formatMinskDateTime(event.end_date)}
                   </div>
                 </TableCell>
                 <TableCell className="px-5 py-4 text-start">

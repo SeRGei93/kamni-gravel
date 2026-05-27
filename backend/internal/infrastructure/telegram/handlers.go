@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
+	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/infrastructure/telegram/handler"
 	"gravel_bot/internal/infrastructure/telegram/keyboard"
 	"gravel_bot/internal/infrastructure/telegram/session"
@@ -423,6 +424,21 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 		b.handleGiftMessage(ctx, msg, userID, state)
 
 	case session.StateAwaitingResultLink:
+		resultLink, ok := resultLinkText(msg)
+		if !ok {
+			participantID := b.resultSessionUint(userID, "participant_id")
+			eventID := b.resultSessionUint(userID, "event_id")
+			log.Printf(
+				"INFO Invalid result submission input: user_id=%d participant_id=%d event_id=%d update_kind=%s reason=missing_text_link",
+				userID,
+				participantID,
+				eventID,
+				messageUpdateKind(msg),
+			)
+			_, _ = b.SendMessage(ctx, msg.Chat.ID, handler.ResultLinkInvalidInputText(b.resultTelegramTexts(userID)))
+			return
+		}
+
 		// Обрабатываем ссылку на результат
 		resultHandler := handler.NewResultHandler(
 			b.sessionManager,
@@ -430,13 +446,43 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 			b.participantRepo,
 			b.submitResultHandler,
 		)
-		text, _ := resultHandler.HandleResultLink(ctx, userID, msg.Text)
+		text, _ := resultHandler.HandleResultLink(ctx, userID, resultLink)
 		_, _ = b.SendMessage(ctx, msg.Chat.ID, text)
 
 	default:
 		// Если нет активного состояния, предлагаем использовать /start
 		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
 	}
+}
+
+func (b *Bot) resultSessionUint(userID int64, key string) uint {
+	value, ok := b.sessionManager.GetData(userID, key)
+	if !ok {
+		return 0
+	}
+
+	typedValue, ok := value.(uint)
+	if !ok {
+		log.Printf("WARN Invalid result session data: user_id=%d key=%s type=%T", userID, key, value)
+		return 0
+	}
+
+	return typedValue
+}
+
+func (b *Bot) resultTelegramTexts(userID int64) entity.EventTelegramTexts {
+	textsRaw, ok := b.sessionManager.GetData(userID, "event_telegram_texts")
+	if !ok {
+		return entity.NormalizeEventTelegramTexts(entity.EventTelegramTexts{})
+	}
+
+	texts, ok := textsRaw.(entity.EventTelegramTexts)
+	if !ok {
+		log.Printf("WARN Invalid result session data: user_id=%d key=event_telegram_texts type=%T", userID, textsRaw)
+		return entity.NormalizeEventTelegramTexts(entity.EventTelegramTexts{})
+	}
+
+	return entity.NormalizeEventTelegramTexts(texts)
 }
 
 func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID int64, state session.SessionState) {

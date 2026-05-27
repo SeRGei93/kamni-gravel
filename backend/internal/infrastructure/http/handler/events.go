@@ -19,6 +19,7 @@ import (
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/domain/valueobject"
 	"gravel_bot/internal/infrastructure/http/response"
 )
 
@@ -28,31 +29,14 @@ type eventFileStorage interface {
 	SaveEventFile(ctx context.Context, eventID uint, originalName string, src io.Reader) (string, error)
 }
 
-// parseDate парсит дату в формате RFC3339 или YYYY-MM-DD
-// Если передан формат YYYY-MM-DD, преобразует в начало дня в UTC
+// parseDate парсит дату в формате RFC3339 или Minsk wall time.
 func parseDate(dateStr string) (time.Time, error) {
-	// Пробуем RFC3339 формат (полный с временем)
-	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
-		return t, nil
+	parsed, err := valueobject.ParseMinskDateTime(dateStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("unable to parse date: %s", dateStr)
 	}
 
-	// Пробуем RFC3339Nano формат
-	if t, err := time.Parse(time.RFC3339Nano, dateStr); err == nil {
-		return t, nil
-	}
-
-	// Пробуем формат только даты YYYY-MM-DD
-	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
-		// Преобразуем в начало дня в UTC
-		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC), nil
-	}
-
-	// Пробуем формат даты с временем без часового пояса YYYY-MM-DDTHH:MM:SS
-	if t, err := time.Parse("2006-01-02T15:04:05", dateStr); err == nil {
-		return t.UTC(), nil
-	}
-
-	return time.Time{}, fmt.Errorf("unable to parse date: %s", dateStr)
+	return parsed, nil
 }
 
 // EventsHandler обрабатывает запросы для событий

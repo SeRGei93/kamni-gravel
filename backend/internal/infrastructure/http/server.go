@@ -111,6 +111,7 @@ func NewServer(
 
 	submitResultHandler := command.NewSubmitResultHandler(
 		participantRepo,
+		eventRepo,
 		resultRepo,
 	)
 
@@ -222,7 +223,7 @@ func NewServer(
 		getPrizeAssignmentByIDHandler,
 		assignPrizeHandler,
 	)
-	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo)
+	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo, submitResultHandler)
 	statsHandler := handler.NewStatsHandler(getStatsHandler)
 	telegramHandler := handler.NewTelegramHandler(cfg.BotToken)
 	miniappHandler := handler.NewMiniappHandler(

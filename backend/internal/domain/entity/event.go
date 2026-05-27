@@ -1,6 +1,10 @@
 package entity
 
-import "time"
+import (
+	"time"
+
+	"gravel_bot/internal/domain/valueobject"
+)
 
 // Event представляет велогонку/мероприятие
 type Event struct {
@@ -27,6 +31,13 @@ type EventTelegramTexts struct {
 	GiftSuccess         string `json:"gift_success"`
 	GiftCancelled       string `json:"gift_cancelled"`
 	GiftSessionError    string `json:"gift_session_error"`
+	ResultPrompt        string `json:"result_prompt"`
+	ResultInvalidLink   string `json:"result_invalid_link"`
+	ResultSuccess       string `json:"result_success"`
+	ResultAlreadySent   string `json:"result_already_sent"`
+	ResultNotRegistered string `json:"result_not_registered"`
+	ResultStartMissing  string `json:"result_start_missing"`
+	ResultNotStarted    string `json:"result_not_started"`
 }
 
 // DefaultEventTelegramTexts возвращает стандартные тексты Telegram для события.
@@ -79,6 +90,18 @@ func DefaultEventTelegramTexts() EventTelegramTexts {
 После проверки администратором приз сможет участвовать в распределении призов.`,
 		GiftCancelled:    "Добавление приза отменено.",
 		GiftSessionError: "Ошибка: данные приза не найдены или повреждены. Начните добавление приза заново.",
+		ResultPrompt: `🏁 Отправка результата
+
+Отправьте ссылку на вашу активность Strava.
+
+Пример:
+https://www.strava.com/activities/123456789`,
+		ResultInvalidLink:   "Отправьте ссылку на активность Strava.\nПример:\nhttps://www.strava.com/activities/123456789",
+		ResultSuccess:       "✅ Результат принят!\n\nСсылка: {result_link}\n\nВаше время будет обработано администратором. Следите за обновлениями! 🏆",
+		ResultAlreadySent:   "Вы уже отправили результат!",
+		ResultNotRegistered: "Вы не зарегистрированы на это событие. Сначала пройдите регистрацию.",
+		ResultStartMissing:  "Подача результата пока недоступна: время старта события не настроено. Обратитесь к организатору.",
+		ResultNotStarted:    "Подача результата откроется после старта события: {start_time} (Минск UTC+3).",
 	}
 }
 
@@ -112,6 +135,27 @@ func NormalizeEventTelegramTexts(texts EventTelegramTexts) EventTelegramTexts {
 	if texts.GiftSessionError == "" {
 		texts.GiftSessionError = defaults.GiftSessionError
 	}
+	if texts.ResultPrompt == "" {
+		texts.ResultPrompt = defaults.ResultPrompt
+	}
+	if texts.ResultInvalidLink == "" {
+		texts.ResultInvalidLink = defaults.ResultInvalidLink
+	}
+	if texts.ResultSuccess == "" {
+		texts.ResultSuccess = defaults.ResultSuccess
+	}
+	if texts.ResultAlreadySent == "" {
+		texts.ResultAlreadySent = defaults.ResultAlreadySent
+	}
+	if texts.ResultNotRegistered == "" {
+		texts.ResultNotRegistered = defaults.ResultNotRegistered
+	}
+	if texts.ResultStartMissing == "" {
+		texts.ResultStartMissing = defaults.ResultStartMissing
+	}
+	if texts.ResultNotStarted == "" {
+		texts.ResultNotStarted = defaults.ResultNotStarted
+	}
 	return texts
 }
 
@@ -130,4 +174,24 @@ func (e *Event) IsOngoing() bool {
 		return false
 	}
 	return e.Active
+}
+
+// HasStartedAt проверяет, наступило ли время старта события для подачи результата.
+func (e *Event) HasStartedAt(now time.Time) bool {
+	if e == nil || e.StartDate == nil {
+		return false
+	}
+
+	start := e.StartDate.In(valueobject.MinskLocation())
+	current := now.In(valueobject.MinskLocation())
+	return !current.Before(start)
+}
+
+// SubmissionStartTimeInMinsk возвращает время старта подачи результата в Минске UTC+3.
+func (e *Event) SubmissionStartTimeInMinsk() (time.Time, bool) {
+	if e == nil || e.StartDate == nil {
+		return time.Time{}, false
+	}
+
+	return e.StartDate.In(valueobject.MinskLocation()), true
 }

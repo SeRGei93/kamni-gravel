@@ -113,6 +113,13 @@ export interface EventTelegramTexts {
   gift_success: string;
   gift_cancelled: string;
   gift_session_error: string;
+  result_prompt: string;
+  result_invalid_link: string;
+  result_success: string;
+  result_already_sent: string;
+  result_not_registered: string;
+  result_start_missing: string;
+  result_not_started: string;
 }
 
 export interface EventListResponse {

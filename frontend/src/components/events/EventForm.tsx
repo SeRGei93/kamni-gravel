@@ -7,8 +7,8 @@ import TextArea from '../form/input/TextArea';
 import FileInput from '../form/input/FileInput';
 import Switch from '../form/switch/Switch';
 import Button from '../ui/button/Button';
-import DatePicker from '../form/date-picker';
 import type { Event, CreateEventRequest, UpdateEventRequest } from '@/types';
+import { fromMinskDateTimeInput, MINSK_OFFSET_LABEL, toMinskDateTimeInput } from '@/utils/minskTime';
 
 interface EventFormProps {
   event?: Event;
@@ -30,10 +30,10 @@ export default function EventForm({
   const [description, setDescription] = useState(event?.description || '');
   const [active, setActive] = useState(event?.active ?? true);
   const [startDate, setStartDate] = useState<string>(
-    event?.start_date ? new Date(event.start_date).toISOString().split('T')[0] : ''
+    toMinskDateTimeInput(event?.start_date)
   );
   const [endDate, setEndDate] = useState<string>(
-    event?.end_date ? new Date(event.end_date).toISOString().split('T')[0] : ''
+    toMinskDateTimeInput(event?.end_date)
   );
   const [gpxFile, setGpxFile] = useState<File | null>(null);
 
@@ -44,8 +44,8 @@ export default function EventForm({
       name,
       description,
       active,
-      start_date: startDate || undefined,
-      end_date: endDate || undefined,
+      start_date: fromMinskDateTimeInput(startDate),
+      end_date: fromMinskDateTimeInput(endDate),
     };
 
     await onSubmit(data, gpxFile || undefined);
@@ -79,32 +79,24 @@ export default function EventForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <Label>Дата начала</Label>
-          <DatePicker
+          <Label>Дата и время начала ({MINSK_OFFSET_LABEL})</Label>
+          <Input
             id="start-date"
-            mode="single"
-            placeholder="Выберите дату начала"
-            defaultDate={startDate || undefined}
-            onChange={(selectedDates) => {
-              if (selectedDates.length > 0) {
-                setStartDate(selectedDates[0].toISOString().split('T')[0]);
-              }
-            }}
+            type="datetime-local"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            disabled={isLoading}
           />
         </div>
 
         <div>
-          <Label>Дата окончания</Label>
-          <DatePicker
+          <Label>Дата и время окончания ({MINSK_OFFSET_LABEL})</Label>
+          <Input
             id="end-date"
-            mode="single"
-            placeholder="Выберите дату окончания"
-            defaultDate={endDate || undefined}
-            onChange={(selectedDates) => {
-              if (selectedDates.length > 0) {
-                setEndDate(selectedDates[0].toISOString().split('T')[0]);
-              }
-            }}
+            type="datetime-local"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            disabled={isLoading}
           />
         </div>
       </div>

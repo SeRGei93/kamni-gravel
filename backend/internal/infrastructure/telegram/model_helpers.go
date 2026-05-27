@@ -143,6 +143,15 @@ func messageTextOrCaption(msg *models.Message) string {
 	return strings.TrimSpace(msg.Caption)
 }
 
+func resultLinkText(msg *models.Message) (string, bool) {
+	if msg == nil || len(msg.Photo) > 0 || msg.Document != nil || msg.Video != nil {
+		return "", false
+	}
+
+	text := strings.TrimSpace(msg.Text)
+	return text, text != ""
+}
+
 func largestPhotoFileID(msg *models.Message) (string, bool) {
 	if msg == nil || len(msg.Photo) == 0 {
 		return "", false

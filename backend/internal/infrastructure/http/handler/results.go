@@ -2,12 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/http/response"
@@ -15,9 +17,10 @@ import (
 
 // ResultsHandler обрабатывает запросы для результатов
 type ResultsHandler struct {
-	resultRepo      repository.ResultRepository
-	participantRepo repository.ParticipantRepository
-	criteriaRepo    repository.CriteriaRepository
+	resultRepo          repository.ResultRepository
+	participantRepo     repository.ParticipantRepository
+	criteriaRepo        repository.CriteriaRepository
+	submitResultHandler *command.SubmitResultHandler
 }
 
 // NewResultsHandler создаёт новый handler
@@ -25,11 +28,13 @@ func NewResultsHandler(
 	resultRepo repository.ResultRepository,
 	participantRepo repository.ParticipantRepository,
 	criteriaRepo repository.CriteriaRepository,
+	submitResultHandler *command.SubmitResultHandler,
 ) *ResultsHandler {
 	return &ResultsHandler{
-		resultRepo:      resultRepo,
-		participantRepo: participantRepo,
-		criteriaRepo:    criteriaRepo,
+		resultRepo:          resultRepo,
+		participantRepo:     participantRepo,
+		criteriaRepo:        criteriaRepo,
+		submitResultHandler: submitResultHandler,
 	}
 }
 
@@ -117,23 +122,59 @@ func (h *ResultsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем существование участника
-	participant, err := h.participantRepo.FindByID(r.Context(), uint(participantID))
-	if err != nil || participant == nil {
-		response.NotFound(w, "Participant not found")
-		return
-	}
-
-	// Используем SubmitResultHandler через прямой вызов репозитория
-	// (в реальном приложении лучше использовать command handler)
-	result, err := dto.CreateResult(r.Context(), h.resultRepo, uint(participantID), req.ResultLink)
+	participant, err := h.submitResultHandler.Handle(r.Context(), command.SubmitResultCommand{
+		ParticipantID: uint(participantID),
+		ResultLink:    req.ResultLink,
+	})
 	if err != nil {
-		log.Printf("Error creating result: %v", err)
-		response.BadRequest(w, err.Error())
+		errorClass := resultCreateErrorClass(err)
+		if errors.Is(err, command.ErrInvalidResultLink) || errors.Is(err, command.ErrParticipantNotFound) ||
+			errors.Is(err, command.ErrResultSubmissionNotOpen) || errors.Is(err, command.ErrEventStartNotConfigured) ||
+			errors.Is(err, command.ErrEventNotStarted) || errors.Is(err, command.ErrEventNotFound) {
+			log.Printf("WARN Result creation rejected: participant_id=%d error_class=%s", participantID, errorClass)
+		} else {
+			log.Printf("ERROR Result creation failed: participant_id=%d error_class=%s error=%v", participantID, errorClass, err)
+		}
+
+		switch {
+		case errors.Is(err, command.ErrInvalidResultLink):
+			response.BadRequest(w, "Only Strava result links are accepted")
+		case errors.Is(err, command.ErrParticipantNotFound):
+			response.NotFound(w, "Participant not found")
+		case errors.Is(err, command.ErrEventNotFound):
+			response.Conflict(w, "Participant event was not found")
+		case errors.Is(err, command.ErrEventStartNotConfigured):
+			response.Conflict(w, "Event start time is not configured")
+		case errors.Is(err, command.ErrEventNotStarted):
+			response.Conflict(w, "Result submission is available only after the event start time in Minsk UTC+3")
+		case errors.Is(err, command.ErrResultSubmissionNotOpen):
+			response.Conflict(w, "Result submission is not open")
+		default:
+			response.InternalServerError(w, "Failed to create result")
+		}
 		return
 	}
 
-	response.Created(w, dto.FromResult(result))
+	response.Created(w, dto.FromResult(participant.Result))
+}
+
+func resultCreateErrorClass(err error) string {
+	switch {
+	case errors.Is(err, command.ErrInvalidResultLink):
+		return "invalid_result_link"
+	case errors.Is(err, command.ErrParticipantNotFound):
+		return "participant_not_found"
+	case errors.Is(err, command.ErrEventNotFound):
+		return "event_not_found"
+	case errors.Is(err, command.ErrEventStartNotConfigured):
+		return "event_start_not_configured"
+	case errors.Is(err, command.ErrEventNotStarted):
+		return "event_not_started"
+	case errors.Is(err, command.ErrResultSubmissionNotOpen):
+		return "result_submission_not_open"
+	default:
+		return "unknown"
+	}
 }
 
 // UpdateResultRequest представляет запрос на обновление результата
