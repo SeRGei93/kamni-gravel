@@ -17,7 +17,7 @@ import {
   readyTelegramWebApp,
 } from "@/utils/telegramWebApp";
 
-const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["all", "male", "female"];
+const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["male", "female"];
 
 export default function MiniappGiftsPage() {
   const [session, setSession] = useState<MiniappSessionResponse | null>(null);
