@@ -28,38 +28,35 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
   const criteria = gift.criteria ?? [];
 
   return (
-    <main className="min-h-screen bg-gray-950 text-gray-100" style={{ colorScheme: "dark" }}>
-      <section className="border-b border-gray-800 bg-gray-900 px-3 py-3">
-        <div className="mx-auto flex w-full max-w-md items-center justify-between gap-3">
+    <main className="tg-screen min-h-screen">
+      <section className="tg-topbar border-b px-3 py-3">
+        <div className="mx-auto flex w-full max-w-md items-center gap-3">
           <Link
             href="/miniapp/gifts"
-            className="inline-flex rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-200"
+            className="tg-link-button inline-flex rounded-lg border px-3 py-2 text-sm font-medium"
           >
             Назад
           </Link>
-          <h1 className="truncate text-lg font-semibold text-white">
-            Подарок
-          </h1>
         </div>
       </section>
 
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
-        <article className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-sm">
+        <article className="tg-card overflow-hidden rounded-xl border">
           <GiftPhotoGallery giftId={gift.id} photos={photos} />
 
           <div className="space-y-4 p-3">
             <div>
-              <p className="text-xs font-medium text-orange-400">
+              <p className="tg-accent text-xs font-medium">
                 Описание
               </p>
-              <p className="mt-2 whitespace-pre-wrap break-words text-base font-medium leading-6 text-white">
+              <p className="tg-title mt-2 whitespace-pre-wrap break-words text-base font-medium leading-6">
                 {gift.description}
               </p>
             </div>
 
             <DetailRow label="От кого" value={donor} />
 
-            <div className="grid grid-cols-2 rounded-lg border border-gray-800 text-sm">
+            <div className="tg-divider grid grid-cols-2 rounded-lg border text-sm">
               <DetailCell label="Пол" value={genderText[gender] ?? gender} />
               <DetailCell label="Велосипед" value={bikeText[bikeType] ?? bikeType} />
               {gift.place !== undefined && (
@@ -69,14 +66,14 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
 
             {criteria.length > 0 ? (
               <div>
-                <p className="text-[10px] font-semibold uppercase text-gray-400">
+                <p className="tg-muted text-[10px] font-semibold uppercase">
                   Критерии
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {criteria.map((criterion) => (
                     <span
                       key={criterion.id}
-                      className="rounded-md border border-orange-900/70 bg-orange-950/35 px-2 py-1 text-xs font-medium text-orange-300"
+                      className="tg-soft-accent rounded-md border px-2 py-1 text-xs font-medium"
                     >
                       {criterion.name || getCriteriaTypeLabel(criterion.criteria_type)}
                     </span>
@@ -84,7 +81,7 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
                 </div>
               </div>
             ) : (
-              <p className="rounded-lg border border-gray-800 px-3 py-2 text-xs font-medium text-gray-400">
+              <p className="tg-divider tg-muted rounded-lg border px-3 py-2 text-xs font-medium">
                 Без дополнительных критериев.
               </p>
             )}
@@ -103,21 +100,22 @@ function GiftPhotoGallery({
   photos: GiftAttachment[];
 }) {
   const [primaryPhoto, ...secondaryPhotos] = photos;
+  const hasPrimaryPhoto = Boolean(primaryPhoto);
 
   return (
-    <div className="border-b border-gray-800 bg-gray-800">
-      <div className="aspect-[4/3]">
-        <GiftImage giftId={giftId} attachment={primaryPhoto} />
+    <div className="tg-placeholder tg-divider border-b">
+      <div className={hasPrimaryPhoto ? "aspect-[4/3]" : "h-36"}>
+        <GiftImage giftId={giftId} attachment={primaryPhoto} variant="detail" />
       </div>
 
       {secondaryPhotos.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 border-t border-gray-800 p-2">
+        <div className="tg-divider grid grid-cols-2 gap-2 border-t p-2">
           {secondaryPhotos.map((photo) => (
             <div
               key={photo.id}
-              className="aspect-square overflow-hidden rounded-lg border border-gray-800 bg-gray-800"
+              className="tg-divider tg-placeholder aspect-square overflow-hidden rounded-lg border"
             >
-              <GiftImage giftId={giftId} attachment={photo} />
+              <GiftImage giftId={giftId} attachment={photo} variant="thumbnail" />
             </div>
           ))}
         </div>
@@ -128,9 +126,9 @@ function GiftPhotoGallery({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-gray-800 px-3 py-2">
-      <p className="text-xs font-medium text-gray-400">{label}</p>
-      <p className="mt-1 break-words text-sm font-medium text-white">{value}</p>
+    <div className="tg-divider rounded-lg border px-3 py-2">
+      <p className="tg-muted text-xs font-medium">{label}</p>
+      <p className="tg-title mt-1 break-words text-sm font-medium">{value}</p>
     </div>
   );
 }
@@ -146,12 +144,12 @@ function DetailCell({
 }) {
   return (
     <div
-      className={`border-gray-800 px-3 py-2 ${
+      className={`tg-divider px-3 py-2 ${
         wide ? "col-span-2 border-t" : "border-r last:border-r-0"
       }`}
     >
-      <p className="text-xs font-medium text-gray-400">{label}</p>
-      <p className="mt-1 break-words font-medium text-white">{value}</p>
+      <p className="tg-muted text-xs font-medium">{label}</p>
+      <p className="tg-title mt-1 break-words font-medium">{value}</p>
     </div>
   );
 }

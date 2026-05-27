@@ -136,7 +136,7 @@ export default function DashboardPage() {
           }}
         />
         <StatCard
-          title="Подарков в фонде"
+          title="Призов в фонде"
           value={totalStats.gifts_count}
           icon={<BoxIcon className="size-6" />}
           color="info"
@@ -203,7 +203,7 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Подарков
+                      Призов
                     </span>
                     <p className="text-lg font-semibold text-gray-800 dark:text-white">
                       {stat.gifts_count}

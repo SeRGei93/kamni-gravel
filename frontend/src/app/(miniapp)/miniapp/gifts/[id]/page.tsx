@@ -31,7 +31,7 @@ export default function MiniappGiftDetailPage() {
 
     async function loadGift() {
       if (!Number.isFinite(giftId) || giftId <= 0) {
-        setError("Подарок не найден");
+        setError("Приз не найден");
         setIsLoading(false);
         return;
       }
@@ -50,7 +50,7 @@ export default function MiniappGiftDetailPage() {
         if (!ignore) {
           setGift(selectedGift);
           if (!selectedGift) {
-            setError("Подарок не найден");
+            setError("Приз не найден");
           }
         }
       } catch (loadError) {
@@ -59,7 +59,7 @@ export default function MiniappGiftDetailPage() {
           message: loadError instanceof Error ? loadError.message : "Unknown error",
         });
         if (!ignore) {
-          setError("Не удалось загрузить подарок");
+          setError("Не удалось загрузить приз");
         }
       } finally {
         if (!ignore) {
@@ -76,11 +76,11 @@ export default function MiniappGiftDetailPage() {
   }, [giftId]);
 
   if (isLoading) {
-    return <MiniappDetailState title="Подарок" text="Загружаем описание и фото" />;
+    return <MiniappDetailState title="Приз" text="Загружаем описание и фото" />;
   }
 
   if (error || !gift) {
-    return <MiniappDetailState title="Подарок недоступен" text={error ?? "Подарок не найден"} />;
+    return <MiniappDetailState title="Приз недоступен" text={error ?? "Приз не найден"} />;
   }
 
   return <GiftDetailView gift={gift} />;
@@ -88,14 +88,14 @@ export default function MiniappGiftDetailPage() {
 
 function MiniappDetailState({ title, text }: { title: string; text: string }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-950 px-5 py-8 text-gray-100" style={{ colorScheme: "dark" }}>
-      <section className="w-full max-w-sm rounded-xl border border-gray-800 bg-gray-900 p-5 shadow-sm">
-        <div className="mb-4 h-2 w-16 rounded-full bg-orange-500" />
-        <h1 className="text-xl font-semibold leading-7 text-white">{title}</h1>
-        <p className="mt-2 text-sm leading-5 text-gray-400">{text}</p>
+    <main className="tg-screen flex min-h-screen items-center justify-center px-5 py-8">
+      <section className="tg-card w-full max-w-sm rounded-xl border p-5">
+        <div className="tg-accent-bar mb-4 h-2 w-16 rounded-full" />
+        <h1 className="tg-title text-xl font-semibold leading-7">{title}</h1>
+        <p className="tg-muted mt-2 text-sm leading-5">{text}</p>
         <Link
           href="/miniapp/gifts"
-          className="mt-4 inline-flex rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-200"
+          className="tg-link-button mt-4 inline-flex rounded-lg border px-3 py-2 text-sm font-medium"
         >
           Вернуться
         </Link>

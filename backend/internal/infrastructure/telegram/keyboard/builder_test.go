@@ -83,7 +83,7 @@ func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 	if webAppButton.CallbackData != "" {
 		t.Fatalf("web app button callback data mismatch: got %q, want empty", webAppButton.CallbackData)
 	}
-	if got := webAppButton.Text; got != "🎁 Смотреть подарки" {
+	if got := webAppButton.Text; got != "🎁 Смотреть призы" {
 		t.Fatalf("web app button text mismatch: got %q", got)
 	}
 	if got := webAppButton.WebApp.URL; got != miniappURL {

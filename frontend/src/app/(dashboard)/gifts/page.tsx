@@ -153,7 +153,7 @@ export default function GiftsPage() {
       // Загружаем распределение призов
       try {
         const distribution = await prizeDistributionApi.getPrizeDistribution(selectedEventId);
-        // Собираем ID всех назначенных подарков
+        // Собираем ID всех назначенных призов
         const assignedIds = new Set<number>();
         distribution.distribution.forEach((dist) => {
           if (dist.matched_gifts && dist.matched_gifts.length > 0) {
@@ -170,7 +170,7 @@ export default function GiftsPage() {
         setAssignedGiftIds(new Set());
       }
     } catch (err) {
-      setError('Ошибка загрузки подарков');
+      setError('Ошибка загрузки призов');
       console.error('Failed to load gifts:', {
         event_id: selectedEventId,
         review_status: reviewStatusFilter,
@@ -182,7 +182,7 @@ export default function GiftsPage() {
     }
   }, [selectedEventId, reviewStatusFilter]);
 
-  // Загрузка подарков при изменении фильтров
+  // Загрузка призов при изменении фильтров
   useEffect(() => {
     if (selectedEventId) {
       loadGifts();
@@ -195,10 +195,10 @@ export default function GiftsPage() {
   const handleDelete = async (giftId: number) => {
     try {
       await giftsApi.delete(giftId);
-      // Перезагружаем список подарков
+      // Перезагружаем список призов
       await loadGifts();
     } catch (err) {
-      setError('Ошибка удаления подарка');
+      setError('Ошибка удаления приза');
       console.error('Failed to delete gift:', {
         gift_id: giftId,
         event_id: selectedEventId,
@@ -221,7 +221,7 @@ export default function GiftsPage() {
       });
       await loadGifts();
     } catch (err) {
-      setError('Ошибка проверки подарка');
+      setError('Ошибка проверки приза');
       console.error('Failed to approve gift:', {
         gift_id: gift.id,
         event_id: selectedEventId,
@@ -248,10 +248,10 @@ export default function GiftsPage() {
       <div>
         <div>
           <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
-            Подарки
+            Призы
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Подарки поступают из Telegram и проходят проверку администратора перед распределением
+            Призы поступают из Telegram и проходят проверку администратора перед распределением
           </p>
         </div>
       </div>
@@ -265,7 +265,7 @@ export default function GiftsPage() {
       {selectedEventId && totalPendingReviewCount > 0 && (
         <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
           <p className="text-sm font-medium text-warning-700 dark:text-orange-300">
-            На проверке {totalPendingReviewCount} подарков. До проверки они не участвуют в распределении.
+            На проверке {totalPendingReviewCount} призов. До проверки они не участвуют в распределении.
           </p>
         </div>
       )}
@@ -306,7 +306,7 @@ export default function GiftsPage() {
       {/* Информация о количестве */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Показано подарков: {gifts.length}
+          Показано призов: {gifts.length}
         </p>
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Всего: {allGifts.length} · На проверке: {totalPendingReviewCount}

@@ -54,7 +54,7 @@ export interface Participant {
   place_by_gender_bike?: number; // место в зачёте по гендеру+тип велосипеда
   has_gift: boolean;
   prizes_count: number;
-  matched_gifts?: Gift[]; // все подобранные подарки
+  matched_gifts?: Gift[]; // все подобранные призы
 }
 
 export interface ParticipantDetail extends Participant {

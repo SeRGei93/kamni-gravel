@@ -94,7 +94,7 @@ export default function GiftEditForm({
 
     const trimmedDescription = description.trim();
     if (!trimmedDescription) {
-      setError('Введите описание подарка');
+      setError('Введите описание приза');
       return;
     }
 
@@ -124,7 +124,7 @@ export default function GiftEditForm({
         operation: 'update_gift',
         error: err,
       });
-      setError('Ошибка обновления подарка');
+      setError('Ошибка обновления приза');
     } finally {
       setIsSubmitting(false);
     }
@@ -140,10 +140,10 @@ export default function GiftEditForm({
 
       <div>
         <Label>
-          Описание подарка <span className="text-error-500">*</span>
+          Описание приза <span className="text-error-500">*</span>
         </Label>
         <TextArea
-          placeholder="Опишите подарок..."
+          placeholder="Опишите приз..."
           value={description}
           onChange={setDescription}
           rows={5}
@@ -191,7 +191,7 @@ export default function GiftEditForm({
       <div>
         <Label>Критерии</Label>
         <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-          Выберите критерии, которым соответствует подарок
+          Выберите критерии, которым соответствует приз
         </p>
         {criteria.length > 0 ? (
           <div className="flex flex-wrap gap-2">

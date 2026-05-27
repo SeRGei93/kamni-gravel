@@ -484,10 +484,10 @@ export default function ParticipantDetailPage() {
 
         {/* Боковая панель */}
         <div className="space-y-6">
-          {/* Подарки от участника */}
+          {/* Призы от участника */}
           <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">
             <h3 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-              Подарки от участника
+              Призы от участника
             </h3>
             {gifts.length > 0 ? (
               <div className="space-y-3">
@@ -517,7 +517,7 @@ export default function ParticipantDetailPage() {
               </div>
             ) : (
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Нет подарков
+                Нет призов
               </p>
             )}
           </div>

@@ -93,7 +93,7 @@ export default function CriteriaPage() {
             Критерии
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Управление критериями для подарков
+            Управление критериями для призов
           </p>
         </div>
         <Button

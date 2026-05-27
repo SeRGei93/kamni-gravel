@@ -99,7 +99,7 @@ export default function ParticipantsTable({
                   isHeader
                   className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
                 >
-                  Подарок
+                  Приз
                 </TableCell>
                 <TableCell
                   isHeader

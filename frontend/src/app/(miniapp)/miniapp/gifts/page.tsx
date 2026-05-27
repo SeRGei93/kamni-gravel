@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { miniappApi } from "@/api/miniapp";
 import GiftCatalogTable from "@/components/miniapp/GiftCatalogTable";
 import GiftEmptyState from "@/components/miniapp/GiftEmptyState";
-import GiftFilters from "@/components/miniapp/GiftFilters";
+import GiftFilters, { type MiniappGenderFilter } from "@/components/miniapp/GiftFilters";
 import type {
   BikeTypeFilter,
   GenderFilter,
@@ -17,10 +17,12 @@ import {
   readyTelegramWebApp,
 } from "@/utils/telegramWebApp";
 
+const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["all", "male", "female"];
+
 export default function MiniappGiftsPage() {
   const [session, setSession] = useState<MiniappSessionResponse | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
-  const [gender, setGender] = useState<GenderFilter>("all");
+  const [gender, setGender] = useState<MiniappGenderFilter>("all_genders");
   const [bikeType, setBikeType] = useState<BikeTypeFilter>("all");
   const [isSessionLoading, setIsSessionLoading] = useState(true);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
@@ -48,7 +50,7 @@ export default function MiniappGiftsPage() {
           message: loadError instanceof Error ? loadError.message : "Unknown error",
         });
         if (!ignore) {
-          setError("Не удалось открыть каталог подарков");
+          setError("Не удалось открыть каталог призов");
         }
       } finally {
         if (!ignore) {
@@ -71,12 +73,25 @@ export default function MiniappGiftsPage() {
       setIsCatalogLoading(true);
 
       try {
-        const data = await miniappApi.getGifts({
-          gender,
-          bike_type: bikeType,
-        });
+        const catalogResponses =
+          gender === "all_genders"
+            ? await Promise.all(
+                ALL_GENDER_CATALOG_FILTERS.map((genderFilter) =>
+                  miniappApi.getGifts({
+                    gender: genderFilter,
+                    bike_type: bikeType,
+                  })
+                )
+              )
+            : [
+                await miniappApi.getGifts({
+                  gender,
+                  bike_type: bikeType,
+                }),
+              ];
+
         if (!ignore) {
-          setGifts(data.gifts);
+          setGifts(mergeUniqueGifts(catalogResponses.flatMap((response) => response.gifts)));
         }
       } catch (loadError) {
         console.warn("[miniapp] Gift catalog load failed", {
@@ -85,7 +100,7 @@ export default function MiniappGiftsPage() {
           message: loadError instanceof Error ? loadError.message : "Unknown error",
         });
         if (!ignore) {
-          setError("Не удалось загрузить подарки");
+          setError("Не удалось загрузить призы");
         }
       } finally {
         if (!ignore) {
@@ -104,7 +119,7 @@ export default function MiniappGiftsPage() {
   }, [bikeType, gender, session]);
 
   if (isSessionLoading) {
-    return <MiniappShellState title="Каталог подарков" text="Загружаем активное событие" />;
+    return <MiniappShellState title="Каталог призов" text="Загружаем активное событие" />;
   }
 
   if (error) {
@@ -121,9 +136,7 @@ export default function MiniappGiftsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-950 text-gray-100" style={{ colorScheme: "dark" }}>
-      <MiniappMasthead count={gifts.length} isLoading={isCatalogLoading} />
-
+    <main className="tg-screen min-h-screen">
       <GiftFilters
         gender={gender}
         bikeType={bikeType}
@@ -145,37 +158,6 @@ export default function MiniappGiftsPage() {
   );
 }
 
-function MiniappMasthead({
-  count,
-  isLoading,
-}: {
-  count: number;
-  isLoading: boolean;
-}) {
-  const countLabel = isLoading ? "--" : String(count).padStart(2, "0");
-
-  return (
-    <section className="bg-gray-950 px-3 pb-3 pt-4">
-      <div className="mx-auto w-full max-w-md rounded-xl border border-gray-800 bg-gray-900 p-4 shadow-sm">
-        <p className="text-xs font-medium text-orange-400">
-          Gravel Bot
-        </p>
-        <div className="mt-1 flex items-end justify-between gap-3">
-          <h1 className="text-2xl font-semibold leading-8 text-white">
-            Подарки
-          </h1>
-          <div className="mb-0.5 rounded-lg border border-orange-900/70 bg-orange-950/35 px-2.5 py-1.5 text-right">
-            <p className="text-[10px] font-medium text-orange-300">
-              Всего
-            </p>
-            <p className="text-lg font-semibold leading-none text-orange-400">{countLabel}</p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function MiniappShellState({
   title,
   text,
@@ -188,41 +170,72 @@ function MiniappShellState({
   const isError = tone === "error";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-950 px-5 py-8 text-gray-100" style={{ colorScheme: "dark" }}>
-      <section className="w-full max-w-sm rounded-xl border border-gray-800 bg-gray-900 p-5 shadow-sm">
+    <main className="tg-screen flex min-h-screen items-center justify-center px-5 py-8">
+      <section className="tg-card w-full max-w-sm rounded-xl border p-5">
         <div
           className={`mb-4 h-2 w-16 rounded-full ${
-            isError ? "bg-error-500" : "bg-orange-500"
+            isError ? "tg-error-bar" : "tg-accent-bar"
           }`}
         />
-        <h1 className="text-xl font-semibold leading-7 text-white">{title}</h1>
-        <p className="mt-2 text-sm leading-5 text-gray-400">{text}</p>
+        <h1 className="tg-title text-xl font-semibold leading-7">{title}</h1>
+        <p className="tg-muted mt-2 text-sm leading-5">{text}</p>
       </section>
     </main>
   );
 }
 
+function mergeUniqueGifts(gifts: Gift[]): Gift[] {
+  const seenGiftIds = new Set<number>();
+
+  const mergedGifts = gifts.filter((gift) => {
+    if (seenGiftIds.has(gift.id)) {
+      return false;
+    }
+
+    seenGiftIds.add(gift.id);
+    return true;
+  });
+
+  return sortGiftsByPlace(mergedGifts);
+}
+
+function sortGiftsByPlace(gifts: Gift[]): Gift[] {
+  return [...gifts].sort((left, right) => {
+    if (left.place === undefined && right.place === undefined) {
+      return 0;
+    }
+    if (left.place === undefined) {
+      return 1;
+    }
+    if (right.place === undefined) {
+      return -1;
+    }
+
+    return left.place - right.place;
+  });
+}
+
 function MiniappCatalogLoading() {
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-sm">
-      <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] border-b border-gray-800 bg-gray-950 px-2 py-2 text-[10px] font-semibold uppercase text-gray-400">
+    <div className="tg-card overflow-hidden rounded-xl border">
+      <div className="tg-topbar grid grid-cols-[52px_minmax(0,1fr)_112px] border-b px-2 py-2 text-[10px] font-semibold uppercase">
         <span>Фото</span>
-        <span>Подарок</span>
+        <span>Приз</span>
         <span>Условия</span>
       </div>
       {[0, 1, 2, 3, 4].map((item) => (
         <div
           key={item}
-          className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b border-gray-800 px-2 py-1.5 last:border-b-0"
+          className="tg-divider grid grid-cols-[52px_minmax(0,1fr)_112px] gap-0 border-b px-2 py-1.5 last:border-b-0"
         >
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-orange-950/60" />
+          <div className="tg-soft-accent h-10 w-10 animate-pulse rounded-lg" />
           <div className="space-y-1.5 py-1 pr-2">
-            <div className="h-3.5 w-full animate-pulse rounded bg-gray-800" />
-            <div className="h-3.5 w-2/3 animate-pulse rounded bg-gray-800" />
+            <div className="tg-skeleton h-3.5 w-full animate-pulse rounded" />
+            <div className="tg-skeleton h-3.5 w-2/3 animate-pulse rounded" />
           </div>
           <div className="space-y-1 py-0.5">
-            <div className="h-3 w-16 animate-pulse rounded bg-gray-800" />
-            <div className="h-3 w-20 animate-pulse rounded bg-gray-800" />
+            <div className="tg-skeleton h-3 w-16 animate-pulse rounded" />
+            <div className="tg-skeleton h-3 w-20 animate-pulse rounded" />
           </div>
         </div>
       ))}

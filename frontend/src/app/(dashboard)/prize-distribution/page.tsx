@@ -214,7 +214,7 @@ export default function PrizeDistributionPage() {
                   Критерии
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Подарок
+                  Приз
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
                   Тип совпадения
@@ -320,7 +320,7 @@ export default function PrizeDistributionPage() {
                         </div>
                       ) : (
                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Нет подарков
+                          Нет призов
                         </span>
                       )}
                     </td>

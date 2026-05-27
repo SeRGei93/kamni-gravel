@@ -1,28 +1,29 @@
 "use client";
 
 import type { BikeTypeFilter, GenderFilter } from "@/types";
-import { BIKE_TYPE_OPTIONS, GENDER_OPTIONS } from "@/constants";
+import { BIKE_TYPE_OPTIONS } from "@/constants";
+
+export type MiniappGenderFilter = "all_genders" | GenderFilter;
 
 interface GiftFiltersProps {
-  gender: GenderFilter;
+  gender: MiniappGenderFilter;
   bikeType: BikeTypeFilter;
   isLoading?: boolean;
-  onGenderChange: (value: GenderFilter) => void;
+  onGenderChange: (value: MiniappGenderFilter) => void;
   onBikeTypeChange: (value: BikeTypeFilter) => void;
 }
 
-const genderLabels: Record<GenderFilter, string> = {
-  all: "Абсолют",
-  male: "Мужчины",
-  female: "Женщины",
-};
+const genderOptions: Array<{ value: MiniappGenderFilter; label: string }> = [
+  { value: "all_genders", label: "Все" },
+  { value: "all", label: "Абсолют" },
+  { value: "male", label: "Мужчины" },
+  { value: "female", label: "Женщины" },
+];
 
 const filterButtonClass =
-  "h-9 shrink-0 rounded-lg border px-3 text-sm font-medium transition active:scale-[0.98]";
-const activeFilterClass =
-  "border-orange-500 bg-orange-500 text-white shadow-sm shadow-orange-950/50";
-const inactiveFilterClass =
-  "border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700 hover:bg-gray-800";
+  "h-7 shrink-0 rounded-md border px-2.5 text-[11px] font-medium transition active:scale-[0.98]";
+const activeFilterClass = "tg-filter-active shadow-sm";
+const inactiveFilterClass = "tg-filter-inactive";
 
 export default function GiftFilters({
   gender,
@@ -34,12 +35,12 @@ export default function GiftFilters({
   return (
     <section
       aria-busy={isLoading}
-      className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 py-3 backdrop-blur"
+      className="tg-topbar sticky top-0 z-10 border-b px-3 py-2 backdrop-blur"
     >
-      <div className="mx-auto flex w-full max-w-md flex-col gap-3">
-        <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-          {GENDER_OPTIONS.map((option) => {
-            const value = option.value as GenderFilter;
+      <div className="mx-auto flex w-full max-w-md flex-col gap-2">
+        <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1">
+          {genderOptions.map((option) => {
+            const value = option.value;
             const isActive = gender === value;
 
             return (
@@ -52,13 +53,13 @@ export default function GiftFilters({
                   isActive ? activeFilterClass : inactiveFilterClass
                 }`}
               >
-                {genderLabels[value]}
+                {option.label}
               </button>
             );
           })}
         </div>
 
-        <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+        <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1">
           {BIKE_TYPE_OPTIONS.map((option) => {
             const value = option.value as BikeTypeFilter;
             const isActive = bikeType === value;

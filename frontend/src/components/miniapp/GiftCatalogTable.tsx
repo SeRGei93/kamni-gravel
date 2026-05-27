@@ -26,7 +26,7 @@ const bikeText = BIKE_TYPE_OPTIONS.reduce<Record<string, string>>((acc, option) 
 export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableProps) {
   return (
     <section
-      className={`overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-sm ${
+      className={`tg-card overflow-hidden rounded-xl border ${
         isLoading ? "opacity-70" : ""
       }`}
       aria-busy={isLoading}
@@ -37,20 +37,20 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
           <col />
           <col className="w-28" />
         </colgroup>
-        <thead className="bg-gray-950">
-          <tr className="border-b border-gray-800 text-left text-[10px] font-semibold uppercase text-gray-400">
+        <thead className="tg-topbar">
+          <tr className="tg-divider tg-muted border-b text-left text-[10px] font-semibold uppercase">
             <th scope="col" className="px-1.5 py-2">
               Фото
             </th>
             <th scope="col" className="px-1.5 py-2">
-              Подарок
+              Приз
             </th>
             <th scope="col" className="px-1.5 py-2">
               Условия
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-800">
+        <tbody className="tg-table-body">
           {gifts.map((gift) => (
             <GiftTableRow key={gift.id} gift={gift} />
           ))}
@@ -84,21 +84,21 @@ function GiftTableRow({ gift }: { gift: Gift }) {
     <tr
       role="link"
       tabIndex={0}
-      aria-label={`Открыть подарок ${gift.id}`}
+      aria-label={`Открыть приз ${gift.id}`}
       onClick={openGift}
       onKeyDown={handleKeyDown}
-      className="cursor-pointer align-top hover:bg-gray-800/70 focus:outline-none focus:ring-2 focus:ring-orange-500"
+      className="tg-row-hover cursor-pointer align-top focus:outline-none focus:ring-2 focus:ring-[var(--tg-button-color)]"
     >
       <td className="py-1.5 pl-2 pr-1">
-        <div className="block h-10 w-10 overflow-hidden rounded-lg border border-gray-800 bg-gray-800">
-          <GiftImage giftId={gift.id} attachment={photo} />
+        <div className="tg-placeholder tg-divider block h-10 w-10 overflow-hidden rounded-lg border">
+          <GiftImage giftId={gift.id} attachment={photo} variant="thumbnail" />
         </div>
       </td>
       <td className="min-w-0 px-1.5 py-1.5">
-        <p className="line-clamp-1 break-words text-sm font-medium leading-5 text-white">
+        <p className="tg-title line-clamp-1 break-words text-sm font-medium leading-5">
           {gift.description}
         </p>
-        <p className="mt-1 truncate text-[11px] font-medium leading-4 text-gray-400">
+        <p className="tg-muted mt-1 truncate text-[11px] font-medium leading-4">
           от {donor}
         </p>
       </td>
@@ -118,7 +118,7 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
     .join(", ");
 
   return (
-    <div className="space-y-0.5 text-[10px] font-medium leading-[14px] text-gray-400">
+    <div className="tg-muted space-y-0.5 text-[10px] font-medium leading-[14px]">
       <ConditionLine label="Пол" value={genderText[gender] ?? gender} />
       <ConditionLine label="Вело" value={bikeText[bikeType] ?? bikeType} />
       {gift.place !== undefined && <ConditionLine label="Место" value={String(gift.place)} />}
@@ -130,8 +130,8 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
 function ConditionLine({ label, value }: { label: string; value: string }) {
   return (
     <p className="min-w-0">
-      <span className="text-gray-500">{label}: </span>
-      <span className="break-words text-gray-200">{value}</span>
+      <span>{label}: </span>
+      <span className="tg-title break-words">{value}</span>
     </p>
   );
 }

@@ -41,7 +41,7 @@ const navItems: NavItem[] = [
   },
   {
     icon: <BoxIcon />,
-    name: "Подарки",
+    name: "Призы",
     path: "/gifts",
   },
   {

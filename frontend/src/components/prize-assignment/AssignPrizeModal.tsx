@@ -37,7 +37,7 @@ export default function AssignPrizeModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Загружаем подарки при открытии модального окна
+  // Загружаем призы при открытии модального окна
   useEffect(() => {
     if (isOpen && participant.event_id) {
       loadData();
@@ -54,9 +54,9 @@ export default function AssignPrizeModal({
       setIsLoading(true);
       setError(null);
 
-      // Загружаем все подарки события
+      // Загружаем все призы события
       const giftsResponse = await giftsApi.getByEvent(participant.event_id);
-      // Все подарки доступны для автоматического распределения
+      // Все призы доступны для автоматического распределения
       setGifts(giftsResponse.gifts);
     } catch (err) {
       setError('Ошибка загрузки данных');
@@ -70,7 +70,7 @@ export default function AssignPrizeModal({
     e.preventDefault();
 
     if (!selectedGiftId) {
-      setError('Выберите подарок');
+      setError('Выберите приз');
       return;
     }
 
@@ -120,7 +120,7 @@ export default function AssignPrizeModal({
             Назначить приз
           </h4>
           <p className="mb-6 text-sm text-gray-500 dark:text-gray-400 lg:mb-7">
-            Выберите подарок для участника{' '}
+            Выберите приз для участника{' '}
             <span className="font-medium">
               {participant.first_name} {participant.last_name}
             </span>
@@ -142,24 +142,24 @@ export default function AssignPrizeModal({
             <div className="space-y-6">
               <div>
                 <Label>
-                  Подарок <span className="text-error-500">*</span>
+                  Приз <span className="text-error-500">*</span>
                 </Label>
                 {giftOptions.length > 0 ? (
                   <div className="relative">
                     <Select
                       options={giftOptions}
-                      placeholder="Выберите подарок"
+                      placeholder="Выберите приз"
                       defaultValue={selectedGiftId}
                       onChange={setSelectedGiftId}
                     />
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Доступно подарков: {giftOptions.length}
+                      Доступно призов: {giftOptions.length}
                     </p>
                   </div>
                 ) : (
                   <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
                     <p className="text-warning-600 dark:text-warning-400">
-                      Нет доступных подарков. Все подарки уже назначены.
+                      Нет доступных призов. Все призы уже назначены.
                     </p>
                   </div>
                 )}
@@ -167,7 +167,7 @@ export default function AssignPrizeModal({
 
               {selectedGiftId && (
                 <div>
-                  <Label>Критерии выбранного подарка</Label>
+                  <Label>Критерии выбранного приза</Label>
                   {(() => {
                     const selectedGift = gifts.find(
                       (g) => String(g.id) === selectedGiftId
@@ -189,7 +189,7 @@ export default function AssignPrizeModal({
                     }
                     return (
                       <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                        У этого подарка нет критериев
+                        У этого приза нет критериев
                       </p>
                     );
                   })()}

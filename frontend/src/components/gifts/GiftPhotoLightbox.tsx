@@ -47,7 +47,7 @@ export default function GiftPhotoLightbox({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Просмотр фото подарка"
+      aria-label="Просмотр фото приза"
       className="fixed inset-0 z-[99999] flex items-center justify-center bg-gray-950/85 p-4"
     >
       <button
@@ -77,7 +77,7 @@ export default function GiftPhotoLightbox({
           ) : (
             <Image
               src={url}
-              alt="Фото подарка"
+              alt="Фото приза"
               fill
               sizes="100vw"
               className="object-contain"

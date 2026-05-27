@@ -32,7 +32,7 @@ export default function GiftsTable({
   const [approvingId, setApprovingId] = useState<number | null>(null);
 
   const handleDelete = async (giftId: number) => {
-    if (!confirm('Вы уверены, что хотите удалить этот подарок?')) {
+    if (!confirm('Вы уверены, что хотите удалить этот приз?')) {
       return;
     }
 
@@ -82,7 +82,7 @@ export default function GiftsTable({
   if (gifts.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-gray-500 dark:text-gray-400">Подарки не найдены</div>
+        <div className="text-gray-500 dark:text-gray-400">Призы не найдены</div>
       </div>
     );
   }
@@ -165,7 +165,7 @@ export default function GiftsTable({
                         {photoUrl ? (
                           <Image
                             src={photoUrl}
-                            alt="Подарок"
+                            alt="Приз"
                             width={60}
                             height={60}
                             className="rounded-lg object-cover"

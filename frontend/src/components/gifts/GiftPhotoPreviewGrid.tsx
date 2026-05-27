@@ -63,7 +63,7 @@ export default function GiftPhotoPreviewGrid({ gift }: GiftPhotoPreviewGridProps
     <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-white/[0.05] dark:bg-white/[0.03]">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-gray-800 dark:text-white/90">
-          Фото подарка
+          Фото приза
         </h2>
         <span className="text-xs text-gray-500 dark:text-gray-400">
           {photos.length}
@@ -92,7 +92,7 @@ export default function GiftPhotoPreviewGrid({ gift }: GiftPhotoPreviewGridProps
                 {state?.url && !imageFailed ? (
                   <Image
                     src={state.url}
-                    alt="Фото подарка"
+                    alt="Фото приза"
                     fill
                     sizes="160px"
                     className="object-cover transition group-hover:scale-105"

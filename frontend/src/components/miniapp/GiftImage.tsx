@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { miniappApi } from "@/api/miniapp";
+import { BoxCubeIcon } from "@/icons";
 import type { GiftAttachment } from "@/types";
 
 interface GiftImageProps {
   giftId: number;
   attachment?: GiftAttachment;
+  variant?: "thumbnail" | "detail";
 }
 
-export default function GiftImage({ giftId, attachment }: GiftImageProps) {
+export default function GiftImage({ giftId, attachment, variant = "detail" }: GiftImageProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -62,16 +64,24 @@ export default function GiftImage({ giftId, attachment }: GiftImageProps) {
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={imageUrl}
-        alt="Фото подарка"
+        alt="Фото приза"
         className="h-full w-full object-cover"
       />
     );
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-gray-800 text-center">
-      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-orange-900/70 bg-gray-900 text-[9px] font-semibold uppercase text-orange-300">
-        {failed ? "!" : "нет"}
+    <div
+      className="tg-photo-placeholder tg-placeholder flex h-full w-full items-center justify-center text-center"
+      data-variant={variant}
+    >
+      <div className="tg-photo-placeholder-content flex flex-col items-center">
+        <BoxCubeIcon className="tg-photo-placeholder-svg tg-accent" aria-hidden="true" />
+        {variant === "detail" && (
+          <span className="tg-photo-placeholder-label tg-muted font-medium">
+            {failed ? "Фото недоступно" : "Без фото"}
+          </span>
+        )}
       </div>
     </div>
   );

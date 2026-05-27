@@ -256,7 +256,7 @@ func (h *GiftHandler) GiftPhotoPrompt(userID int64) (string, *models.InlineKeybo
 // GiftConfirmationPrompt возвращает подсказку подтверждения без изменения сессии.
 func (h *GiftHandler) GiftConfirmationPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
 	markup := keyboard.GiftConfirmationMenu()
-	return "Подарок уже заполнен. Подтвердите отправку кнопками ниже или отмените добавление.", &markup
+	return "Приз уже заполнен. Подтвердите отправку кнопками ниже или отмените добавление.", &markup
 }
 
 // PreviewGift показывает сводку подарка и переводит сессию в ожидание подтверждения.
@@ -293,7 +293,7 @@ func (h *GiftHandler) ConfirmAddGift(ctx context.Context, userID int64) (string,
 	gift, err := h.addGiftHandler.Handle(ctx, cmd)
 	if err != nil {
 		log.Printf("Gift confirmation save failed: user_id=%d event_id=%d error=%v", userID, data.eventID, err)
-		return fmt.Sprintf("Ошибка при добавлении подарка: %v", err), err
+		return fmt.Sprintf("Ошибка при добавлении приза: %v", err), err
 	}
 
 	texts := h.giftTexts(userID)

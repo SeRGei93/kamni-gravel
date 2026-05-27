@@ -43,7 +43,7 @@ export default function GiftEditPage() {
 
   const loadGiftEditData = useCallback(async () => {
     if (!Number.isInteger(giftId) || giftId <= 0) {
-      setError('Некорректный ID подарка');
+      setError('Некорректный ID приза');
       setIsLoading(false);
       return;
     }
@@ -59,7 +59,7 @@ export default function GiftEditPage() {
       setCriteria(criteriaResponse.criteria);
     } catch (err) {
       setGift(null);
-      setError('Подарок не найден или недоступен');
+      setError('Приз не найден или недоступен');
       console.error('Failed to load gift edit page:', {
         gift_id: giftId,
         operation: 'load_gift_edit_page',
@@ -82,7 +82,7 @@ export default function GiftEditPage() {
   const donorName =
     gift && [gift.first_name, gift.last_name].filter(Boolean).join(' ');
   const donorTitle =
-    donorName || gift?.username || (gift ? `user${gift.user_id}` : 'Подарок');
+    donorName || gift?.username || (gift ? `user${gift.user_id}` : 'Приз');
   const reviewStatus = gift?.review_status || 'pending_review';
 
   if (isLoading) {
@@ -101,10 +101,10 @@ export default function GiftEditPage() {
             href={returnHref}
             className="mb-3 inline-flex text-sm font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300"
           >
-            Назад к подаркам
+            Назад к призам
           </Link>
           <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
-            Редактировать подарок
+            Редактировать приз
           </h1>
           <p className="text-gray-600 dark:text-gray-400">{donorTitle}</p>
         </div>
@@ -133,7 +133,7 @@ export default function GiftEditPage() {
             href={returnHref}
             className="mt-3 inline-flex text-sm font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300"
           >
-            Вернуться к списку подарков
+            Вернуться к списку призов
           </Link>
         </div>
       )}

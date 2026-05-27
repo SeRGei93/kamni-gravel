@@ -81,11 +81,11 @@ func MainMenu(miniappURL string) models.InlineKeyboardMarkup {
 			Button("🚴 Зарегистрироваться", "register"),
 		).
 		AddRow(
-			Button("🎁 Добавить подарок", "add_gift"),
+			Button("🎁 Добавить приз", "add_gift"),
 		)
 
 	if miniappURL != "" {
-		builder.AddRow(ButtonWebApp("🎁 Смотреть подарки", miniappURL))
+		builder.AddRow(ButtonWebApp("🎁 Смотреть призы", miniappURL))
 	}
 
 	return builder.

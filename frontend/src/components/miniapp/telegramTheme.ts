@@ -1,0 +1,41 @@
+import type { CSSProperties } from "react";
+
+export const DEFAULT_TELEGRAM_DARK_THEME = {
+  bgColor: "#212121",
+  textColor: "#ffffff",
+  hintColor: "#aaaaaa",
+  linkColor: "#8774e1",
+  buttonColor: "#8774e1",
+  buttonTextColor: "#ffffff",
+  secondaryBgColor: "#0f0f0f",
+  headerBgColor: "#212121",
+  accentTextColor: "#8774e1",
+  sectionBgColor: "#212121",
+  sectionHeaderTextColor: "#8774e1",
+  subtitleTextColor: "#aaaaaa",
+  destructiveTextColor: "#ff595a",
+  separatorColor: "rgba(255, 255, 255, 0.1)",
+  hoverBgColor: "#2b2b2b",
+  accentSoftColor: "rgba(135, 116, 225, 0.16)",
+  skeletonColor: "#2b2b2b",
+};
+
+export const defaultTelegramDarkThemeStyle: CSSProperties & Record<`--${string}`, string> = {
+  "--tg-bg-color": DEFAULT_TELEGRAM_DARK_THEME.bgColor,
+  "--tg-text-color": DEFAULT_TELEGRAM_DARK_THEME.textColor,
+  "--tg-hint-color": DEFAULT_TELEGRAM_DARK_THEME.hintColor,
+  "--tg-link-color": DEFAULT_TELEGRAM_DARK_THEME.linkColor,
+  "--tg-button-color": DEFAULT_TELEGRAM_DARK_THEME.buttonColor,
+  "--tg-button-text-color": DEFAULT_TELEGRAM_DARK_THEME.buttonTextColor,
+  "--tg-secondary-bg-color": DEFAULT_TELEGRAM_DARK_THEME.secondaryBgColor,
+  "--tg-header-bg-color": DEFAULT_TELEGRAM_DARK_THEME.headerBgColor,
+  "--tg-accent-text-color": DEFAULT_TELEGRAM_DARK_THEME.accentTextColor,
+  "--tg-section-bg-color": DEFAULT_TELEGRAM_DARK_THEME.sectionBgColor,
+  "--tg-section-header-text-color": DEFAULT_TELEGRAM_DARK_THEME.sectionHeaderTextColor,
+  "--tg-subtitle-text-color": DEFAULT_TELEGRAM_DARK_THEME.subtitleTextColor,
+  "--tg-destructive-text-color": DEFAULT_TELEGRAM_DARK_THEME.destructiveTextColor,
+  "--tg-separator-color": DEFAULT_TELEGRAM_DARK_THEME.separatorColor,
+  "--tg-hover-bg-color": DEFAULT_TELEGRAM_DARK_THEME.hoverBgColor,
+  "--tg-accent-soft-color": DEFAULT_TELEGRAM_DARK_THEME.accentSoftColor,
+  "--tg-skeleton-color": DEFAULT_TELEGRAM_DARK_THEME.skeletonColor,
+};
