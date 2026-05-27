@@ -74,6 +74,7 @@ export default function EventForm({
           value={description}
           onChange={setDescription}
           rows={4}
+          disabled={isLoading}
         />
       </div>
 
