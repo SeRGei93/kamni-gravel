@@ -1,6 +1,6 @@
 .PHONY: help build run-bot run-api migrate-up migrate-down migrate-status test clean docker-up docker-down docker-logs docker-prod-build docker-prod-up docker-prod-down docker-prod-logs ssl-cert ssl-renew db-psql
 
-COMPOSE ?= docker-compose
+COMPOSE ?= docker compose
 PROD_COMPOSE = $(COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml
 
 help: ## Show this help
