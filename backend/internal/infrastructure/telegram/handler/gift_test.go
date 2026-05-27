@@ -322,9 +322,15 @@ func TestGiftHandlerConfirmAddGiftPersistsTelegramUserIDAndPendingStatus(t *test
 		{TelegramFileID: "file-1", FileType: "photo"},
 	})
 
-	text, err := h.ConfirmAddGift(context.Background(), userID)
+	gift, text, err := h.ConfirmAddGift(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("ConfirmAddGift error: %v", err)
+	}
+	if gift == nil {
+		t.Fatal("gift mismatch: got nil")
+	}
+	if gift.ID != 99 {
+		t.Fatalf("gift id mismatch: got %d, want %d", gift.ID, 99)
 	}
 	if text == "" {
 		t.Fatal("text mismatch: got empty text")

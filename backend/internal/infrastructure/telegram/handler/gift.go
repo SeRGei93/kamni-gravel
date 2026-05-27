@@ -274,11 +274,11 @@ func (h *GiftHandler) PreviewGift(userID int64) (string, *models.InlineKeyboardM
 }
 
 // ConfirmAddGift сохраняет подарок после явного подтверждения пользователя.
-func (h *GiftHandler) ConfirmAddGift(ctx context.Context, userID int64) (string, error) {
+func (h *GiftHandler) ConfirmAddGift(ctx context.Context, userID int64) (*entity.Gift, string, error) {
 	data, message, ok := h.readGiftSessionData(userID)
 	if !ok {
 		h.sessionManager.ResetState(userID)
-		return message, nil
+		return nil, message, nil
 	}
 
 	cmd := command.AddGiftCommand{
@@ -293,7 +293,7 @@ func (h *GiftHandler) ConfirmAddGift(ctx context.Context, userID int64) (string,
 	gift, err := h.addGiftHandler.Handle(ctx, cmd)
 	if err != nil {
 		log.Printf("Gift confirmation save failed: user_id=%d event_id=%d error=%v", userID, data.eventID, err)
-		return fmt.Sprintf("Ошибка при добавлении приза: %v", err), err
+		return nil, fmt.Sprintf("Ошибка при добавлении приза: %v", err), err
 	}
 
 	texts := h.giftTexts(userID)
@@ -306,7 +306,7 @@ func (h *GiftHandler) ConfirmAddGift(ctx context.Context, userID int64) (string,
 	// Очищаем сессию
 	h.sessionManager.ResetState(userID)
 
-	return renderTelegramText(texts.GiftSuccess, map[string]string{
+	return gift, renderTelegramText(texts.GiftSuccess, map[string]string{
 		"gender":      giftGenderLabel(data.gender),
 		"bike_type":   giftBikeTypeLabel(data.bikeType),
 		"description": gift.Description,

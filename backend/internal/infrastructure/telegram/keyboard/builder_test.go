@@ -15,8 +15,18 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 	}{
 		{
 			name: "main menu",
-			menu: MainMenu(""),
-			want: []string{"register", "add_gift", "submit_result", "info"},
+			menu: MainMenu(false, false, "", nil),
+			want: []string{},
+		},
+		{
+			name: "main menu participant",
+			menu: MainMenu(true, true, "", nil),
+			want: []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"},
+		},
+		{
+			name: "main menu not participant",
+			menu: MainMenu(true, false, "", nil),
+			want: []string{"register", "add_gift", "event_conditions"},
 		},
 		{
 			name: "bike type menu",
@@ -52,7 +62,11 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := callbackData(tt.menu); !reflect.DeepEqual(got, tt.want) {
+			got := callbackData(tt.menu)
+			if len(got) == 0 && len(tt.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("callback data mismatch: got %v, want %v", got, tt.want)
 			}
 		})
@@ -62,9 +76,9 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 	const miniappURL = "https://example.com/miniapp/gifts"
 
-	menu := MainMenu(miniappURL)
+	menu := MainMenu(true, false, miniappURL, nil)
 
-	if got := callbackData(menu); !reflect.DeepEqual(got, []string{"register", "add_gift", "submit_result", "info"}) {
+	if got := callbackData(menu); !reflect.DeepEqual(got, []string{"register", "add_gift", "event_conditions"}) {
 		t.Fatalf("callback data mismatch: got %v", got)
 	}
 
@@ -83,7 +97,7 @@ func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 	if webAppButton.CallbackData != "" {
 		t.Fatalf("web app button callback data mismatch: got %q, want empty", webAppButton.CallbackData)
 	}
-	if got := webAppButton.Text; got != "🎁 Смотреть призы" {
+	if got := webAppButton.Text; got != "🏆 Призовой фонд" {
 		t.Fatalf("web app button text mismatch: got %q", got)
 	}
 	if got := webAppButton.WebApp.URL; got != miniappURL {
@@ -92,7 +106,7 @@ func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 }
 
 func TestMainMenuOmitsWebAppButtonWhenURLIsEmpty(t *testing.T) {
-	menu := MainMenu("")
+	menu := MainMenu(true, false, "", nil)
 
 	for _, row := range menu.InlineKeyboard {
 		for _, button := range row {
@@ -100,6 +114,72 @@ func TestMainMenuOmitsWebAppButtonWhenURLIsEmpty(t *testing.T) {
 				t.Fatalf("unexpected web app button: %#v", button)
 			}
 		}
+	}
+}
+
+func TestMainMenuUsesDeepLinks(t *testing.T) {
+	menu := MainMenu(true, false, "", &MainMenuDeepLinks{
+		Register:   "https://t.me/gravel_bot?start=register",
+		Conditions: "https://t.me/gravel_bot?start=conditions",
+	})
+
+	var registerButton *models.InlineKeyboardButton
+	var conditionsButton *models.InlineKeyboardButton
+	for _, row := range menu.InlineKeyboard {
+		for i := range row {
+			switch row[i].Text {
+			case "✅ Принять участие":
+				registerButton = &row[i]
+			case "‼️ Условия участия":
+				conditionsButton = &row[i]
+			}
+		}
+	}
+
+	if registerButton == nil || registerButton.CallbackData != "" || registerButton.URL != "https://t.me/gravel_bot?start=register" {
+		t.Fatalf("register deep link mismatch: %#v", registerButton)
+	}
+	if conditionsButton == nil || conditionsButton.CallbackData != "" || conditionsButton.URL != "https://t.me/gravel_bot?start=conditions" {
+		t.Fatalf("conditions deep link mismatch: %#v", conditionsButton)
+	}
+}
+
+func TestPublicMenuBuildsDeepLinks(t *testing.T) {
+	menu := PublicMenu(
+		"https://example.com/miniapp/gifts",
+		"https://t.me/gravel_bot?start=register",
+		"https://t.me/gravel_bot?start=conditions",
+	)
+
+	if got := callbackData(menu); len(got) != 0 {
+		t.Fatalf("callback data mismatch: got %v", got)
+	}
+
+	var registerFound bool
+	var miniappFound bool
+	var conditionsFound bool
+
+	for _, row := range menu.InlineKeyboard {
+		for _, button := range row {
+			switch button.Text {
+			case "✅ Принять участие":
+				registerFound = button.URL == "https://t.me/gravel_bot?start=register"
+			case "🏆 Призовой фонд":
+				miniappFound = button.WebApp != nil && button.WebApp.URL == "https://example.com/miniapp/gifts"
+			case "‼️ Условия участия":
+				conditionsFound = button.URL == "https://t.me/gravel_bot?start=conditions"
+			}
+		}
+	}
+
+	if !registerFound {
+		t.Fatal("register deep link not found in public menu")
+	}
+	if !miniappFound {
+		t.Fatal("miniapp button not found in public menu")
+	}
+	if !conditionsFound {
+		t.Fatal("conditions deep link not found in public menu")
 	}
 }
 

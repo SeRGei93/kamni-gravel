@@ -75,27 +75,68 @@ func (b *Builder) Build() models.InlineKeyboardMarkup {
 }
 
 // MainMenu создаёт главное меню
-func MainMenu(miniappURL string) models.InlineKeyboardMarkup {
-	builder := NewBuilder().
-		AddRow(
-			Button("🚴 Зарегистрироваться", "register"),
-		).
-		AddRow(
-			Button("🎁 Добавить приз", "add_gift"),
-		)
+type MainMenuDeepLinks struct {
+	Register   string
+	Conditions string
+}
 
-	if miniappURL != "" {
-		builder.AddRow(ButtonWebApp("🎁 Смотреть призы", miniappURL))
+func MainMenu(hasActiveEvent bool, isRegistered bool, miniappURL string, deepLinks *MainMenuDeepLinks) models.InlineKeyboardMarkup {
+	if !hasActiveEvent {
+		return models.InlineKeyboardMarkup{}
 	}
 
-	return builder.
-		AddRow(
-			Button("🏁 Отправить результат", "submit_result"),
-		).
-		AddRow(
-			Button("ℹ️ Информация", "info"),
-		).
-		Build()
+	builder := NewBuilder()
+
+	if isRegistered {
+		builder.AddRow(Button("😢 Отказаться от участия", "withdraw_participation"))
+	} else {
+		if deepLinks != nil && deepLinks.Register != "" {
+			builder.AddRow(ButtonURL("✅ Принять участие", deepLinks.Register))
+		} else {
+			builder.AddRow(Button("✅ Принять участие", "register"))
+		}
+	}
+
+	builder.AddRow(Button("🎁 Добавить приз", "add_gift"))
+
+	if isRegistered {
+		builder.AddRow(Button("🏁 Я уже проехал", "submit_result"))
+	}
+
+	if deepLinks != nil && deepLinks.Conditions != "" {
+		builder.AddRow(ButtonURL("‼️ Условия участия", deepLinks.Conditions))
+	} else {
+		builder.AddRow(Button("‼️ Условия участия", "event_conditions"))
+	}
+
+	if miniappURL != "" {
+		builder.AddRow(ButtonWebApp("🏆 Призовой фонд", miniappURL))
+	}
+
+	return builder.Build()
+}
+
+// PublicMenu создаёт меню для публичного чата.
+func PublicMenu(miniappURL, registerLink, conditionsLink string) models.InlineKeyboardMarkup {
+	builder := NewBuilder()
+
+	if registerLink != "" {
+		builder.AddRow(ButtonURL("✅ Принять участие", registerLink))
+	} else {
+		builder.AddRow(Button("✅ Принять участие", "register"))
+	}
+
+	if miniappURL != "" {
+		builder.AddRow(ButtonWebApp("🏆 Призовой фонд", miniappURL))
+	}
+
+	if conditionsLink != "" {
+		builder.AddRow(ButtonURL("‼️ Условия участия", conditionsLink))
+	} else {
+		builder.AddRow(Button("‼️ Условия участия", "event_conditions"))
+	}
+
+	return builder.Build()
 }
 
 // BikeTypeMenu создаёт меню выбора типа велосипеда

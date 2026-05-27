@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 
 type callbackMessageRef struct {
 	ChatID    int64
+	ChatType  models.ChatType
 	MessageID int
 }
 
@@ -44,6 +46,16 @@ type giftMediaGroupReplyState struct {
 	FirstMessageID int
 	State          session.SessionState
 }
+
+type giftSourceRef struct {
+	ChatID     int64
+	MessageID  int
+	UpdateKind string
+}
+
+const (
+	giftSourceRefsKey = "gift_source_refs"
+)
 
 func messageCommand(msg *models.Message) string {
 	if msg == nil || msg.Text == "" {
@@ -112,15 +124,15 @@ func callbackMessage(callback *models.CallbackQuery) (callbackMessageRef, bool) 
 	if callback.Message.Message != nil {
 		return callbackMessageRef{
 			ChatID:    callback.Message.Message.Chat.ID,
+			ChatType:  callback.Message.Message.Chat.Type,
 			MessageID: callback.Message.Message.ID,
 		}, true
 	}
 
 	if callback.Message.InaccessibleMessage != nil {
 		log.Printf(
-			"Telegram callback message inaccessible: callback_id=%s chat_id=%d message_id=%d",
+			"Telegram callback message inaccessible: callback_id=%s chat=redacted message_id=%d",
 			callback.ID,
-			callback.Message.InaccessibleMessage.Chat.ID,
 			callback.Message.InaccessibleMessage.MessageID,
 		)
 		return callbackMessageRef{}, false
@@ -128,6 +140,22 @@ func callbackMessage(callback *models.CallbackQuery) (callbackMessageRef, bool) 
 
 	log.Printf("Telegram callback ignored: callback_id=%s missing message", callback.ID)
 	return callbackMessageRef{}, false
+}
+
+func isPrivateTelegramChat(chat models.Chat) bool {
+	if chat.Type != "" {
+		return chat.Type == models.ChatTypePrivate
+	}
+
+	return chat.ID > 0
+}
+
+func isPrivateTelegramChatRef(ref callbackMessageRef) bool {
+	if ref.ChatType != "" {
+		return ref.ChatType == models.ChatTypePrivate
+	}
+
+	return ref.ChatID > 0
 }
 
 func messageTextOrCaption(msg *models.Message) string {
@@ -271,4 +299,62 @@ func messageUpdateKind(msg *models.Message) string {
 		return "video"
 	}
 	return "unknown"
+}
+
+func (r giftSourceRef) String() string {
+	return fmt.Sprintf("chat=redacted message_id=%d kind=%s", r.MessageID, r.UpdateKind)
+}
+
+func (b *Bot) captureGiftMessageSourceRef(userID int64, msg *models.Message) {
+	if msg == nil || b == nil || b.sessionManager == nil {
+		return
+	}
+
+	updateKind := messageUpdateKind(msg)
+	if updateKind == "nil" || updateKind == "unknown" {
+		b.logDebug("Gift message source ref skipped: user_id=%d reason=unsupported_update_kind kind=%s", userID, updateKind)
+		return
+	}
+
+	if msg.Chat.ID == 0 || msg.ID == 0 {
+		b.logDebug("Gift message source ref skipped: user_id=%d reason=missing_message_identifier", userID)
+		return
+	}
+
+	refs := b.giftSourceRefs(userID)
+	refs = append(refs, giftSourceRef{
+		ChatID:     msg.Chat.ID,
+		MessageID:  msg.ID,
+		UpdateKind: updateKind,
+	})
+	b.setGiftSourceRefs(userID, refs)
+
+	b.logDebug("Gift message source ref captured: user_id=%d kind=%s", userID, updateKind)
+}
+
+func (b *Bot) giftSourceRefs(userID int64) []giftSourceRef {
+	if b == nil || b.sessionManager == nil {
+		return nil
+	}
+
+	raw, ok := b.sessionManager.GetData(userID, giftSourceRefsKey)
+	if !ok {
+		return nil
+	}
+
+	refs, ok := raw.([]giftSourceRef)
+	if !ok {
+		log.Printf("WARN Invalid gift source refs state: user_id=%d key=%s type=%T", userID, giftSourceRefsKey, raw)
+		return nil
+	}
+
+	return refs
+}
+
+func (b *Bot) setGiftSourceRefs(userID int64, refs []giftSourceRef) {
+	if b == nil || b.sessionManager == nil {
+		return
+	}
+
+	b.sessionManager.SetData(userID, giftSourceRefsKey, refs)
 }

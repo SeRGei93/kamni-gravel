@@ -2,13 +2,18 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 
 	"github.com/go-telegram/bot/models"
 
+	"gravel_bot/internal/application/command"
+	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/telegram/handler"
 	"gravel_bot/internal/infrastructure/telegram/keyboard"
 	"gravel_bot/internal/infrastructure/telegram/session"
@@ -20,12 +25,18 @@ func (b *Bot) handleCommand(ctx context.Context, msg *models.Message) {
 		log.Printf("Telegram command ignored: nil message")
 		return
 	}
+	if !isPrivateTelegramChat(msg.Chat) {
+		b.logDebug("Telegram command ignored in service chat: command=%s chat=%s", messageCommand(msg), b.chatLogMarker(msg.Chat.ID))
+		return
+	}
 
 	switch messageCommand(msg) {
 	case "start":
 		b.handleStartCommand(ctx, msg)
+	case "menu":
+		b.handleMenuCommand(ctx, msg)
 	default:
-		if _, err := b.SendMessage(ctx, msg.Chat.ID, "Неизвестная команда. Используйте /start"); err != nil {
+		if _, err := b.SendMessage(ctx, msg.Chat.ID, "Неизвестная команда. Используйте /start или /menu"); err != nil {
 			return
 		}
 	}
@@ -33,8 +44,21 @@ func (b *Bot) handleCommand(ctx context.Context, msg *models.Message) {
 
 // handleStartCommand обрабатывает команду /start
 func (b *Bot) handleStartCommand(ctx context.Context, msg *models.Message) {
-	startHandler := handler.NewStartHandler(b.userRepo, b.eventRepo, b.miniappURL)
+	startHandler := handler.NewStartHandler(b.userRepo, b.eventRepo, b.participantRepo, b.miniappURL)
 	text, markup := startHandler.Handle(ctx, msg)
+
+	if _, err := b.sendWithOptionalKeyboard(ctx, msg.Chat.ID, text, markup); err != nil {
+		return
+	}
+}
+
+// handleMenuCommand обрабатывает команду /menu
+func (b *Bot) handleMenuCommand(ctx context.Context, msg *models.Message) {
+	startHandler := handler.NewStartHandler(b.userRepo, b.eventRepo, b.participantRepo, b.miniappURL)
+	text, markup := startHandler.Handle(ctx, msg)
+	if markup != nil {
+		text = "Главное меню:"
+	}
 
 	if _, err := b.sendWithOptionalKeyboard(ctx, msg.Chat.ID, text, markup); err != nil {
 		return
@@ -48,8 +72,20 @@ func (b *Bot) handleCallback(ctx context.Context, callback *models.CallbackQuery
 		return
 	}
 
+	msgRef, hasMessage := callbackMessage(callback)
+	if !hasMessage {
+		_ = b.AnswerCallback(ctx, callback.ID, "Сообщение недоступно")
+		return
+	}
+
 	userID := callback.From.ID
 	data := callback.Data
+	chatID := msgRef.ChatID
+
+	if !isPrivateTelegramChatRef(msgRef) {
+		b.logDebug("Telegram callback ignored in service chat: data=%s chat=%s", data, b.chatLogMarker(chatID))
+		return
+	}
 
 	// Обрабатываем отмену
 	if data == "cancel" {
@@ -75,8 +111,12 @@ func (b *Bot) handleCallback(ctx context.Context, callback *models.CallbackQuery
 		b.handleAddGiftCallback(ctx, callback)
 	case "submit_result":
 		b.handleSubmitResultCallback(ctx, callback)
+	case "withdraw_participation":
+		b.handleWithdrawParticipationCallback(ctx, callback)
 	case "info":
 		b.handleInfoCallback(ctx, callback)
+	case "event_conditions":
+		b.handleEventConditionsCallback(ctx, callback)
 	default:
 		// Обрабатываем callback в зависимости от состояния сессии
 		b.handleStatefulCallback(ctx, callback)
@@ -88,6 +128,11 @@ func (b *Bot) handleRegisterCallback(ctx context.Context, callback *models.Callb
 	msgRef, ok := callbackMessage(callback)
 	if !ok {
 		_ = b.AnswerCallback(ctx, callback.ID, "Сообщение недоступно")
+		return
+	}
+	if b.isPublicChat(msgRef.ChatID) {
+		_ = b.AnswerCallback(ctx, callback.ID, "Откройте чат с ботом")
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, "Для регистрации откройте бота в личных сообщениях.")
 		return
 	}
 
@@ -118,6 +163,11 @@ func (b *Bot) handleAddGiftCallback(ctx context.Context, callback *models.Callba
 	msgRef, ok := callbackMessage(callback)
 	if !ok {
 		_ = b.AnswerCallback(ctx, callback.ID, "Сообщение недоступно")
+		return
+	}
+	if b.isPublicChat(msgRef.ChatID) {
+		_ = b.AnswerCallback(ctx, callback.ID, "Откройте чат с ботом")
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, "Для добавления приза откройте бота в личных сообщениях.")
 		return
 	}
 
@@ -152,6 +202,11 @@ func (b *Bot) handleSubmitResultCallback(ctx context.Context, callback *models.C
 		_ = b.AnswerCallback(ctx, callback.ID, "Сообщение недоступно")
 		return
 	}
+	if b.isPublicChat(msgRef.ChatID) {
+		_ = b.AnswerCallback(ctx, callback.ID, "Откройте чат с ботом")
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, "Для отправки результата откройте бота в личных сообщениях.")
+		return
+	}
 
 	resultHandler := handler.NewResultHandler(
 		b.sessionManager,
@@ -177,16 +232,20 @@ func (b *Bot) handleSubmitResultCallback(ctx context.Context, callback *models.C
 
 // handleInfoCallback обрабатывает запрос информации
 func (b *Bot) handleInfoCallback(ctx context.Context, callback *models.CallbackQuery) {
+	b.handleEventConditionsCallback(ctx, callback)
+}
+
+// handleEventConditionsCallback обрабатывает условия участия.
+func (b *Bot) handleEventConditionsCallback(ctx context.Context, callback *models.CallbackQuery) {
 	msgRef, ok := callbackMessage(callback)
 	if !ok {
 		_ = b.AnswerCallback(ctx, callback.ID, "Сообщение недоступно")
 		return
 	}
 
-	// Получаем активное событие
 	event, err := b.eventRepo.FindActive(ctx)
 	if err != nil {
-		log.Printf("Error finding active event: %v", err)
+		log.Printf("WARN Failed to load active event for conditions callback: user_id=%d error=%v", callback.From.ID, err)
 		_ = b.AnswerCallback(ctx, callback.ID, "Ошибка")
 		return
 	}
@@ -195,13 +254,9 @@ func (b *Bot) handleInfoCallback(ctx context.Context, callback *models.CallbackQ
 		_ = b.AnswerCallback(ctx, callback.ID, "Нет активных событий")
 		return
 	}
+	log.Printf("INFO Event conditions requested: telegram_user_id=%d event_id=%d", callback.From.ID, event.ID)
 
-	// Формируем сообщение с информацией о событии
-	text := fmt.Sprintf(`ℹ️ Информация о событии
-
-📌 %s
-
-%s`, event.Name, event.Description)
+	text := b.eventConditionsText(event)
 
 	if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 		return
@@ -260,7 +315,7 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 
 			// Отправляем сообщение с результатом и стартовыми кнопками
-			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx))
+			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx, userID))
 		}
 
 	case session.StateAwaitingGiftGender:
@@ -354,15 +409,24 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		switch data {
 		case "confirm_gift":
 			messageIDs := b.giftMessageIDs(userID)
-			text, err := giftHandler.ConfirmAddGift(ctx, userID)
+			sourceRefs := b.giftSourceRefs(userID)
+			gift, text, err := giftHandler.ConfirmAddGift(ctx, userID)
 			if err != nil {
 				_ = b.AnswerCallback(ctx, callback.ID, "Ошибка")
-				_, _ = b.SendMessage(ctx, msgRef.ChatID, text+"\n\nДанные сохранены. Попробуйте подтвердить ещё раз или отмените добавление.")
+				if text != "" {
+					_, _ = b.SendMessage(ctx, msgRef.ChatID, text)
+				}
 				return
 			}
 			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 				return
 			}
+			if gift != nil {
+				if notifyErr := b.notifyAdminAboutGift(ctx, gift, sourceRefs); notifyErr != nil {
+					log.Printf("WARN Failed to notify admin about gift submission: user_id=%d gift_id=%d error=%v", userID, gift.ID, notifyErr)
+				}
+			}
+			b.setGiftSourceRefs(userID, nil)
 			for _, msgID := range messageIDs {
 				if msgID == msgRef.MessageID {
 					continue
@@ -370,7 +434,7 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 				_ = b.DeleteMessage(ctx, msgRef.ChatID, msgID)
 			}
 			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
-			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx))
+			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx, userID))
 
 		case "restart_gift":
 			messageIDs := b.giftMessageIDs(userID)
@@ -378,6 +442,7 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 				return
 			}
+			b.setGiftSourceRefs(userID, nil)
 			for _, msgID := range messageIDs {
 				if msgID == msgRef.MessageID {
 					continue
@@ -403,6 +468,14 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 	if msg == nil {
 		log.Printf("Telegram message ignored: nil message")
+		return
+	}
+	if !isPrivateTelegramChat(msg.Chat) {
+		b.logDebug("Telegram message ignored in service chat: chat=%s kind=%s", b.chatLogMarker(msg.Chat.ID), messageUpdateKind(msg))
+		return
+	}
+	if len(msg.NewChatMembers) > 0 {
+		b.handleNewChatMembers(ctx, msg)
 		return
 	}
 
@@ -451,8 +524,125 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 
 	default:
 		// Если нет активного состояния, предлагаем использовать /start
-		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
+		if b.publicChatID == 0 || msg.Chat.ID != b.publicChatID {
+			_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
+		}
 	}
+}
+
+func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {
+	if msg == nil {
+		return
+	}
+	if !isPrivateTelegramChat(msg.Chat) {
+		b.logDebug("Telegram new chat members ignored outside private chat: chat=%s", b.chatLogMarker(msg.Chat.ID))
+		return
+	}
+
+	if b.publicChatID == 0 || msg.Chat.ID != b.publicChatID {
+		return
+	}
+
+	event, err := b.eventRepo.FindActive(ctx)
+	if err != nil {
+		log.Printf("WARN Failed to load active event for public chat welcome: chat=public error=%v", err)
+		return
+	}
+	if event == nil {
+		log.Printf("WARN Public chat welcome skipped: chat=public reason=no_active_event")
+		return
+	}
+
+	for _, member := range msg.NewChatMembers {
+		if member.IsBot || member.ID == 0 {
+			continue
+		}
+
+		isBlacklisted, err := b.isUserBlacklistedHandler.Handle(ctx, query.IsUserBlacklistedQuery{TelegramUserID: member.ID})
+		if err != nil {
+			log.Printf("WARN Public chat welcome skipped: telegram_user_id=%d chat=public operation=blacklist_check error=%v", member.ID, err)
+			continue
+		}
+		if isBlacklisted {
+			log.Printf("INFO Public chat welcome skipped: telegram_user_id=%d chat=public reason=blacklisted", member.ID)
+			continue
+		}
+
+		user := &entity.User{
+			ID:        member.ID,
+			Username:  member.Username,
+			FirstName: member.FirstName,
+			LastName:  member.LastName,
+		}
+		if _, err := b.userRepo.FindByID(ctx, user.ID); err != nil {
+			if createErr := b.userRepo.Create(ctx, user); createErr != nil {
+				log.Printf("WARN Public chat welcome skipped: telegram_user_id=%d chat=public reason=user_create_failed error=%v", member.ID, createErr)
+				continue
+			}
+		}
+
+		firstName := strings.TrimSpace(member.FirstName)
+		if firstName == "" {
+			firstName = "друг"
+		}
+
+		text := fmt.Sprintf("👋 Привет, %s! Добро пожаловать в %s 🚴", firstName, event.Name)
+		markup := keyboard.PublicMenu(
+			b.miniappURL,
+			b.deepLink("register"),
+			b.deepLink("conditions"),
+		)
+
+		if _, err := b.SendMessageWithKeyboard(ctx, msg.Chat.ID, text, markup); err != nil {
+			log.Printf("WARN Public chat welcome failed: telegram_user_id=%d chat=public event_id=%d error=%v", member.ID, event.ID, err)
+			continue
+		}
+
+		log.Printf("INFO Public chat welcome sent: telegram_user_id=%d event_id=%d chat=public", member.ID, event.ID)
+	}
+}
+
+func (b *Bot) handleWithdrawParticipationCallback(ctx context.Context, callback *models.CallbackQuery) {
+	msgRef, ok := callbackMessage(callback)
+	if !ok {
+		_ = b.AnswerCallback(ctx, callback.ID, "Сообщение недоступно")
+		return
+	}
+
+	userID := callback.From.ID
+	event, err := b.eventRepo.FindActive(ctx)
+	if err != nil {
+		log.Printf("WARN Failed to load active event for withdrawal: user_id=%d error=%v", userID, err)
+		_ = b.AnswerCallback(ctx, callback.ID, "Ошибка")
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, "Не удалось обработать запрос на выход. Попробуйте позже.")
+		return
+	}
+	if event == nil {
+		_ = b.AnswerCallback(ctx, callback.ID, "Нет активных событий")
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, "В данный момент нет активных событий.")
+		return
+	}
+
+	if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
+		return
+	}
+
+	cmd := command.WithdrawParticipantCommand{UserID: userID, EventID: event.ID}
+	_, err = b.withdrawParticipantHandler.Handle(ctx, cmd)
+	if err != nil {
+		if errors.Is(err, command.ErrParticipantNotFound) {
+			_, _ = b.SendMessage(ctx, msgRef.ChatID, "Вы не были зарегистрированы на это событие.")
+			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, "Главное меню:", b.getStartKeyboard(ctx, userID))
+			return
+		}
+
+		log.Printf("WARN Failed to withdraw participant: telegram_user_id=%d event_id=%d error=%v", userID, event.ID, err)
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, "Не удалось отменить участие. Попробуйте позже.")
+		return
+	}
+
+	_, _ = b.SendMessage(ctx, msgRef.ChatID, "Вы больше не участвуете в текущем соревновании.")
+	_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, "Главное меню:", b.getStartKeyboard(ctx, userID))
 }
 
 func (b *Bot) resultSessionUint(userID int64, key string) uint {
@@ -518,6 +708,9 @@ func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID
 			mediaGroupID,
 		)
 	}
+	if action.ProcessDescription || action.ProcessPhoto {
+		b.captureGiftMessageSourceRef(userID, msg)
+	}
 
 	var replyText string
 	var replyMarkup *models.InlineKeyboardMarkup
@@ -579,20 +772,67 @@ func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID
 }
 
 // getStartKeyboard возвращает стартовую клавиатуру с основными действиями
-func (b *Bot) getStartKeyboard(ctx context.Context) *models.InlineKeyboardMarkup {
+func (b *Bot) getStartKeyboard(ctx context.Context, userID int64) *models.InlineKeyboardMarkup {
 	// Получаем активное событие
 	event, err := b.eventRepo.FindActive(ctx)
 	if err != nil {
-		log.Printf("Error finding active event for start keyboard: %v", err)
+		log.Printf("WARN Failed to load active event for start keyboard: user_id=%d error=%v", userID, err)
 		return nil
 	}
 	if event == nil {
 		return nil
 	}
 
+	isRegistered := false
+	if b.participantRepo != nil {
+		participant, err := b.participantRepo.FindByUserAndEvent(ctx, userID, event.ID)
+		if err != nil && !errors.Is(err, repository.ErrParticipantNotFound) {
+			log.Printf("WARN Failed to load participant status for start menu: user_id=%d event_id=%d error=%v", userID, event.ID, err)
+		} else if participant != nil {
+			isRegistered = true
+		}
+	}
+
 	// Создаём клавиатуру с действиями
-	markup := keyboard.MainMenu(b.miniappURL)
+	markup := keyboard.MainMenu(true, isRegistered, b.miniappURL, nil)
 	return &markup
+}
+
+func (b *Bot) isPublicChat(chatID int64) bool {
+	return b.publicChatID != 0 && chatID == b.publicChatID
+}
+
+func (b *Bot) isAdminChat(chatID int64) bool {
+	return b.adminChatID != 0 && chatID == b.adminChatID
+}
+
+func (b *Bot) botUsernameAlias() string {
+	if strings.TrimSpace(b.botUsername) == "" {
+		return ""
+	}
+
+	return strings.TrimPrefix(b.botUsername, "@")
+}
+
+func (b *Bot) eventConditionsText(event *entity.Event) string {
+	return handler.EventConditionsText(event)
+}
+
+func (b *Bot) deepLink(payload string) string {
+	if strings.TrimSpace(payload) == "" {
+		return ""
+	}
+
+	if strings.TrimSpace(b.botUsername) == "" {
+		return ""
+	}
+
+	username := strings.TrimPrefix(b.botUsername, "@")
+	if username == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("https://t.me/%s?start=%s", username, url.QueryEscape(payload))
 }
 
 func (b *Bot) sendWithOptionalKeyboard(ctx context.Context, chatID int64, text string, markup *models.InlineKeyboardMarkup) (*models.Message, error) {

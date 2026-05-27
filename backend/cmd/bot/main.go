@@ -50,6 +50,8 @@ func main() {
 	bot, err := telegram.NewBot(
 		telegram.Config{
 			Token:          cfg.Bot.Token,
+			AdminChatID:    cfg.Bot.AdminChat,
+			PublicChatID:   cfg.Bot.PublicChat,
 			Debug:          cfg.Bot.Debug,
 			MiniappURL:     cfg.Bot.MiniappURL,
 			SessionTimeout: cfg.Bot.SessionTimeout,
