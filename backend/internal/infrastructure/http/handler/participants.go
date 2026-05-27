@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -17,16 +18,17 @@ import (
 
 // ParticipantsHandler обрабатывает запросы для участников
 type ParticipantsHandler struct {
-	participantRepo            repository.ParticipantRepository
-	resultRepo                 repository.ResultRepository
-	giftRepo                   repository.GiftRepository
-	criteriaRepo               repository.CriteriaRepository
-	prizeAssignmentRepo        repository.PrizeAssignmentRepository
-	getParticipantsHandler     *query.GetParticipantsHandler
-	getParticipantByIDHandler  *query.GetParticipantByIDHandler
+	participantRepo             repository.ParticipantRepository
+	resultRepo                  repository.ResultRepository
+	giftRepo                    repository.GiftRepository
+	criteriaRepo                repository.CriteriaRepository
+	prizeAssignmentRepo         repository.PrizeAssignmentRepository
+	getParticipantsHandler      *query.GetParticipantsHandler
+	getParticipantByIDHandler   *query.GetParticipantByIDHandler
 	getPrizeDistributionHandler *query.GetPrizeDistributionHandler
-	registerParticipantHandler *command.RegisterParticipantHandler
-	updateParticipantHandler   *command.UpdateParticipantHandler
+	registerParticipantHandler  *command.RegisterParticipantHandler
+	updateParticipantHandler    *command.UpdateParticipantHandler
+	deleteParticipantHandler    *command.DeleteParticipantHandler
 }
 
 // NewParticipantsHandler создаёт новый handler
@@ -41,18 +43,20 @@ func NewParticipantsHandler(
 	getPrizeDistributionHandler *query.GetPrizeDistributionHandler,
 	registerParticipantHandler *command.RegisterParticipantHandler,
 	updateParticipantHandler *command.UpdateParticipantHandler,
+	deleteParticipantHandler *command.DeleteParticipantHandler,
 ) *ParticipantsHandler {
 	return &ParticipantsHandler{
 		participantRepo:             participantRepo,
 		resultRepo:                  resultRepo,
-		giftRepo:                     giftRepo,
-		criteriaRepo:                 criteriaRepo,
-		prizeAssignmentRepo:          prizeAssignmentRepo,
+		giftRepo:                    giftRepo,
+		criteriaRepo:                criteriaRepo,
+		prizeAssignmentRepo:         prizeAssignmentRepo,
 		getParticipantsHandler:      getParticipantsHandler,
 		getParticipantByIDHandler:   getParticipantByIDHandler,
 		getPrizeDistributionHandler: getPrizeDistributionHandler,
 		registerParticipantHandler:  registerParticipantHandler,
 		updateParticipantHandler:    updateParticipantHandler,
+		deleteParticipantHandler:    deleteParticipantHandler,
 	}
 }
 
@@ -234,17 +238,20 @@ func (h *ParticipantsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Gender:   req.Gender,
 	})
 	if err != nil {
-		log.Printf("Error registering participant: %v", err)
-		switch err {
-		case command.ErrUserNotFound:
+		log.Printf("Error registering participant: event_id=%d telegram_user_id=%d error=%v", eventID, req.UserID, err)
+		switch {
+		case errors.Is(err, command.ErrUserBlacklisted):
+			log.Printf("WARN Participant registration blocked in HTTP: event_id=%d telegram_user_id=%d reason=blacklisted", eventID, req.UserID)
+			response.Forbidden(w, err.Error())
+		case errors.Is(err, command.ErrUserNotFound):
 			response.NotFound(w, err.Error())
-		case command.ErrEventNotFound:
+		case errors.Is(err, command.ErrEventNotFound):
 			response.NotFound(w, err.Error())
-		case command.ErrEventNotActive:
+		case errors.Is(err, command.ErrEventNotActive):
 			response.BadRequest(w, err.Error())
-		case command.ErrAlreadyRegistered:
+		case errors.Is(err, command.ErrAlreadyRegistered):
 			response.Conflict(w, err.Error())
-		case command.ErrInvalidBikeType, command.ErrInvalidGender:
+		case errors.Is(err, command.ErrInvalidBikeType), errors.Is(err, command.ErrInvalidGender):
 			response.BadRequest(w, err.Error())
 		default:
 			response.InternalServerError(w, "Failed to register participant")
@@ -312,21 +319,19 @@ func (h *ParticipantsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем существование участника
-	_, err = h.participantRepo.FindByID(r.Context(), uint(id))
-	if err != nil {
-		log.Printf("Participant not found: %v", err)
-		response.NotFound(w, "Participant not found")
-		return
-	}
-
-	// Удаляем участника
-	if err := h.participantRepo.Delete(r.Context(), uint(id)); err != nil {
-		log.Printf("Error deleting participant: %v", err)
+	log.Printf("Participant delete request received: participant_id=%d", id)
+	if err := h.deleteParticipantHandler.Handle(r.Context(), command.DeleteParticipantCommand{ParticipantID: uint(id)}); err != nil {
+		if errors.Is(err, command.ErrParticipantNotFound) {
+			log.Printf("Participant delete not found: participant_id=%d", id)
+			response.NotFound(w, "Participant not found")
+			return
+		}
+		log.Printf("Error deleting participant: participant_id=%d error=%v", id, err)
 		response.InternalServerError(w, "Failed to delete participant")
 		return
 	}
 
+	log.Printf("Participant delete completed: participant_id=%d", id)
 	// Возвращаем успешный ответ без содержимого
 	response.NoContent(w)
 }

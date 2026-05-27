@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"gravel_bot/internal/domain/entity"
@@ -159,6 +160,84 @@ func (r *participantRepository) Delete(ctx context.Context, id uint) error {
 	return err
 }
 
+func (r *participantRepository) DeleteWithResultCriteria(ctx context.Context, id uint) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("Participant delete transaction begin failed: participant_id=%d stage=begin error=%v", id, err)
+		return fmt.Errorf("begin participant delete transaction: %w", err)
+	}
+
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && rollbackErr != sql.ErrTxDone {
+			log.Printf("Participant delete transaction rollback failed: participant_id=%d stage=rollback error=%v", id, rollbackErr)
+		}
+	}()
+
+	resultIDs, err := participantResultIDs(ctx, tx, id)
+	if err != nil {
+		log.Printf("Participant delete failed: participant_id=%d stage=find_results error=%v", id, err)
+		return fmt.Errorf("find participant results: %w", err)
+	}
+
+	if _, err := tx.ExecContext(
+		ctx,
+		`DELETE FROM entity_criteria
+		 WHERE entity_type = 'result'
+		   AND entity_id IN (SELECT id FROM results WHERE participant_id = $1)`,
+		id,
+	); err != nil {
+		log.Printf("Participant delete failed: participant_id=%d stage=delete_result_criteria result_count=%d error=%v", id, len(resultIDs), err)
+		return fmt.Errorf("delete participant result criteria: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM participants WHERE id = $1`, id)
+	if err != nil {
+		log.Printf("Participant delete failed: participant_id=%d stage=delete_participant error=%v", id, err)
+		return fmt.Errorf("delete participant: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Participant delete failed: participant_id=%d stage=rows_affected error=%v", id, err)
+		return fmt.Errorf("delete participant rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("%w: %d", repository.ErrParticipantNotFound, id)
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("Participant delete transaction commit failed: participant_id=%d stage=commit result_count=%d error=%v", id, len(resultIDs), err)
+		return fmt.Errorf("commit participant delete transaction: %w", err)
+	}
+	committed = true
+
+	log.Printf("Participant delete transaction completed: participant_id=%d result_count=%d", id, len(resultIDs))
+	return nil
+}
+
+func participantResultIDs(ctx context.Context, tx *sql.Tx, participantID uint) ([]uint, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM results WHERE participant_id = $1`, participantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	resultIDs := make([]uint, 0)
+	for rows.Next() {
+		var resultID uint
+		if err := rows.Scan(&resultID); err != nil {
+			return nil, err
+		}
+		resultIDs = append(resultIDs, resultID)
+	}
+
+	return resultIDs, rows.Err()
+}
+
 func (r *participantRepository) scanParticipant(row *sql.Row) (*entity.Participant, error) {
 	p := &entity.Participant{User: &entity.User{}}
 	var bikeType, gender string
@@ -191,7 +270,7 @@ func (r *participantRepository) scanParticipant(row *sql.Row) (*entity.Participa
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("participant not found")
+		return nil, repository.ErrParticipantNotFound
 	}
 	if err != nil {
 		return nil, err

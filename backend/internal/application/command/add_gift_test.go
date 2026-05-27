@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"gravel_bot/internal/domain/entity"
@@ -13,6 +14,7 @@ func TestAddGiftHandlerCreatesPendingReviewGiftWithAttachmentsAtomically(t *test
 		&addGiftUserRepoFake{user: &entity.User{ID: 123}},
 		&addGiftEventRepoFake{event: &entity.Event{ID: 77}},
 		giftRepo,
+		&addGiftUserBlacklistRepoFake{},
 	)
 
 	gift, err := h.Handle(context.Background(), AddGiftCommand{
@@ -49,6 +51,28 @@ func TestAddGiftHandlerCreatesPendingReviewGiftWithAttachmentsAtomically(t *test
 	}
 }
 
+func TestAddGiftHandlerRejectsBlacklistedUser(t *testing.T) {
+	giftRepo := &addGiftRepoFake{}
+	h := NewAddGiftHandler(
+		&addGiftUserRepoFake{user: &entity.User{ID: 123}},
+		&addGiftEventRepoFake{event: &entity.Event{ID: 77}},
+		giftRepo,
+		&addGiftUserBlacklistRepoFake{blacklisted: true},
+	)
+
+	_, err := h.Handle(context.Background(), AddGiftCommand{
+		UserID:      123,
+		EventID:     77,
+		Description: "Bottle cage",
+	})
+	if !errors.Is(err, ErrUserBlacklisted) {
+		t.Fatalf("error mismatch: got %v, want %v", err, ErrUserBlacklisted)
+	}
+	if giftRepo.createWithAttachmentsCalled || giftRepo.createCalled {
+		t.Fatal("gift should not be created for blacklisted user")
+	}
+}
+
 type addGiftUserRepoFake struct {
 	user *entity.User
 }
@@ -61,6 +85,29 @@ func (r *addGiftUserRepoFake) FindByID(ctx context.Context, id int64) (*entity.U
 func (r *addGiftUserRepoFake) Delete(ctx context.Context, id int64) error { return nil }
 func (r *addGiftUserRepoFake) GetAll(ctx context.Context) ([]*entity.User, error) {
 	return nil, nil
+}
+
+type addGiftUserBlacklistRepoFake struct {
+	blacklisted bool
+}
+
+func (r *addGiftUserBlacklistRepoFake) List(ctx context.Context) ([]*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *addGiftUserBlacklistRepoFake) FindByTelegramUserID(ctx context.Context, telegramUserID int64) (*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *addGiftUserBlacklistRepoFake) IsBlacklisted(ctx context.Context, telegramUserID int64) (bool, error) {
+	return r.blacklisted, nil
+}
+func (r *addGiftUserBlacklistRepoFake) Upsert(ctx context.Context, entry *entity.UserBlacklist) error {
+	return nil
+}
+func (r *addGiftUserBlacklistRepoFake) UpdateReason(ctx context.Context, telegramUserID int64, reason string) (*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *addGiftUserBlacklistRepoFake) Delete(ctx context.Context, telegramUserID int64) error {
+	return nil
 }
 
 type addGiftEventRepoFake struct {

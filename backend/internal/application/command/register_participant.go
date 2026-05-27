@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"gravel_bot/internal/domain/entity"
@@ -12,12 +13,12 @@ import (
 )
 
 var (
-	ErrUserNotFound          = errors.New("user not found")
-	ErrEventNotFound         = errors.New("event not found")
-	ErrEventNotActive        = errors.New("event is not active")
-	ErrAlreadyRegistered     = errors.New("user already registered for this event")
-	ErrInvalidBikeType       = errors.New("invalid bike type")
-	ErrInvalidGender         = errors.New("invalid gender")
+	ErrUserNotFound      = errors.New("user not found")
+	ErrEventNotFound     = errors.New("event not found")
+	ErrEventNotActive    = errors.New("event is not active")
+	ErrAlreadyRegistered = errors.New("user already registered for this event")
+	ErrInvalidBikeType   = errors.New("invalid bike type")
+	ErrInvalidGender     = errors.New("invalid gender")
 )
 
 // RegisterParticipantCommand представляет команду регистрации участника на событие
@@ -30,9 +31,10 @@ type RegisterParticipantCommand struct {
 
 // RegisterParticipantHandler обрабатывает регистрацию участника
 type RegisterParticipantHandler struct {
-	userRepo        repository.UserRepository
-	eventRepo       repository.EventRepository
-	participantRepo repository.ParticipantRepository
+	userRepo          repository.UserRepository
+	eventRepo         repository.EventRepository
+	participantRepo   repository.ParticipantRepository
+	userBlacklistRepo repository.UserBlacklistRepository
 }
 
 // NewRegisterParticipantHandler создаёт новый handler
@@ -40,16 +42,28 @@ func NewRegisterParticipantHandler(
 	userRepo repository.UserRepository,
 	eventRepo repository.EventRepository,
 	participantRepo repository.ParticipantRepository,
+	userBlacklistRepo repository.UserBlacklistRepository,
 ) *RegisterParticipantHandler {
 	return &RegisterParticipantHandler{
-		userRepo:        userRepo,
-		eventRepo:       eventRepo,
-		participantRepo: participantRepo,
+		userRepo:          userRepo,
+		eventRepo:         eventRepo,
+		participantRepo:   participantRepo,
+		userBlacklistRepo: userBlacklistRepo,
 	}
 }
 
 // Handle выполняет команду регистрации участника
 func (h *RegisterParticipantHandler) Handle(ctx context.Context, cmd RegisterParticipantCommand) (*entity.Participant, error) {
+	isBlacklisted, err := h.userBlacklistRepo.IsBlacklisted(ctx, cmd.UserID)
+	if err != nil {
+		log.Printf("ERROR Participant registration blacklist check failed: telegram_user_id=%d event_id=%d error=%v", cmd.UserID, cmd.EventID, err)
+		return nil, fmt.Errorf("check user blacklist: %w", err)
+	}
+	if isBlacklisted {
+		log.Printf("WARN Participant registration blocked: telegram_user_id=%d event_id=%d reason=blacklisted", cmd.UserID, cmd.EventID)
+		return nil, ErrUserBlacklisted
+	}
+
 	// Проверяем существование пользователя
 	user, err := h.userRepo.FindByID(ctx, cmd.UserID)
 	if err != nil {

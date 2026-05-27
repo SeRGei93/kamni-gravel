@@ -12,6 +12,7 @@ import {
   GridIcon,
   HorizontaLDots,
   ListIcon,
+  LockIcon,
   PageIcon,
   PieChartIcon,
   PlugInIcon,
@@ -38,6 +39,11 @@ const navItems: NavItem[] = [
     icon: <UserCircleIcon />,
     name: "Участники",
     path: "/participants",
+  },
+  {
+    icon: <LockIcon />,
+    name: "Blacklist",
+    path: "/user-blacklist",
   },
   {
     icon: <BoxIcon />,
@@ -227,6 +233,7 @@ const AppSidebar: React.FC = () => {
 
     // If no submenu item matches, close the open submenu
     if (!submenuMatched) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpenSubmenu(null);
     }
   }, [pathname,isActive]);

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { participantsApi } from '@/api/participants';
 import { resultsApi } from '@/api/results';
 import type { ParticipantDetail, Gift, Result } from '@/types';
@@ -11,7 +11,7 @@ import TextArea from '@/components/form/input/TextArea';
 import TimeInput from '@/components/participants/TimeInput';
 import ResultCriteriaManager from '@/components/participants/ResultCriteriaManager';
 import { getCriteriaColor } from '@/utils/criteria';
-import { ChevronLeftIcon, PencilIcon, CheckLineIcon, CloseLineIcon } from '@/icons';
+import { ChevronLeftIcon, PencilIcon, CheckLineIcon, CloseLineIcon, TrashIcon } from '@/icons';
 import Link from 'next/link';
 
 const GENDER_LABELS: Record<string, string> = {
@@ -29,6 +29,7 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
 
 export default function ParticipantDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const participantId = Number(params.id);
 
   const [participant, setParticipant] = useState<ParticipantDetail | null>(null);
@@ -38,6 +39,7 @@ export default function ParticipantDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isDeletingParticipant, setIsDeletingParticipant] = useState(false);
 
   // Редактируемые поля участника
   const [notes, setNotes] = useState('');
@@ -48,11 +50,7 @@ export default function ParticipantDetailPage() {
   const [isEditingResult, setIsEditingResult] = useState(false);
   const [isSavingResult, setIsSavingResult] = useState(false);
 
-  useEffect(() => {
-    loadParticipant();
-  }, [participantId]);
-
-  const loadParticipant = async () => {
+  const loadParticipant = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -80,7 +78,11 @@ export default function ParticipantDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [participantId]);
+
+  useEffect(() => {
+    loadParticipant();
+  }, [loadParticipant]);
 
   const handleSaveNotes = async () => {
     if (!participant) return;
@@ -148,6 +150,34 @@ export default function ParticipantDetailPage() {
     setIsEditingResult(false);
   };
 
+  const handleDeleteParticipant = async () => {
+    if (!participant) return;
+    if (
+      !window.confirm(
+        `Удалить участника ${participant.first_name || participant.username || participant.user_id}?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsDeletingParticipant(true);
+      setError(null);
+      await participantsApi.delete(participant.id);
+      router.push('/participants');
+    } catch (err) {
+      setError('Ошибка удаления участника');
+      console.error('Failed to delete participant:', {
+        operation: 'delete_participant',
+        participant_id: participant.id,
+        event_id: participant.event_id,
+        error: err,
+      });
+    } finally {
+      setIsDeletingParticipant(false);
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -199,6 +229,15 @@ export default function ParticipantDetailPage() {
             @{participant.username || `user${participant.user_id}`}
           </p>
         </div>
+        <Button
+          size="sm"
+          variant="outline"
+          startIcon={<TrashIcon />}
+          onClick={handleDeleteParticipant}
+          disabled={isDeletingParticipant}
+        >
+          {isDeletingParticipant ? 'Удаление...' : 'Удалить'}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

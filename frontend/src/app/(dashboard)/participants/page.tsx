@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { participantsApi } from '@/api/participants';
 import { eventsApi } from '@/api/events';
 import type { Participant, Event } from '@/types';
@@ -14,6 +14,7 @@ export default function ParticipantsPage() {
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [deletingParticipantId, setDeletingParticipantId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Фильтры
@@ -22,21 +23,7 @@ export default function ParticipantsPage() {
   const [isFinishedFilter, setIsFinishedFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Загрузка событий
-  useEffect(() => {
-    loadEvents();
-  }, []);
-
-  // Загрузка участников при изменении фильтров
-  useEffect(() => {
-    if (selectedEventId) {
-      loadParticipants();
-    } else {
-      setParticipants([]);
-    }
-  }, [selectedEventId, genderFilter, bikeTypeFilter, isFinishedFilter]);
-
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     try {
       const response = await eventsApi.getAll();
       setEvents(response.events);
@@ -51,10 +38,13 @@ export default function ParticipantsPage() {
       setError('Ошибка загрузки событий');
       console.error('Failed to load events:', err);
     }
-  };
+  }, []);
 
-  const loadParticipants = async () => {
-    if (!selectedEventId) return;
+  const loadParticipants = useCallback(async () => {
+    if (!selectedEventId) {
+      setParticipants([]);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -78,6 +68,44 @@ export default function ParticipantsPage() {
       console.error('Failed to load participants:', err);
     } finally {
       setIsLoading(false);
+    }
+  }, [bikeTypeFilter, genderFilter, isFinishedFilter, selectedEventId]);
+
+  // Загрузка событий
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  // Загрузка участников при изменении фильтров
+  useEffect(() => {
+    loadParticipants();
+  }, [loadParticipants]);
+
+  const handleDeleteParticipant = async (participant: Participant) => {
+    if (!selectedEventId) return;
+    if (
+      !window.confirm(
+        `Удалить участника ${participant.first_name || participant.username || participant.user_id}?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setDeletingParticipantId(participant.id);
+      setError(null);
+      await participantsApi.delete(participant.id);
+      await loadParticipants();
+    } catch (err) {
+      setError('Ошибка удаления участника');
+      console.error('Failed to delete participant:', {
+        operation: 'delete_participant',
+        participant_id: participant.id,
+        event_id: selectedEventId,
+        error: err,
+      });
+    } finally {
+      setDeletingParticipantId(null);
     }
   };
 
@@ -196,6 +224,8 @@ export default function ParticipantsPage() {
       <ParticipantsTable
         participants={filteredParticipants}
         isLoading={isLoading}
+        deletingParticipantId={deletingParticipantId}
+        onDelete={handleDeleteParticipant}
       />
     </div>
   );

@@ -2,8 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
+
 	"gravel_bot/internal/domain/entity"
 )
+
+// ErrParticipantNotFound означает, что участник не найден.
+var ErrParticipantNotFound = errors.New("participant not found")
 
 // ParticipantRepository определяет интерфейс для работы с участниками
 type ParticipantRepository interface {
@@ -27,6 +32,9 @@ type ParticipantRepository interface {
 
 	// Delete удаляет участника
 	Delete(ctx context.Context, id uint) error
+
+	// DeleteWithResultCriteria удаляет критерии результатов участника и участника транзакционно
+	DeleteWithResultCriteria(ctx context.Context, id uint) error
 
 	// GetFinishedByEvent возвращает финишировавших участников события, отсортированных по времени
 	GetFinishedByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error)

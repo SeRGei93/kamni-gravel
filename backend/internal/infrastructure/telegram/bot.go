@@ -33,6 +33,7 @@ type Bot struct {
 	criteriaRepo        repository.CriteriaRepository
 	giftCriteriaRepo    repository.GiftCriteriaRepository
 	prizeAssignmentRepo repository.PrizeAssignmentRepository
+	userBlacklistRepo   repository.UserBlacklistRepository
 
 	// Command handlers
 	registerParticipantHandler *command.RegisterParticipantHandler
@@ -41,11 +42,12 @@ type Bot struct {
 	assignPrizeHandler         *command.AssignPrizeHandler
 
 	// Query handlers
-	getParticipantsHandler *query.GetParticipantsHandler
-	getGiftsHandler        *query.GetGiftsHandler
-	getEventsHandler       *query.GetEventsHandler
-	getCriteriaHandler     *query.GetCriteriaHandler
-	getStatsHandler        *query.GetStatsHandler
+	getParticipantsHandler   *query.GetParticipantsHandler
+	getGiftsHandler          *query.GetGiftsHandler
+	getEventsHandler         *query.GetEventsHandler
+	getCriteriaHandler       *query.GetCriteriaHandler
+	getStatsHandler          *query.GetStatsHandler
+	isUserBlacklistedHandler *query.IsUserBlacklistedHandler
 }
 
 // Config представляет конфигурацию бота
@@ -67,6 +69,7 @@ func NewBot(
 	criteriaRepo repository.CriteriaRepository,
 	giftCriteriaRepo repository.GiftCriteriaRepository,
 	prizeAssignmentRepo repository.PrizeAssignmentRepository,
+	userBlacklistRepo repository.UserBlacklistRepository,
 ) (*Bot, error) {
 	miniappURL := validateMiniappURL(cfg.MiniappURL)
 
@@ -78,12 +81,14 @@ func NewBot(
 		userRepo,
 		eventRepo,
 		participantRepo,
+		userBlacklistRepo,
 	)
 
 	addGiftHandler := command.NewAddGiftHandler(
 		userRepo,
 		eventRepo,
 		giftRepo,
+		userBlacklistRepo,
 	)
 
 	submitResultHandler := command.NewSubmitResultHandler(
@@ -102,6 +107,7 @@ func NewBot(
 	getGiftsHandler := query.NewGetGiftsHandler(giftRepo, criteriaRepo)
 	getEventsHandler := query.NewGetEventsHandler(eventRepo)
 	getCriteriaHandler := query.NewGetCriteriaHandler(criteriaRepo)
+	isUserBlacklistedHandler := query.NewIsUserBlacklistedHandler(userBlacklistRepo)
 	getStatsHandler := query.NewGetStatsHandler(
 		eventRepo,
 		participantRepo,
@@ -122,6 +128,7 @@ func NewBot(
 		criteriaRepo:               criteriaRepo,
 		giftCriteriaRepo:           giftCriteriaRepo,
 		prizeAssignmentRepo:        prizeAssignmentRepo,
+		userBlacklistRepo:          userBlacklistRepo,
 		registerParticipantHandler: registerParticipantHandler,
 		addGiftHandler:             addGiftHandler,
 		submitResultHandler:        submitResultHandler,
@@ -131,6 +138,7 @@ func NewBot(
 		getEventsHandler:           getEventsHandler,
 		getCriteriaHandler:         getCriteriaHandler,
 		getStatsHandler:            getStatsHandler,
+		isUserBlacklistedHandler:   isUserBlacklistedHandler,
 	}
 
 	opts := []telegrambot.Option{
@@ -197,6 +205,9 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *telegrambot.Bot, update *mode
 		b.logDebug("Unsupported Telegram update: nil update")
 		return
 	}
+	if b.shouldSilentlyIgnoreBlacklistedUpdate(ctx, update) {
+		return
+	}
 
 	// Обработка команд
 	if update.Message != nil && messageCommand(update.Message) != "" {
@@ -217,6 +228,27 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *telegrambot.Bot, update *mode
 	}
 
 	b.logDebug("Unsupported Telegram update kind: update_id=%d", update.ID)
+}
+
+func (b *Bot) shouldSilentlyIgnoreBlacklistedUpdate(ctx context.Context, update *models.Update) bool {
+	telegramUserID, updateKind, ok := telegramUpdateSender(update)
+	if !ok {
+		return false
+	}
+
+	isBlacklisted, err := b.isUserBlacklistedHandler.Handle(ctx, query.IsUserBlacklistedQuery{
+		TelegramUserID: telegramUserID,
+	})
+	if err != nil {
+		log.Printf("ERROR Telegram blacklist guard failed: operation=blacklist_guard telegram_user_id=%d update_kind=%s error=%v", telegramUserID, updateKind, err)
+		return false
+	}
+	if !isBlacklisted {
+		return false
+	}
+
+	log.Printf("INFO Telegram update silently ignored: operation=blacklist_guard telegram_user_id=%d update_kind=%s", telegramUserID, updateKind)
+	return true
 }
 
 // SendMessage отправляет текстовое сообщение

@@ -80,6 +80,29 @@ func messageSender(msg *models.Message) (*models.User, bool) {
 	return msg.From, true
 }
 
+func telegramUpdateSender(update *models.Update) (int64, string, bool) {
+	if update == nil {
+		return 0, "nil", false
+	}
+
+	if update.Message != nil {
+		sender, ok := messageSender(update.Message)
+		if !ok {
+			return 0, messageUpdateKind(update.Message), false
+		}
+		if command := messageCommand(update.Message); command != "" {
+			return sender.ID, "command:" + command, true
+		}
+		return sender.ID, "message:" + messageUpdateKind(update.Message), true
+	}
+
+	if update.CallbackQuery != nil {
+		return update.CallbackQuery.From.ID, "callback", true
+	}
+
+	return 0, "unsupported", false
+}
+
 func callbackMessage(callback *models.CallbackQuery) (callbackMessageRef, bool) {
 	if callback == nil {
 		log.Printf("Telegram callback ignored: nil callback")

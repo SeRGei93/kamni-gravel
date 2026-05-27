@@ -43,6 +43,7 @@ func main() {
 	giftRepo := postgres.NewGiftRepository(db)
 	criteriaRepo := postgres.NewCriteriaRepository(db)
 	prizeAssignmentRepo := postgres.NewPrizeAssignmentRepository(db)
+	userBlacklistRepo := postgres.NewUserBlacklistRepository(db)
 	adminRepo := postgres.NewAdminRepository(db)
 
 	// Создаём HTTP сервер
@@ -64,6 +65,7 @@ func main() {
 		giftRepo,
 		criteriaRepo,
 		prizeAssignmentRepo,
+		userBlacklistRepo,
 		adminRepo,
 	)
 

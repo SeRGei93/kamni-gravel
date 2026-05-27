@@ -66,6 +66,30 @@ export interface ParticipantListResponse {
   total: number;
 }
 
+export interface UserBlacklistEntry {
+  telegram_user_id: number;
+  reason: string;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserBlacklistListResponse {
+  entries: UserBlacklistEntry[];
+  total: number;
+}
+
+export interface CreateUserBlacklistRequest {
+  telegram_user_id: number;
+  reason?: string;
+}
+
+export interface UpdateUserBlacklistRequest {
+  reason?: string;
+}
+
 export interface Event {
   id: number;
   name: string;

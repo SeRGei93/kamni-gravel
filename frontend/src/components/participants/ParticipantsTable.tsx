@@ -5,10 +5,14 @@ import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
 import Badge from '../ui/badge/Badge';
 import type { Participant } from '@/types';
+import Button from '@/components/ui/button/Button';
+import { TrashIcon } from '@/icons';
 
 interface ParticipantsTableProps {
   participants: Participant[];
   isLoading?: boolean;
+  deletingParticipantId?: number | null;
+  onDelete?: (participant: Participant) => void;
 }
 
 const GENDER_LABELS: Record<string, string> = {
@@ -27,6 +31,8 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
 export default function ParticipantsTable({
   participants,
   isLoading,
+  deletingParticipantId,
+  onDelete,
 }: ParticipantsTableProps) {
   if (isLoading) {
     return (
@@ -49,7 +55,7 @@ export default function ParticipantsTable({
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
       <div className="max-w-full overflow-x-auto">
-        <div className="min-w-[1200px]">
+        <div className="min-w-[1320px]">
           <Table>
             <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
               <TableRow>
@@ -107,6 +113,14 @@ export default function ParticipantsTable({
                 >
                   Призы
                 </TableCell>
+                {onDelete && (
+                  <TableCell
+                    isHeader
+                    className="px-5 py-3 font-medium text-gray-500 text-end text-theme-xs dark:text-gray-400"
+                  >
+                    Действия
+                  </TableCell>
+                )}
               </TableRow>
             </TableHeader>
 
@@ -186,6 +200,21 @@ export default function ParticipantsTable({
                       </span>
                     )}
                   </TableCell>
+                  {onDelete && (
+                    <TableCell className="px-5 py-4 text-end">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        startIcon={<TrashIcon />}
+                        onClick={() => onDelete(participant)}
+                        disabled={deletingParticipantId === participant.id}
+                      >
+                        {deletingParticipantId === participant.id
+                          ? 'Удаление...'
+                          : 'Удалить'}
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

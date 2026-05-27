@@ -308,6 +308,7 @@ func TestGiftHandlerConfirmAddGiftPersistsTelegramUserIDAndPendingStatus(t *test
 		&giftConfirmUserRepoFake{user: &entity.User{ID: 12345}},
 		&giftConfirmEventRepoFake{event: &entity.Event{ID: 77}},
 		giftRepo,
+		&giftConfirmUserBlacklistRepoFake{},
 	)
 	h := NewGiftHandler(manager, nil, addGiftHandler)
 	userID := int64(12345)
@@ -376,6 +377,29 @@ func (r *giftConfirmUserRepoFake) FindByID(ctx context.Context, id int64) (*enti
 func (r *giftConfirmUserRepoFake) Delete(ctx context.Context, id int64) error { return nil }
 func (r *giftConfirmUserRepoFake) GetAll(ctx context.Context) ([]*entity.User, error) {
 	return nil, nil
+}
+
+type giftConfirmUserBlacklistRepoFake struct {
+	blacklisted bool
+}
+
+func (r *giftConfirmUserBlacklistRepoFake) List(ctx context.Context) ([]*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *giftConfirmUserBlacklistRepoFake) FindByTelegramUserID(ctx context.Context, telegramUserID int64) (*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *giftConfirmUserBlacklistRepoFake) IsBlacklisted(ctx context.Context, telegramUserID int64) (bool, error) {
+	return r.blacklisted, nil
+}
+func (r *giftConfirmUserBlacklistRepoFake) Upsert(ctx context.Context, entry *entity.UserBlacklist) error {
+	return nil
+}
+func (r *giftConfirmUserBlacklistRepoFake) UpdateReason(ctx context.Context, telegramUserID int64, reason string) (*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *giftConfirmUserBlacklistRepoFake) Delete(ctx context.Context, telegramUserID int64) error {
+	return nil
 }
 
 type giftConfirmEventRepoFake struct {

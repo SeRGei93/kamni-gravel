@@ -31,13 +31,18 @@ type Server struct {
 	giftRepo            repository.GiftRepository
 	criteriaRepo        repository.CriteriaRepository
 	prizeAssignmentRepo repository.PrizeAssignmentRepository
+	userBlacklistRepo   repository.UserBlacklistRepository
 	adminRepo           repository.AdminRepository
 
 	// Command handlers
-	registerParticipantHandler *command.RegisterParticipantHandler
-	updateGiftHandler          *command.UpdateGiftHandler
-	submitResultHandler        *command.SubmitResultHandler
-	assignPrizeHandler         *command.AssignPrizeHandler
+	registerParticipantHandler       *command.RegisterParticipantHandler
+	updateGiftHandler                *command.UpdateGiftHandler
+	submitResultHandler              *command.SubmitResultHandler
+	assignPrizeHandler               *command.AssignPrizeHandler
+	addUserBlacklistHandler          *command.AddUserBlacklistHandler
+	updateUserBlacklistReasonHandler *command.UpdateUserBlacklistReasonHandler
+	removeUserBlacklistHandler       *command.RemoveUserBlacklistHandler
+	deleteParticipantHandler         *command.DeleteParticipantHandler
 
 	// Query handlers
 	getParticipantsHandler        *query.GetParticipantsHandler
@@ -49,6 +54,8 @@ type Server struct {
 	getPrizeAssignmentsHandler    *query.GetPrizeAssignmentsHandler
 	getPrizeAssignmentByIDHandler *query.GetPrizeAssignmentByIDHandler
 	getStatsHandler               *query.GetStatsHandler
+	listUserBlacklistHandler      *query.ListUserBlacklistHandler
+	isUserBlacklistedHandler      *query.IsUserBlacklistedHandler
 
 	// HTTP handlers
 	authHandler              *handler.AuthHandler
@@ -62,6 +69,7 @@ type Server struct {
 	statsHandler             *handler.StatsHandler
 	telegramHandler          *handler.TelegramHandler
 	miniappHandler           *handler.MiniappHandler
+	userBlacklistHandler     *handler.UserBlacklistHandler
 
 	// JWT Manager
 	jwtManager         *jwt.Manager
@@ -90,6 +98,7 @@ func NewServer(
 	giftRepo repository.GiftRepository,
 	criteriaRepo repository.CriteriaRepository,
 	prizeAssignmentRepo repository.PrizeAssignmentRepository,
+	userBlacklistRepo repository.UserBlacklistRepository,
 	adminRepo repository.AdminRepository,
 ) *Server {
 	// Создаём command handlers
@@ -97,6 +106,7 @@ func NewServer(
 		userRepo,
 		eventRepo,
 		participantRepo,
+		userBlacklistRepo,
 	)
 
 	submitResultHandler := command.NewSubmitResultHandler(
@@ -120,6 +130,8 @@ func NewServer(
 	getEventByIDHandler := query.NewGetEventByIDHandler(eventRepo)
 	getPrizeAssignmentsHandler := query.NewGetPrizeAssignmentsHandler(prizeAssignmentRepo)
 	getPrizeAssignmentByIDHandler := query.NewGetPrizeAssignmentByIDHandler(prizeAssignmentRepo)
+	listUserBlacklistHandler := query.NewListUserBlacklistHandler(userBlacklistRepo)
+	isUserBlacklistedHandler := query.NewIsUserBlacklistedHandler(userBlacklistRepo)
 	getStatsHandler := query.NewGetStatsHandler(
 		eventRepo,
 		participantRepo,
@@ -134,6 +146,7 @@ func NewServer(
 
 	// Создаём command handlers для participants
 	updateParticipantHandler := command.NewUpdateParticipantHandler(participantRepo)
+	deleteParticipantHandler := command.NewDeleteParticipantHandler(participantRepo)
 
 	// Создаём command handlers для criteria
 	createCriteriaHandler := command.NewCreateCriteriaHandler(criteriaRepo)
@@ -141,6 +154,11 @@ func NewServer(
 
 	// Создаём command handlers для gifts
 	updateGiftHandler := command.NewUpdateGiftHandler(giftRepo)
+
+	// Создаём command handlers для blacklist пользователей
+	addUserBlacklistHandler := command.NewAddUserBlacklistHandler(userBlacklistRepo)
+	updateUserBlacklistReasonHandler := command.NewUpdateUserBlacklistReasonHandler(userBlacklistRepo)
+	removeUserBlacklistHandler := command.NewRemoveUserBlacklistHandler(userBlacklistRepo)
 
 	// Создаём query handlers для criteria
 	getCriteriaHandler := query.NewGetCriteriaHandler(criteriaRepo)
@@ -183,6 +201,7 @@ func NewServer(
 		getPrizeDistributionHandlerTemp,
 		registerParticipantHandler,
 		updateParticipantHandler,
+		deleteParticipantHandler,
 	)
 	giftsHandler := handler.NewGiftsHandler(
 		giftRepo,
@@ -211,6 +230,12 @@ func NewServer(
 		getMiniappGiftsHandler,
 		cfg.BotToken,
 	)
+	userBlacklistHandler := handler.NewUserBlacklistHandler(
+		listUserBlacklistHandler,
+		addUserBlacklistHandler,
+		updateUserBlacklistReasonHandler,
+		removeUserBlacklistHandler,
+	)
 
 	// Создаём query handlers для распределения призов
 	getPrizeDistributionHandler := query.NewGetPrizeDistributionHandler(
@@ -227,40 +252,48 @@ func NewServer(
 	)
 
 	s := &Server{
-		userRepo:                      userRepo,
-		eventRepo:                     eventRepo,
-		participantRepo:               participantRepo,
-		resultRepo:                    resultRepo,
-		giftRepo:                      giftRepo,
-		criteriaRepo:                  criteriaRepo,
-		prizeAssignmentRepo:           prizeAssignmentRepo,
-		adminRepo:                     adminRepo,
-		registerParticipantHandler:    registerParticipantHandler,
-		updateGiftHandler:             updateGiftHandler,
-		submitResultHandler:           submitResultHandler,
-		assignPrizeHandler:            assignPrizeHandler,
-		getParticipantsHandler:        getParticipantsHandler,
-		getParticipantByIDHandler:     getParticipantByIDHandler,
-		getGiftsHandler:               getGiftsHandler,
-		getGiftByIDHandler:            getGiftByIDHandler,
-		getEventsHandler:              getEventsHandler,
-		getEventByIDHandler:           getEventByIDHandler,
-		getPrizeAssignmentsHandler:    getPrizeAssignmentsHandler,
-		getPrizeAssignmentByIDHandler: getPrizeAssignmentByIDHandler,
-		getStatsHandler:               getStatsHandler,
-		authHandler:                   authHandler,
-		eventsHandler:                 eventsHandler,
-		participantsHandler:           participantsHandler,
-		resultsHandler:                resultsHandler,
-		giftsHandler:                  giftsHandler,
-		criteriaHandler:               criteriaHandler,
-		prizeAssignmentsHandler:       prizeAssignmentsHandler,
-		prizeDistributionHandler:      prizeDistributionHandler,
-		statsHandler:                  statsHandler,
-		telegramHandler:               telegramHandler,
-		miniappHandler:                miniappHandler,
-		jwtManager:                    jwtManager,
-		telegramWebAppAuth:            middleware.TelegramWebAppAuth(cfg.BotToken),
+		userRepo:                         userRepo,
+		eventRepo:                        eventRepo,
+		participantRepo:                  participantRepo,
+		resultRepo:                       resultRepo,
+		giftRepo:                         giftRepo,
+		criteriaRepo:                     criteriaRepo,
+		prizeAssignmentRepo:              prizeAssignmentRepo,
+		userBlacklistRepo:                userBlacklistRepo,
+		adminRepo:                        adminRepo,
+		registerParticipantHandler:       registerParticipantHandler,
+		updateGiftHandler:                updateGiftHandler,
+		submitResultHandler:              submitResultHandler,
+		assignPrizeHandler:               assignPrizeHandler,
+		addUserBlacklistHandler:          addUserBlacklistHandler,
+		updateUserBlacklistReasonHandler: updateUserBlacklistReasonHandler,
+		removeUserBlacklistHandler:       removeUserBlacklistHandler,
+		deleteParticipantHandler:         deleteParticipantHandler,
+		getParticipantsHandler:           getParticipantsHandler,
+		getParticipantByIDHandler:        getParticipantByIDHandler,
+		getGiftsHandler:                  getGiftsHandler,
+		getGiftByIDHandler:               getGiftByIDHandler,
+		getEventsHandler:                 getEventsHandler,
+		getEventByIDHandler:              getEventByIDHandler,
+		getPrizeAssignmentsHandler:       getPrizeAssignmentsHandler,
+		getPrizeAssignmentByIDHandler:    getPrizeAssignmentByIDHandler,
+		getStatsHandler:                  getStatsHandler,
+		listUserBlacklistHandler:         listUserBlacklistHandler,
+		isUserBlacklistedHandler:         isUserBlacklistedHandler,
+		authHandler:                      authHandler,
+		eventsHandler:                    eventsHandler,
+		participantsHandler:              participantsHandler,
+		resultsHandler:                   resultsHandler,
+		giftsHandler:                     giftsHandler,
+		criteriaHandler:                  criteriaHandler,
+		prizeAssignmentsHandler:          prizeAssignmentsHandler,
+		prizeDistributionHandler:         prizeDistributionHandler,
+		statsHandler:                     statsHandler,
+		telegramHandler:                  telegramHandler,
+		miniappHandler:                   miniappHandler,
+		userBlacklistHandler:             userBlacklistHandler,
+		jwtManager:                       jwtManager,
+		telegramWebAppAuth:               middleware.TelegramWebAppAuth(cfg.BotToken),
 	}
 
 	// Создаём router
@@ -384,6 +417,12 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			// Gifts admin routes
 			r.Put("/gifts/{id}", s.giftsHandler.Update)
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)
+
+			// User blacklist admin routes
+			r.Get("/user-blacklist", s.userBlacklistHandler.GetAll)
+			r.Post("/user-blacklist", s.userBlacklistHandler.Create)
+			r.Put("/user-blacklist/{telegramUserId}", s.userBlacklistHandler.Update)
+			r.Delete("/user-blacklist/{telegramUserId}", s.userBlacklistHandler.Delete)
 
 			// Criteria admin routes
 			r.Post("/criteria", s.criteriaHandler.Create)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"gravel_bot/internal/domain/entity"
@@ -33,9 +34,10 @@ type GiftAttachmentData struct {
 
 // AddGiftHandler обрабатывает добавление подарка
 type AddGiftHandler struct {
-	userRepo  repository.UserRepository
-	eventRepo repository.EventRepository
-	giftRepo  repository.GiftRepository
+	userRepo          repository.UserRepository
+	eventRepo         repository.EventRepository
+	giftRepo          repository.GiftRepository
+	userBlacklistRepo repository.UserBlacklistRepository
 }
 
 // NewAddGiftHandler создаёт новый handler
@@ -43,16 +45,28 @@ func NewAddGiftHandler(
 	userRepo repository.UserRepository,
 	eventRepo repository.EventRepository,
 	giftRepo repository.GiftRepository,
+	userBlacklistRepo repository.UserBlacklistRepository,
 ) *AddGiftHandler {
 	return &AddGiftHandler{
-		userRepo:  userRepo,
-		eventRepo: eventRepo,
-		giftRepo:  giftRepo,
+		userRepo:          userRepo,
+		eventRepo:         eventRepo,
+		giftRepo:          giftRepo,
+		userBlacklistRepo: userBlacklistRepo,
 	}
 }
 
 // Handle выполняет команду добавления подарка
 func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entity.Gift, error) {
+	isBlacklisted, err := h.userBlacklistRepo.IsBlacklisted(ctx, cmd.UserID)
+	if err != nil {
+		log.Printf("ERROR Gift creation blacklist check failed: telegram_user_id=%d event_id=%d error=%v", cmd.UserID, cmd.EventID, err)
+		return nil, fmt.Errorf("check user blacklist: %w", err)
+	}
+	if isBlacklisted {
+		log.Printf("WARN Gift creation blocked: telegram_user_id=%d event_id=%d reason=blacklisted", cmd.UserID, cmd.EventID)
+		return nil, ErrUserBlacklisted
+	}
+
 	// Проверяем существование пользователя
 	user, err := h.userRepo.FindByID(ctx, cmd.UserID)
 	if err != nil {

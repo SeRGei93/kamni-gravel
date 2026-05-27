@@ -47,6 +47,8 @@ tags:
     description: Управление событиями (гонками)
   - name: Participants
     description: Управление участниками
+  - name: User Blacklist
+    description: Управление Telegram ID, которым запрещена регистрация и отправка подарков
   - name: Results
     description: Управление результатами участников
   - name: Gifts
@@ -151,6 +153,108 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminUser'
+
+  # ==================== USER BLACKLIST ====================
+  /user-blacklist:
+    get:
+      tags: [User Blacklist]
+      summary: Список заблокированных Telegram ID
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Список blacklist
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserBlacklistEntry'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [User Blacklist]
+      summary: Добавить Telegram ID в blacklist
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserBlacklistRequest'
+      responses:
+        '201':
+          description: Запись создана или обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserBlacklistEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /user-blacklist/{telegramUserId}:
+    put:
+      tags: [User Blacklist]
+      summary: Обновить причину блокировки
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: telegramUserId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserBlacklistReasonRequest'
+      responses:
+        '200':
+          description: Запись обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserBlacklistEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [User Blacklist]
+      summary: Удалить Telegram ID из blacklist
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: telegramUserId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Запись удалена
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ==================== EVENTS ====================
   /events:
@@ -1155,6 +1259,47 @@ components:
         last_login:
           type: string
           format: date-time
+
+    UserBlacklistEntry:
+      type: object
+      properties:
+        telegram_user_id:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        username:
+          type: string
+          description: Telegram username, если пользователь уже существует
+        first_name:
+          type: string
+        last_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserBlacklistRequest:
+      type: object
+      required: [telegram_user_id]
+      properties:
+        telegram_user_id:
+          type: integer
+          format: int64
+          description: Telegram ID пользователя
+        reason:
+          type: string
+          description: Причина блокировки
+
+    UserBlacklistReasonRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Причина блокировки
 
     Event:
       type: object
