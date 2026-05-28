@@ -12,14 +12,15 @@ import (
 
 // UpdateEventCommand представляет команду обновления события
 type UpdateEventCommand struct {
-	EventID       uint
-	Name          *string
-	Description   *string
-	Active        *bool
-	StartDate     *time.Time
-	EndDate       *time.Time
-	GPXFilePath   *string
-	TelegramTexts *entity.EventTelegramTexts
+	EventID                 uint
+	Name                    *string
+	Description             *string
+	ParticipationConditions *string
+	Active                  *bool
+	StartDate               *time.Time
+	EndDate                 *time.Time
+	GPXFilePath             *string
+	TelegramTexts           *entity.EventTelegramTexts
 }
 
 // UpdateEventHandler обрабатывает обновление события
@@ -58,6 +59,10 @@ func (h *UpdateEventHandler) Handle(ctx context.Context, cmd UpdateEventCommand)
 
 	if cmd.Description != nil {
 		event.Description = *cmd.Description
+	}
+
+	if cmd.ParticipationConditions != nil {
+		event.ParticipationConditions = entity.NormalizeEventParticipationConditions(*cmd.ParticipationConditions)
 	}
 
 	if cmd.Active != nil {

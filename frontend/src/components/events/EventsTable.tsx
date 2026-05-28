@@ -75,6 +75,12 @@ export default function EventsTable({
                 isHeader
                 className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
               >
+                Условия участия
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
                 Старт
               </TableCell>
               <TableCell
@@ -121,6 +127,11 @@ export default function EventsTable({
                 <TableCell className="px-5 py-4 text-start">
                   <p className="max-w-md text-sm text-gray-800 dark:text-white/90 line-clamp-2">
                     {event.description || '-'}
+                  </p>
+                </TableCell>
+                <TableCell className="px-5 py-4 text-start">
+                  <p className="max-w-md text-sm text-gray-800 dark:text-white/90 line-clamp-2">
+                    {event.participation_conditions || '-'}
                   </p>
                 </TableCell>
                 <TableCell className="px-5 py-4 text-start">

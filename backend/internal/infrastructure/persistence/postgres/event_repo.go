@@ -21,8 +21,8 @@ func NewEventRepository(db *sql.DB) repository.EventRepository {
 
 func (r *eventRepository) Create(ctx context.Context, event *entity.Event) error {
 	query := `
-		INSERT INTO events (name, description, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO events (name, description, participation_conditions, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id
 	`
 
@@ -40,6 +40,7 @@ func (r *eventRepository) Create(ctx context.Context, event *entity.Event) error
 	err = r.db.QueryRowContext(ctx, query,
 		event.Name,
 		event.Description,
+		entity.NormalizeEventParticipationConditions(event.ParticipationConditions),
 		event.Active,
 		event.StartDate,
 		event.EndDate,
@@ -55,8 +56,8 @@ func (r *eventRepository) Create(ctx context.Context, event *entity.Event) error
 func (r *eventRepository) Update(ctx context.Context, event *entity.Event) error {
 	query := `
 		UPDATE events
-		SET name = $1, description = $2, active = $3, start_date = $4, end_date = $5, gpx_file_path = $6, telegram_texts = $7, updated_at = $8
-		WHERE id = $9
+		SET name = $1, description = $2, participation_conditions = $3, active = $4, start_date = $5, end_date = $6, gpx_file_path = $7, telegram_texts = $8, updated_at = $9
+		WHERE id = $10
 	`
 
 	telegramTextsJSON, err := eventTelegramTextsJSON(event.TelegramTexts)
@@ -69,6 +70,7 @@ func (r *eventRepository) Update(ctx context.Context, event *entity.Event) error
 	_, err = r.db.ExecContext(ctx, query,
 		event.Name,
 		event.Description,
+		entity.NormalizeEventParticipationConditions(event.ParticipationConditions),
 		event.Active,
 		event.StartDate,
 		event.EndDate,
@@ -83,7 +85,7 @@ func (r *eventRepository) Update(ctx context.Context, event *entity.Event) error
 
 func (r *eventRepository) FindByID(ctx context.Context, id uint) (*entity.Event, error) {
 	query := `
-		SELECT id, name, description, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		WHERE id = $1
 	`
@@ -98,7 +100,7 @@ func (r *eventRepository) FindByID(ctx context.Context, id uint) (*entity.Event,
 
 func (r *eventRepository) FindByName(ctx context.Context, name string) (*entity.Event, error) {
 	query := `
-		SELECT id, name, description, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		WHERE name = $1
 	`
@@ -113,7 +115,7 @@ func (r *eventRepository) FindByName(ctx context.Context, name string) (*entity.
 
 func (r *eventRepository) FindActive(ctx context.Context) (*entity.Event, error) {
 	query := `
-		SELECT id, name, description, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		WHERE active = true
 		ORDER BY created_at DESC
@@ -130,7 +132,7 @@ func (r *eventRepository) FindActive(ctx context.Context) (*entity.Event, error)
 
 func (r *eventRepository) GetAll(ctx context.Context) ([]*entity.Event, error) {
 	query := `
-		SELECT id, name, description, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		ORDER BY created_at DESC
 	`
@@ -172,6 +174,7 @@ func scanEvent(row eventScanner) (*entity.Event, error) {
 		&event.ID,
 		&event.Name,
 		&event.Description,
+		&event.ParticipationConditions,
 		&event.Active,
 		&event.StartDate,
 		&event.EndDate,
@@ -186,6 +189,7 @@ func scanEvent(row eventScanner) (*entity.Event, error) {
 	if gpxFilePath.Valid {
 		event.GPXFilePath = gpxFilePath.String
 	}
+	event.ParticipationConditions = entity.NormalizeEventParticipationConditions(event.ParticipationConditions)
 	if len(telegramTextsRaw) > 0 {
 		if err := json.Unmarshal(telegramTextsRaw, &event.TelegramTexts); err != nil {
 			return nil, fmt.Errorf("failed to decode event telegram texts: %w", err)

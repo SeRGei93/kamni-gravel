@@ -302,7 +302,7 @@ func TestBotHandleEventConditionsCallbackSendsDescription(t *testing.T) {
 	api := &telegramAPIFake{}
 	b := &Bot{
 		api:       api,
-		eventRepo: &telegramEventRepoFake{event: &entity.Event{ID: 77, Description: "Условия участия"}},
+		eventRepo: &telegramEventRepoFake{event: &entity.Event{ID: 77, ParticipationConditions: "Условия участия"}},
 	}
 
 	b.handleEventConditionsCallback(context.Background(), callbackWithMessage("event_conditions", 123, 500, 10))

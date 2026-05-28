@@ -123,12 +123,16 @@ func (h *StartHandler) isUserRegisteredForActiveEvent(ctx context.Context, userI
 }
 
 func EventConditionsText(event *entity.Event) string {
-	description := strings.TrimSpace(event.Description)
-	if description == "" {
+	if event == nil {
 		return "Условия участия для этого события не заданы."
 	}
 
-	return description
+	conditions := strings.TrimSpace(event.ParticipationConditions)
+	if conditions == "" {
+		return "Условия участия для этого события не заданы."
+	}
+
+	return conditions
 }
 
 func parseStartPayload(text string) string {

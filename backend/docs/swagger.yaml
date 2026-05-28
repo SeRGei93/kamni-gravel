@@ -301,6 +301,9 @@ paths:
                 description:
                   type: string
                   example: КАМНИ 200 - гравийная гонка на 200 км
+                participation_conditions:
+                  type: string
+                  example: УСЛОВИЯ УЧАСТИЯ (ДИСКЛЕЙМЕР) ‼️
                 start_date:
                   type: string
                   format: date-time
@@ -353,6 +356,8 @@ paths:
                 name:
                   type: string
                 description:
+                  type: string
+                participation_conditions:
                   type: string
                 start_date:
                   type: string
@@ -1362,6 +1367,9 @@ components:
         description:
           type: string
           example: КАМНИ 200 - гравийная гонка на 200 км
+        participation_conditions:
+          type: string
+          example: УСЛОВИЯ УЧАСТИЯ (ДИСКЛЕЙМЕР) ‼️
         active:
           type: boolean
         start_date:

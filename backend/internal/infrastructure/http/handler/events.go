@@ -130,13 +130,14 @@ func (h *EventsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 // CreateRequest представляет запрос на создание события
 type CreateEventRequest struct {
-	Name          string                    `json:"name"`
-	Description   string                    `json:"description"`
-	Active        bool                      `json:"active"`
-	StartDate     *string                   `json:"start_date,omitempty"` // ISO 8601 format
-	EndDate       *string                   `json:"end_date,omitempty"`   // ISO 8601 format
-	GPXFilePath   string                    `json:"gpx_file_path,omitempty"`
-	TelegramTexts entity.EventTelegramTexts `json:"telegram_texts,omitempty"`
+	Name                    string                    `json:"name"`
+	Description             string                    `json:"description"`
+	ParticipationConditions string                    `json:"participation_conditions,omitempty"`
+	Active                  bool                      `json:"active"`
+	StartDate               *string                   `json:"start_date,omitempty"` // ISO 8601 format
+	EndDate                 *string                   `json:"end_date,omitempty"`   // ISO 8601 format
+	GPXFilePath             string                    `json:"gpx_file_path,omitempty"`
+	TelegramTexts           entity.EventTelegramTexts `json:"telegram_texts,omitempty"`
 }
 
 // Create обрабатывает POST /api/events - создание события
@@ -169,13 +170,14 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Вызываем command handler
 	event, err := h.createEventHandler.Handle(r.Context(), command.CreateEventCommand{
-		Name:          req.Name,
-		Description:   req.Description,
-		Active:        req.Active,
-		StartDate:     startDate,
-		EndDate:       endDate,
-		GPXFilePath:   req.GPXFilePath,
-		TelegramTexts: req.TelegramTexts,
+		Name:                    req.Name,
+		Description:             req.Description,
+		ParticipationConditions: req.ParticipationConditions,
+		Active:                  req.Active,
+		StartDate:               startDate,
+		EndDate:                 endDate,
+		GPXFilePath:             req.GPXFilePath,
+		TelegramTexts:           req.TelegramTexts,
 	})
 	if err != nil {
 		log.Printf("Error creating event: %v", err)
@@ -196,13 +198,14 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRequest представляет запрос на обновление события
 type UpdateEventRequest struct {
-	Name          *string                    `json:"name,omitempty"`
-	Description   *string                    `json:"description,omitempty"`
-	Active        *bool                      `json:"active,omitempty"`
-	StartDate     *string                    `json:"start_date,omitempty"` // ISO 8601 format
-	EndDate       *string                    `json:"end_date,omitempty"`   // ISO 8601 format
-	GPXFilePath   *string                    `json:"gpx_file_path,omitempty"`
-	TelegramTexts *entity.EventTelegramTexts `json:"telegram_texts,omitempty"`
+	Name                    *string                    `json:"name,omitempty"`
+	Description             *string                    `json:"description,omitempty"`
+	ParticipationConditions *string                    `json:"participation_conditions,omitempty"`
+	Active                  *bool                      `json:"active,omitempty"`
+	StartDate               *string                    `json:"start_date,omitempty"` // ISO 8601 format
+	EndDate                 *string                    `json:"end_date,omitempty"`   // ISO 8601 format
+	GPXFilePath             *string                    `json:"gpx_file_path,omitempty"`
+	TelegramTexts           *entity.EventTelegramTexts `json:"telegram_texts,omitempty"`
 }
 
 // Update обрабатывает PUT /api/events/:id - обновление события
@@ -243,14 +246,15 @@ func (h *EventsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Вызываем command handler
 	event, err := h.updateEventHandler.Handle(r.Context(), command.UpdateEventCommand{
-		EventID:       uint(id),
-		Name:          req.Name,
-		Description:   req.Description,
-		Active:        req.Active,
-		StartDate:     startDate,
-		EndDate:       endDate,
-		GPXFilePath:   req.GPXFilePath,
-		TelegramTexts: req.TelegramTexts,
+		EventID:                 uint(id),
+		Name:                    req.Name,
+		Description:             req.Description,
+		ParticipationConditions: req.ParticipationConditions,
+		Active:                  req.Active,
+		StartDate:               startDate,
+		EndDate:                 endDate,
+		GPXFilePath:             req.GPXFilePath,
+		TelegramTexts:           req.TelegramTexts,
 	})
 	if err != nil {
 		log.Printf("Error updating event: %v", err)

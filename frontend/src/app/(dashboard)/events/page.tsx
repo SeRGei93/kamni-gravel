@@ -44,6 +44,7 @@ export default function EventsPage() {
       const createData: CreateEventRequest = {
         name: data.name || '',
         description: data.description || '',
+        participation_conditions: data.participation_conditions || '',
         active: data.active ?? true,
         start_date: data.start_date,
         end_date: data.end_date,
@@ -106,8 +107,8 @@ export default function EventsPage() {
       />
 
       {/* Модальное окно создания */}
-      <Modal isOpen={isCreateOpen} onClose={closeCreateModal} className="max-w-2xl m-4">
-        <div className="no-scrollbar relative w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-4 dark:bg-gray-900 lg:p-11">
+      <Modal isOpen={isCreateOpen} onClose={closeCreateModal} className="max-w-4xl m-4">
+        <div className="no-scrollbar relative w-full max-w-4xl overflow-y-auto rounded-3xl bg-white p-4 dark:bg-gray-900 lg:p-11">
           <div className="px-2 pr-14">
             <h4 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white/90">
               Создать событие

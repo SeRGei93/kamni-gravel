@@ -95,6 +95,7 @@ export interface Event {
   id: number;
   name: string;
   description: string;
+  participation_conditions: string;
   active: boolean;
   start_date?: string;
   end_date?: string;
@@ -256,6 +257,7 @@ export interface StatsListResponse {
 export interface CreateEventRequest {
   name: string;
   description: string;
+  participation_conditions?: string;
   active: boolean;
   start_date?: string;
   end_date?: string;
@@ -266,6 +268,7 @@ export interface CreateEventRequest {
 export interface UpdateEventRequest {
   name?: string;
   description?: string;
+  participation_conditions?: string;
   active?: boolean;
   start_date?: string;
   end_date?: string;

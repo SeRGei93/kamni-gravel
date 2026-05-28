@@ -90,7 +90,7 @@ export default function EventEditPage() {
       )}
 
       {event && (
-        <div className="max-w-2xl rounded-xl border border-gray-200 bg-white p-5 dark:border-white/[0.05] dark:bg-white/[0.03] lg:p-6">
+        <div className="max-w-4xl rounded-xl border border-gray-200 bg-white p-5 dark:border-white/[0.05] dark:bg-white/[0.03] lg:p-6">
           <EventForm
             event={event}
             onSubmit={handleSubmit}

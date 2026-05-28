@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +57,13 @@ func TestNormalizeEventTelegramTextsFillsGiftDraftTexts(t *testing.T) {
 	}
 	if texts.GiftCallbackContinue == "" {
 		t.Fatal("GiftCallbackContinue must be filled")
+	}
+}
+
+func TestNormalizeEventParticipationConditionsFillsDefault(t *testing.T) {
+	conditions := NormalizeEventParticipationConditions("")
+	if !strings.Contains(conditions, "УСЛОВИЯ УЧАСТИЯ") {
+		t.Fatalf("default conditions mismatch: got %q", conditions)
 	}
 }
 

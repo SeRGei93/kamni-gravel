@@ -29,9 +29,10 @@ func TestStartHandlerHandleMissingSender(t *testing.T) {
 
 func TestStartHandlerHandleConditionsPayload(t *testing.T) {
 	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
-		ID:          11,
-		Name:        "Gran Fondo Test",
-		Description: "Правила тестового старта",
+		ID:                      11,
+		Name:                    "Gran Fondo Test",
+		Description:             "Описание тестового старта",
+		ParticipationConditions: "Правила тестового старта",
 	}}, nil, "")
 
 	text, markup := h.Handle(context.Background(), &models.Message{
@@ -75,7 +76,7 @@ func TestEventConditionsTextFallback(t *testing.T) {
 		t.Fatalf("fallback mismatch: got %q", text)
 	}
 
-	text := EventConditionsText(&entity.Event{Description: "  Условия  "})
+	text := EventConditionsText(&entity.Event{ParticipationConditions: "  Условия  "})
 	if got, want := strings.TrimSpace(text), "Условия"; got != want {
 		t.Fatalf("conditions mismatch: got %q, want %q", got, want)
 	}
