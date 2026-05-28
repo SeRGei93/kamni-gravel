@@ -46,6 +46,23 @@ const DEFAULT_TELEGRAM_TEXTS: EventTelegramTexts = {
 После каждого сообщения используйте кнопки в последнем сообщении снизу.`,
   gift_photo_added:
     'Фото добавлено! Всего фото: {photo_count}. Отправьте ещё фото в поле ввода ниже или нажмите "Готово" в последнем сообщении снизу.',
+  gift_draft: `{step_text}
+
+Черновик приза:
+• Пол участника: {gender}
+• Тип велосипеда: {bike_type}
+• Описание: {description_status}
+• Фото: {photo_count}
+
+{action_hint}
+После каждого сообщения используйте кнопки в последнем сообщении снизу.`,
+  gift_draft_value_missing: 'не выбран',
+  gift_draft_description_missing: 'нужно отправить',
+  gift_draft_description_added: 'добавлено',
+  gift_draft_action_description:
+    'Отправьте описание текстом или фото с подписью. Фото без подписи прикрепится к черновику, но описание всё равно нужно будет отправить.',
+  gift_draft_action_photo:
+    'Можно отправить ещё фото. Когда всё готово, нажмите «Готово» в последнем сообщении снизу.',
   gift_preview: `🎁 Проверьте приз перед отправкой
 
 📋 Детали приза:
@@ -55,6 +72,8 @@ const DEFAULT_TELEGRAM_TEXTS: EventTelegramTexts = {
 • Фото: {photo_count}
 
 Если всё верно, подтвердите отправку. После подтверждения приз попадёт на проверку администратору.`,
+  gift_confirmation_prompt:
+    'Приз уже заполнен. Подтвердите отправку кнопками ниже или отмените добавление.',
   gift_success: `✅ Приз успешно добавлен в призовой фонд!
 
 📋 Детали приза:
@@ -69,6 +88,11 @@ const DEFAULT_TELEGRAM_TEXTS: EventTelegramTexts = {
   gift_cancelled: 'Добавление приза отменено.',
   gift_session_error:
     'Ошибка: данные приза не найдены или повреждены. Начните добавление приза заново.',
+  gift_callback_continue: 'Продолжите добавление',
+  gift_callback_add_description: 'Добавьте описание',
+  gift_callback_review_draft: 'Сначала проверьте приз',
+  gift_callback_confirm: 'Подтвердите приз',
+  gift_callback_open_menu: 'Сначала откройте меню',
   result_prompt: `🏁 Отправка результата
 
 Отправьте ссылку на вашу активность Strava.
@@ -99,10 +123,22 @@ const TEXT_FIELDS: Array<{
   { key: 'gift_description_step', label: 'Шаг 3: описание приза', rows: 12, wide: true },
   { key: 'gift_photo_step', label: 'Шаг 4: фото приза', rows: 5 },
   { key: 'gift_photo_added', label: 'После добавления фото', rows: 3 },
+  { key: 'gift_draft', label: 'Черновик приза', rows: 11, wide: true },
+  { key: 'gift_draft_value_missing', label: 'Черновик: значение не выбрано', rows: 2 },
+  { key: 'gift_draft_description_missing', label: 'Черновик: описание не заполнено', rows: 2 },
+  { key: 'gift_draft_description_added', label: 'Черновик: описание заполнено', rows: 2 },
+  { key: 'gift_draft_action_description', label: 'Черновик: подсказка описания', rows: 3 },
+  { key: 'gift_draft_action_photo', label: 'Черновик: подсказка фото', rows: 3 },
   { key: 'gift_preview', label: 'Предпросмотр перед отправкой', rows: 9, wide: true },
+  { key: 'gift_confirmation_prompt', label: 'Повторное подтверждение', rows: 3 },
   { key: 'gift_success', label: 'Успешное добавление', rows: 11, wide: true },
   { key: 'gift_cancelled', label: 'Отмена', rows: 2 },
   { key: 'gift_session_error', label: 'Ошибка сессии', rows: 2 },
+  { key: 'gift_callback_continue', label: 'Callback: продолжить', rows: 2 },
+  { key: 'gift_callback_add_description', label: 'Callback: добавить описание', rows: 2 },
+  { key: 'gift_callback_review_draft', label: 'Callback: проверить приз', rows: 2 },
+  { key: 'gift_callback_confirm', label: 'Callback: подтвердить приз', rows: 2 },
+  { key: 'gift_callback_open_menu', label: 'Callback: открыть меню', rows: 2 },
   { key: 'result_prompt', label: 'Результат: запрос ссылки', rows: 6, wide: true },
   { key: 'result_invalid_link', label: 'Результат: неверная ссылка', rows: 3 },
   { key: 'result_success', label: 'Результат: принято', rows: 6, wide: true },

@@ -257,13 +257,33 @@ func (h *GiftHandler) GiftDraftPrompt(userID int64) (string, *models.InlineKeybo
 	}
 
 	markup := keyboard.GiftDraftMenu(status.hasDescription)
-	return buildGiftDraftText(stepText, status), &markup
+	return buildGiftDraftTextWithTexts(stepText, status, texts), &markup
 }
 
 // GiftConfirmationPrompt возвращает подсказку подтверждения без изменения сессии.
 func (h *GiftHandler) GiftConfirmationPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
 	markup := keyboard.GiftConfirmationMenu()
-	return "Приз уже заполнен. Подтвердите отправку кнопками ниже или отмените добавление.", &markup
+	return h.giftTexts(userID).GiftConfirmationPrompt, &markup
+}
+
+func (h *GiftHandler) GiftCallbackContinueText(userID int64) string {
+	return h.giftTexts(userID).GiftCallbackContinue
+}
+
+func (h *GiftHandler) GiftCallbackAddDescriptionText(userID int64) string {
+	return h.giftTexts(userID).GiftCallbackAddDescription
+}
+
+func (h *GiftHandler) GiftCallbackReviewDraftText(userID int64) string {
+	return h.giftTexts(userID).GiftCallbackReviewDraft
+}
+
+func (h *GiftHandler) GiftCallbackConfirmText(userID int64) string {
+	return h.giftTexts(userID).GiftCallbackConfirm
+}
+
+func (h *GiftHandler) GiftCallbackOpenMenuText(userID int64) string {
+	return h.giftTexts(userID).GiftCallbackOpenMenu
 }
 
 // GiftDraftMissingRequiredKey возвращает первый отсутствующий или повреждённый ключ черновика.
@@ -337,9 +357,10 @@ type giftDraftStatus struct {
 
 func (h *GiftHandler) giftDraftStatus(userID int64) giftDraftStatus {
 	state := h.sessionManager.GetState(userID)
+	texts := h.giftTexts(userID)
 	status := giftDraftStatus{
-		gender:   "не выбран",
-		bikeType: "не выбран",
+		gender:   texts.GiftDraftValueMissing,
+		bikeType: texts.GiftDraftValueMissing,
 	}
 
 	if genderRaw, ok := h.sessionManager.GetData(userID, "gift_gender"); ok {
@@ -538,34 +559,28 @@ func buildGiftPreviewText(data giftSessionData, texts entity.EventTelegramTexts)
 	})
 }
 
-func buildGiftDraftText(stepText string, status giftDraftStatus) string {
-	descriptionStatus := "нужно отправить"
+func buildGiftDraftTextWithTexts(stepText string, status giftDraftStatus, texts entity.EventTelegramTexts) string {
+	texts = entity.NormalizeEventTelegramTexts(texts)
+	descriptionStatus := texts.GiftDraftDescriptionMissing
 	if status.hasDescription {
-		descriptionStatus = "добавлено"
+		descriptionStatus = texts.GiftDraftDescriptionAdded
 	}
 
-	actionHint := "Отправьте описание текстом или фото с подписью. Фото без подписи прикрепится к черновику, но описание всё равно нужно будет отправить."
+	actionHint := texts.GiftDraftActionDescription
 	if status.hasDescription {
-		actionHint = "Можно отправить ещё фото. Когда всё готово, нажмите «Готово» в последнем сообщении снизу."
+		actionHint = texts.GiftDraftActionPhoto
 	}
 
-	return fmt.Sprintf(`%s
-
-Черновик приза:
-• Пол участника: %s
-• Тип велосипеда: %s
-• Описание: %s
-• Фото: %d
-
-%s
-После каждого сообщения используйте кнопки в последнем сообщении снизу.`,
-		stepText,
-		status.gender,
-		status.bikeType,
-		descriptionStatus,
-		status.photoCount,
-		actionHint,
-	)
+	return renderTelegramText(texts.GiftDraft, map[string]string{
+		"step_text":           stepText,
+		"gender":              status.gender,
+		"bike_type":           status.bikeType,
+		"description_status":  descriptionStatus,
+		"photo_count":         fmt.Sprintf("%d", status.photoCount),
+		"action_hint":         actionHint,
+		"description_missing": texts.GiftDraftDescriptionMissing,
+		"description_added":   texts.GiftDraftDescriptionAdded,
+	})
 }
 
 func (h *GiftHandler) giftTexts(userID int64) entity.EventTelegramTexts {

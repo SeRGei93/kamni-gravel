@@ -42,6 +42,23 @@ func TestEventHasStartedAtUsesMinskTime(t *testing.T) {
 	}
 }
 
+func TestNormalizeEventTelegramTextsFillsGiftDraftTexts(t *testing.T) {
+	texts := NormalizeEventTelegramTexts(EventTelegramTexts{})
+
+	if texts.GiftDraft == "" {
+		t.Fatal("GiftDraft must be filled")
+	}
+	if texts.GiftDraftActionDescription == "" {
+		t.Fatal("GiftDraftActionDescription must be filled")
+	}
+	if texts.GiftConfirmationPrompt == "" {
+		t.Fatal("GiftConfirmationPrompt must be filled")
+	}
+	if texts.GiftCallbackContinue == "" {
+		t.Fatal("GiftCallbackContinue must be filled")
+	}
+}
+
 func TestEventHasStartedAtWithoutStartDate(t *testing.T) {
 	event := &Event{}
 	if event.HasStartedAt(time.Now()) {

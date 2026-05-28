@@ -343,7 +343,7 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		if isGiftFlowCallback(data) {
 			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
 			text, markup := giftHandler.GiftGenderPrompt(userID)
-			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackContinueText(userID), text, markup)
 		}
 
 	case session.StateAwaitingGiftBikeType:
@@ -369,7 +369,7 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		if isGiftFlowCallback(data) {
 			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
 			text, markup := giftHandler.GiftBikeTypePrompt(userID)
-			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackContinueText(userID), text, markup)
 		}
 
 	case session.StateAwaitingGiftDesc:
@@ -382,18 +382,18 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		case "finish_gift", "skip_photos":
 			log.Printf("WARN Gift finish rejected: user_id=%d state=%s callback_data=%s missing_key=gift_description", userID, state, data)
 			text, markup := giftHandler.GiftDraftPrompt(userID)
-			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Добавьте описание", text, markup)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackAddDescriptionText(userID), text, markup)
 		case "confirm_gift":
 			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
 			text, markup := giftHandler.GiftDraftPrompt(userID)
-			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Сначала проверьте приз", text, markup)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackReviewDraftText(userID), text, markup)
 		case "restart_gift":
 			b.handleGiftRestartCallback(ctx, callback, msgRef, userID, giftHandler)
 		default:
 			if isGiftFlowCallback(data) {
 				log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
 				text, markup := giftHandler.GiftDraftPrompt(userID)
-				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
+				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackContinueText(userID), text, markup)
 			}
 		}
 
@@ -409,14 +409,14 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		case "confirm_gift":
 			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
 			text, markup := giftHandler.GiftDraftPrompt(userID)
-			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Сначала проверьте приз", text, markup)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackReviewDraftText(userID), text, markup)
 		case "restart_gift":
 			b.handleGiftRestartCallback(ctx, callback, msgRef, userID, giftHandler)
 		default:
 			if isGiftFlowCallback(data) {
 				log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
 				text, markup := giftHandler.GiftDraftPrompt(userID)
-				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
+				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackContinueText(userID), text, markup)
 			}
 		}
 
@@ -462,7 +462,7 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 			if isGiftFlowCallback(data) {
 				log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
 				text, markup := giftHandler.GiftConfirmationPrompt(userID)
-				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Подтвердите приз", text, markup)
+				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackConfirmText(userID), text, markup)
 				return
 			}
 			b.logDebug("Unsupported gift confirmation callback: user_id=%d data=%s", userID, data)
@@ -470,8 +470,13 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 
 	default:
 		if isGiftFlowCallback(data) {
+			giftHandler := handler.NewGiftHandler(
+				b.sessionManager,
+				b.eventRepo,
+				b.addGiftHandler,
+			)
 			log.Printf("INFO Gift stale callback ignored: user_id=%d callback_data=%s state=%s", userID, data, state)
-			_ = b.AnswerCallback(ctx, callback.ID, "Сначала откройте меню")
+			_ = b.AnswerCallback(ctx, callback.ID, giftHandler.GiftCallbackOpenMenuText(userID))
 			return
 		}
 		b.logDebug("Unsupported Telegram callback state: user_id=%d state=%s data=%s", userID, state, data)
@@ -483,7 +488,7 @@ func (b *Bot) handleGiftFinishCallback(ctx context.Context, callback *models.Cal
 	if missingKey, missing := giftHandler.GiftDraftMissingRequiredKey(userID); missing {
 		log.Printf("WARN Gift finish rejected: user_id=%d state=%s callback_data=%s missing_key=%s", userID, b.sessionManager.GetState(userID), data, missingKey)
 		text, markup := giftHandler.GiftDraftPrompt(userID)
-		b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Добавьте описание", text, markup)
+		b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, giftHandler.GiftCallbackAddDescriptionText(userID), text, markup)
 		return
 	}
 

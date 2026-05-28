@@ -57,6 +57,49 @@ func TestGiftHandlerDefaultDescriptionPromptMentionsPhotoCaptionAndBottomButtons
 	}
 }
 
+func TestGiftHandlerGiftDraftPromptUsesEventTelegramTexts(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	h := NewGiftHandler(manager, nil, nil)
+	userID := int64(123)
+	texts := entity.DefaultEventTelegramTexts()
+	texts.GiftDescriptionStep = "custom step"
+	texts.GiftDraft = "DRAFT {step_text} {gender} {bike_type} {description_status} {photo_count} {action_hint}"
+	texts.GiftDraftDescriptionMissing = "missing description"
+	texts.GiftDraftActionDescription = "describe now"
+	manager.SetData(userID, "event_telegram_texts", texts)
+	manager.SetData(userID, "gift_gender", "all")
+	manager.SetData(userID, "gift_bike_type", "gravel")
+
+	text, markup := h.GiftDescriptionPrompt(userID)
+
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil")
+	}
+	for _, want := range []string{"DRAFT custom step", "👥 Любой", "🚵 Гравийник", "missing description", "0", "describe now"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text should contain %q, got: %s", want, text)
+		}
+	}
+}
+
+func TestGiftHandlerGiftConfirmationPromptUsesEventTelegramTexts(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	h := NewGiftHandler(manager, nil, nil)
+	userID := int64(123)
+	texts := entity.DefaultEventTelegramTexts()
+	texts.GiftConfirmationPrompt = "custom confirmation"
+	manager.SetData(userID, "event_telegram_texts", texts)
+
+	text, markup := h.GiftConfirmationPrompt(userID)
+
+	if text != "custom confirmation" {
+		t.Fatalf("text mismatch: got %q", text)
+	}
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil")
+	}
+}
+
 func TestGiftHandlerHandleGiftDescriptionSetsPhotoState(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	h := NewGiftHandler(manager, nil, nil)
