@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"log"
 	"net/url"
 	"strings"
@@ -24,6 +25,7 @@ const (
 	telegramCaptionLimit    = 1024
 	telegramTextLimit       = 4096
 	telegramMediaGroupLimit = 10
+	adminGiftMiniappLabel   = "призовой фонд"
 )
 
 // Bot представляет Telegram бота
@@ -455,6 +457,14 @@ func (b *Bot) notifyAdminAboutGift(ctx context.Context, gift *entity.Gift) error
 
 func (b *Bot) sendAdminGiftTextNotification(ctx context.Context, gift *entity.Gift) error {
 	text := b.adminGiftNotificationText(gift, telegramTextLimit)
+	if markup, ok := b.adminGiftMiniappMarkup(); ok {
+		_, err := b.SendMessageWithKeyboard(ctx, b.adminChatID, text, markup)
+		if err != nil {
+			return fmt.Errorf("send admin gift text notification: %w", err)
+		}
+		return nil
+	}
+
 	_, err := b.SendMessage(ctx, b.adminChatID, text)
 	if err != nil {
 		return fmt.Errorf("send admin gift text notification: %w", err)
@@ -465,11 +475,16 @@ func (b *Bot) sendAdminGiftTextNotification(ctx context.Context, gift *entity.Gi
 
 func (b *Bot) sendAdminGiftPhotoNotification(ctx context.Context, gift *entity.Gift, photoFileID string) error {
 	caption := b.adminGiftNotificationText(gift, telegramCaptionLimit)
-	_, err := b.api.SendPhoto(ctx, &telegrambot.SendPhotoParams{
+	params := &telegrambot.SendPhotoParams{
 		ChatID:  b.adminChatID,
 		Photo:   &models.InputFileString{Data: photoFileID},
 		Caption: caption,
-	})
+	}
+	if markup, ok := b.adminGiftMiniappMarkup(); ok {
+		params.ReplyMarkup = markup
+	}
+
+	_, err := b.api.SendPhoto(ctx, params)
 	if err != nil {
 		return fmt.Errorf("send admin gift photo notification: %w", err)
 	}
@@ -484,13 +499,14 @@ func (b *Bot) sendAdminGiftMediaGroupNotification(ctx context.Context, gift *ent
 		log.Printf("INFO Admin gift media group notification chunked: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=%d media_group_count=%d", giftID, eventID, userID, len(photoFileIDs), len(chunks))
 	}
 
-	caption := b.adminGiftNotificationText(gift, telegramCaptionLimit)
+	caption, parseMode := b.adminGiftMediaGroupCaption(gift)
 	for chunkIndex, chunk := range chunks {
 		media := make([]models.InputMedia, 0, len(chunk))
 		for photoIndex, photoFileID := range chunk {
 			item := &models.InputMediaPhoto{Media: photoFileID}
 			if chunkIndex == 0 && photoIndex == 0 {
 				item.Caption = caption
+				item.ParseMode = parseMode
 			}
 			media = append(media, item)
 		}
@@ -504,6 +520,31 @@ func (b *Bot) sendAdminGiftMediaGroupNotification(ctx context.Context, gift *ent
 	}
 
 	return len(chunks), nil
+}
+
+func (b *Bot) adminGiftMiniappMarkup() (models.InlineKeyboardMarkup, bool) {
+	if b == nil || strings.TrimSpace(b.miniappURL) == "" {
+		return models.InlineKeyboardMarkup{}, false
+	}
+
+	return models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{
+					Text:   adminGiftMiniappLabel,
+					WebApp: &models.WebAppInfo{URL: b.miniappURL},
+				},
+			},
+		},
+	}, true
+}
+
+func (b *Bot) adminGiftMediaGroupCaption(gift *entity.Gift) (string, models.ParseMode) {
+	if b == nil || strings.TrimSpace(b.miniappURL) == "" {
+		return b.adminGiftNotificationText(gift, telegramCaptionLimit), ""
+	}
+
+	return b.adminGiftNotificationHTMLText(gift, telegramCaptionLimit, true), models.ParseModeHTML
 }
 
 func giftPhotoFileIDs(gift *entity.Gift) []string {
@@ -562,7 +603,7 @@ func (b *Bot) adminGiftNotificationText(gift *entity.Gift, limit int) string {
 		limit = telegramTextLimit
 	}
 	if gift == nil {
-		return truncateTelegramText("Новый подарок на проверку\n\nДанные подарка недоступны.", limit)
+		return truncateTelegramText("Новый приз\n\nДанные приза недоступны.", limit)
 	}
 
 	description := strings.TrimSpace(gift.Description)
@@ -571,7 +612,7 @@ func (b *Bot) adminGiftNotificationText(gift *entity.Gift, limit int) string {
 	}
 
 	prefix := fmt.Sprintf(
-		"Новый подарок на проверку\n\nОт: %s\nОписание: ",
+		"Новый приз\n\nОт: %s\nОписание: ",
 		adminGiftDonorLabel(gift),
 	)
 	suffix := fmt.Sprintf(
@@ -587,6 +628,58 @@ func (b *Bot) adminGiftNotificationText(gift *entity.Gift, limit int) string {
 
 	description = truncateTelegramText(description, descriptionLimit)
 	return prefix + description + suffix
+}
+
+func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, includeMiniappLink bool) string {
+	if limit <= 0 {
+		limit = telegramTextLimit
+	}
+
+	if gift == nil {
+		text := "Новый приз\n\nДанные приза недоступны."
+		if includeMiniappLink {
+			text += b.adminGiftMiniappHTMLSuffix()
+		}
+		return truncateTelegramText(text, limit)
+	}
+
+	description := strings.TrimSpace(gift.Description)
+	if description == "" {
+		description = "не указано"
+	}
+
+	prefix := fmt.Sprintf(
+		"Новый приз\n\nОт: %s\nОписание: ",
+		html.EscapeString(adminGiftDonorLabel(gift)),
+	)
+	suffix := fmt.Sprintf(
+		"\nГендер: %s\nВелосипед: %s",
+		html.EscapeString(adminGiftGenderLabel(gift.GenderFilter)),
+		html.EscapeString(adminGiftBikeTypeLabel(gift.BikeTypeFilter)),
+	)
+	if includeMiniappLink {
+		suffix += b.adminGiftMiniappHTMLSuffix()
+	}
+
+	descriptionLimit := limit - runeLen(prefix) - runeLen(suffix)
+	if descriptionLimit < 1 {
+		return truncateTelegramText(prefix+suffix, limit)
+	}
+
+	description = truncateEscapedHTMLText(description, descriptionLimit)
+	return prefix + description + suffix
+}
+
+func (b *Bot) adminGiftMiniappHTMLSuffix() string {
+	if b == nil || strings.TrimSpace(b.miniappURL) == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"\n\n<a href=\"%s\">%s</a>",
+		html.EscapeString(b.miniappURL),
+		adminGiftMiniappLabel,
+	)
 }
 
 func adminGiftDonorLabel(gift *entity.Gift) string {
@@ -661,6 +754,34 @@ func truncateTelegramText(text string, limit int) string {
 		return string(runes[:limit])
 	}
 	return string(runes[:limit-3]) + "..."
+}
+
+func truncateEscapedHTMLText(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+
+	escaped := html.EscapeString(text)
+	if runeLen(escaped) <= limit {
+		return escaped
+	}
+	if limit <= 3 {
+		return truncateTelegramText(escaped, limit)
+	}
+
+	var builder strings.Builder
+	written := 0
+	for _, r := range text {
+		escapedRune := html.EscapeString(string(r))
+		escapedLen := runeLen(escapedRune)
+		if written+escapedLen > limit-3 {
+			break
+		}
+		builder.WriteString(escapedRune)
+		written += escapedLen
+	}
+
+	return builder.String() + "..."
 }
 
 func runeLen(text string) int {

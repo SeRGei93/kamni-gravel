@@ -319,10 +319,12 @@ func TestBotHandleWithdrawParticipationCallbackDeletesParticipant(t *testing.T) 
 }
 
 func TestBotNotifyAdminAboutGiftSendsSinglePhotoNotification(t *testing.T) {
+	const miniappURL = "https://example.com/miniapp/gifts"
 	api := &telegramAPIFake{}
 	b := &Bot{
 		api:         api,
 		adminChatID: 900,
+		miniappURL:  miniappURL,
 	}
 	gift := &entity.Gift{
 		ID:             10,
@@ -359,6 +361,13 @@ func TestBotNotifyAdminAboutGiftSendsSinglePhotoNotification(t *testing.T) {
 	}
 	if len(api.sentMessages) != 0 {
 		t.Fatalf("single photo notification should not send text summary, got %d", len(api.sentMessages))
+	}
+	markup, ok := api.sentPhotos[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("single photo notification should include miniapp button, got %T", api.sentPhotos[0].ReplyMarkup)
+	}
+	if !publicMenuHasWebApp(markup, adminGiftMiniappLabel, miniappURL) {
+		t.Fatalf("single photo miniapp button not found: %#v", markup)
 	}
 }
 
@@ -461,10 +470,12 @@ func TestBotHandleGiftConfirmationNotifiesAdminFromPersistedAttachments(t *testi
 }
 
 func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
+	const miniappURL = "https://example.com/miniapp/gifts"
 	api := &telegramAPIFake{}
 	b := &Bot{
 		api:         api,
 		adminChatID: 900,
+		miniappURL:  miniappURL,
 	}
 	gift := &entity.Gift{
 		ID:             10,
@@ -498,6 +509,13 @@ func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
 	if !strings.Contains(first.Caption, "Описание: Bottle cage") {
 		t.Fatalf("first media caption mismatch: %q", first.Caption)
 	}
+	if first.ParseMode != models.ParseModeHTML {
+		t.Fatalf("first media parse mode mismatch: got %q, want %q", first.ParseMode, models.ParseModeHTML)
+	}
+	wantLink := `<a href="https://example.com/miniapp/gifts">призовой фонд</a>`
+	if !strings.Contains(first.Caption, wantLink) {
+		t.Fatalf("first media caption missing hidden miniapp link %q in %q", wantLink, first.Caption)
+	}
 	second, ok := api.mediaGroups[0].Media[1].(*models.InputMediaPhoto)
 	if !ok {
 		t.Fatalf("second media type mismatch: got %T", api.mediaGroups[0].Media[1])
@@ -511,10 +529,12 @@ func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
 }
 
 func TestBotNotifyAdminAboutGiftSendsTextWhenNoUsablePhotos(t *testing.T) {
+	const miniappURL = "https://example.com/miniapp/gifts"
 	api := &telegramAPIFake{}
 	b := &Bot{
 		api:         api,
 		adminChatID: 900,
+		miniappURL:  miniappURL,
 	}
 	gift := &entity.Gift{
 		ID:             10,
@@ -542,6 +562,13 @@ func TestBotNotifyAdminAboutGiftSendsTextWhenNoUsablePhotos(t *testing.T) {
 	}
 	if !strings.Contains(api.sentMessages[0].Text, "От: @alex") || !strings.Contains(api.sentMessages[0].Text, "Велосипед: 🚴 Шоссе") {
 		t.Fatalf("text notification mismatch: %q", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("text notification should include miniapp button, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if !publicMenuHasWebApp(markup, adminGiftMiniappLabel, miniappURL) {
+		t.Fatalf("text miniapp button not found: %#v", markup)
 	}
 }
 

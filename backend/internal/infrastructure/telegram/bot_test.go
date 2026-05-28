@@ -24,12 +24,12 @@ func TestAdminGiftNotificationTextContainsPublicReadyGiftData(t *testing.T) {
 	if text == "" {
 		t.Fatal("notification text must not be empty")
 	}
-	for _, token := range []string{"От: Alex Rider (@alex)", "Описание: Лабуба за 1 и 10 место", "Гендер: 👩 Женский", "Велосипед: 🚵 Гравийник"} {
+	for _, token := range []string{"Новый приз", "От: Alex Rider (@alex)", "Описание: Лабуба за 1 и 10 место", "Гендер: 👩 Женский", "Велосипед: 🚵 Гравийник"} {
 		if !strings.Contains(text, token) {
 			t.Fatalf("notification text missing token %q in %q", token, text)
 		}
 	}
-	for _, internalToken := range []string{"ID подарка", "ID события", "Статус", "pending_review", "Фото: 2", "12345"} {
+	for _, internalToken := range []string{"Новый подарок на проверку", "ID подарка", "ID события", "Статус", "pending_review", "Фото: 2", "12345"} {
 		if strings.Contains(text, internalToken) {
 			t.Fatalf("notification text exposes internal token %q in %q", internalToken, text)
 		}
@@ -97,5 +97,29 @@ func TestAdminGiftNotificationTextTruncatesOnlyDescriptionToCaptionLimit(t *test
 	}
 	if !strings.Contains(text, "...") {
 		t.Fatalf("long description should be truncated with ellipsis: %q", text)
+	}
+}
+
+func TestAdminGiftNotificationHTMLTextAddsHiddenMiniappLinkAndEscapesData(t *testing.T) {
+	b := &Bot{miniappURL: "https://example.com/miniapp/gifts?event=1&tab=all"}
+
+	text := b.adminGiftNotificationHTMLText(&entity.Gift{
+		UserID:         12345,
+		Description:    "Фляга <тест> & ремешок",
+		GenderFilter:   "female",
+		BikeTypeFilter: "road",
+		User:           &entity.User{ID: 12345, Username: "alex&co", FirstName: "Alex", LastName: "<Rider>"},
+	}, telegramCaptionLimit, true)
+
+	for _, token := range []string{
+		"От: Alex &lt;Rider&gt; (@alex&amp;co)",
+		"Описание: Фляга &lt;тест&gt; &amp; ремешок",
+		"Гендер: 👩 Женский",
+		"Велосипед: 🚴 Шоссе",
+		`<a href="https://example.com/miniapp/gifts?event=1&amp;tab=all">призовой фонд</a>`,
+	} {
+		if !strings.Contains(text, token) {
+			t.Fatalf("html notification text missing token %q in %q", token, text)
+		}
 	}
 }
