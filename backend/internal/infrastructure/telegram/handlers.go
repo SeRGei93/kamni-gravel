@@ -409,7 +409,6 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		switch data {
 		case "confirm_gift":
 			messageIDs := b.giftMessageIDs(userID)
-			sourceRefs := b.giftSourceRefs(userID)
 			gift, text, err := giftHandler.ConfirmAddGift(ctx, userID)
 			if err != nil {
 				_ = b.AnswerCallback(ctx, callback.ID, "Ошибка")
@@ -422,11 +421,10 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 				return
 			}
 			if gift != nil {
-				if notifyErr := b.notifyAdminAboutGift(ctx, gift, sourceRefs); notifyErr != nil {
+				if notifyErr := b.notifyAdminAboutGift(ctx, gift); notifyErr != nil {
 					log.Printf("WARN Failed to notify admin about gift submission: user_id=%d gift_id=%d error=%v", userID, gift.ID, notifyErr)
 				}
 			}
-			b.setGiftSourceRefs(userID, nil)
 			for _, msgID := range messageIDs {
 				if msgID == msgRef.MessageID {
 					continue
@@ -442,7 +440,6 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 				return
 			}
-			b.setGiftSourceRefs(userID, nil)
 			for _, msgID := range messageIDs {
 				if msgID == msgRef.MessageID {
 					continue
@@ -708,10 +705,6 @@ func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID
 			mediaGroupID,
 		)
 	}
-	if action.ProcessDescription || action.ProcessPhoto {
-		b.captureGiftMessageSourceRef(userID, msg)
-	}
-
 	var replyText string
 	var replyMarkup *models.InlineKeyboardMarkup
 	if action.ProcessDescription {

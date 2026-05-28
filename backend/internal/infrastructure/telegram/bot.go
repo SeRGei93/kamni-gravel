@@ -20,6 +20,12 @@ import (
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
 
+const (
+	telegramCaptionLimit    = 1024
+	telegramTextLimit       = 4096
+	telegramMediaGroupLimit = 10
+)
+
 // Bot представляет Telegram бота
 type Bot struct {
 	api              telegramAPI
@@ -61,8 +67,8 @@ type Bot struct {
 type telegramAPI interface {
 	Start(ctx context.Context)
 	SendMessage(ctx context.Context, params *telegrambot.SendMessageParams) (*models.Message, error)
-	CopyMessage(ctx context.Context, params *telegrambot.CopyMessageParams) (*models.MessageID, error)
-	ForwardMessage(ctx context.Context, params *telegrambot.ForwardMessageParams) (*models.Message, error)
+	SendPhoto(ctx context.Context, params *telegrambot.SendPhotoParams) (*models.Message, error)
+	SendMediaGroup(ctx context.Context, params *telegrambot.SendMediaGroupParams) ([]*models.Message, error)
 	EditMessageText(ctx context.Context, params *telegrambot.EditMessageTextParams) (*models.Message, error)
 	AnswerCallbackQuery(ctx context.Context, params *telegrambot.AnswerCallbackQueryParams) (bool, error)
 	DeleteMessage(ctx context.Context, params *telegrambot.DeleteMessageParams) (bool, error)
@@ -384,8 +390,8 @@ func (b *Bot) SendMessageWithKeyboard(ctx context.Context, chatID int64, text st
 	return msg, nil
 }
 
-func (b *Bot) notifyAdminAboutGift(ctx context.Context, gift *entity.Gift, sourceRefs []giftSourceRef) error {
-	if b == nil || gift == nil {
+func (b *Bot) notifyAdminAboutGift(ctx context.Context, gift *entity.Gift) error {
+	if b == nil {
 		return nil
 	}
 	if b.api == nil {
@@ -399,126 +405,266 @@ func (b *Bot) notifyAdminAboutGift(ctx context.Context, gift *entity.Gift, sourc
 		return nil
 	}
 
-	var sourceErr error
-	if len(sourceRefs) == 0 {
-		log.Printf("WARN Admin gift notification uses summary only: gift_id=%d event_id=%d user_id=%d reason=no_source_refs", gift.ID, gift.EventID, gift.UserID)
-	} else if err := b.copyOrForwardGiftSources(ctx, sourceRefs); err != nil {
-		sourceErr = err
-		log.Printf(
-			"WARN Admin gift source forwarding failed: gift_id=%d event_id=%d user_id=%d error=%v",
-			gift.ID,
-			gift.EventID,
-			gift.UserID,
-			err,
-		)
+	giftID, eventID, userID := adminGiftLogFields(gift)
+	if gift == nil {
+		log.Printf("WARN Admin gift notification uses fallback text: gift_id=%d event_id=%d user_id=%d chat=admin reason=gift_nil", giftID, eventID, userID)
 	}
 
-	if summaryErr := b.sendAdminGiftSummary(ctx, gift); summaryErr != nil {
-		log.Printf(
-			"ERROR Admin gift summary notification failed: gift_id=%d event_id=%d user_id=%d chat=admin error=%v",
-			gift.ID,
-			gift.EventID,
-			gift.UserID,
-			summaryErr,
-		)
-		if sourceErr != nil {
-			return fmt.Errorf("notify admin about gift: copy=%w summary=%w", sourceErr, summaryErr)
+	photoFileIDs := giftPhotoFileIDs(gift)
+	if gift != nil && len(gift.Attachments) > 0 && len(photoFileIDs) == 0 {
+		log.Printf("WARN Admin gift notification has no usable photos: gift_id=%d event_id=%d user_id=%d chat=admin attachment_count=%d", giftID, eventID, userID, len(gift.Attachments))
+	}
+
+	switch len(photoFileIDs) {
+	case 0:
+		if err := b.sendAdminGiftTextNotification(ctx, gift); err != nil {
+			log.Printf("ERROR Admin gift notification failed: gift_id=%d event_id=%d user_id=%d chat=admin delivery=text error=%v", giftID, eventID, userID, err)
+			return err
 		}
-		return summaryErr
-	}
+		log.Printf("INFO Admin gift notification sent: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=0 media_group_count=0 delivery=text", giftID, eventID, userID)
+		return nil
 
-	if sourceErr != nil {
-		log.Printf("INFO Admin gift summary notification sent after source forwarding failure: gift_id=%d event_id=%d user_id=%d chat=admin", gift.ID, gift.EventID, gift.UserID)
+	case 1:
+		if err := b.sendAdminGiftPhotoNotification(ctx, gift, photoFileIDs[0]); err != nil {
+			log.Printf("WARN Admin gift photo notification failed: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=1 error=%v", giftID, eventID, userID, err)
+			if fallbackErr := b.sendAdminGiftTextNotification(ctx, gift); fallbackErr != nil {
+				log.Printf("ERROR Admin gift notification failed: gift_id=%d event_id=%d user_id=%d chat=admin delivery=text_fallback error=%v", giftID, eventID, userID, fallbackErr)
+				return fmt.Errorf("send admin gift photo: %w; fallback: %w", err, fallbackErr)
+			}
+			log.Printf("INFO Admin gift notification sent: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=1 media_group_count=0 delivery=text_fallback", giftID, eventID, userID)
+			return nil
+		}
+		log.Printf("INFO Admin gift notification sent: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=1 media_group_count=0 delivery=photo", giftID, eventID, userID)
+		return nil
+
+	default:
+		mediaGroupCount, err := b.sendAdminGiftMediaGroupNotification(ctx, gift, photoFileIDs)
+		if err != nil {
+			log.Printf("WARN Admin gift media group notification failed: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=%d media_group_count=%d error=%v", giftID, eventID, userID, len(photoFileIDs), mediaGroupCount, err)
+			if fallbackErr := b.sendAdminGiftTextNotification(ctx, gift); fallbackErr != nil {
+				log.Printf("ERROR Admin gift notification failed: gift_id=%d event_id=%d user_id=%d chat=admin delivery=text_fallback error=%v", giftID, eventID, userID, fallbackErr)
+				return fmt.Errorf("send admin gift media group: %w; fallback: %w", err, fallbackErr)
+			}
+			log.Printf("INFO Admin gift notification sent: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=%d media_group_count=%d delivery=text_fallback", giftID, eventID, userID, len(photoFileIDs), mediaGroupCount)
+			return nil
+		}
+		log.Printf("INFO Admin gift notification sent: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=%d media_group_count=%d delivery=media_group", giftID, eventID, userID, len(photoFileIDs), mediaGroupCount)
 		return nil
 	}
-
-	log.Printf("INFO Admin gift notification sent: gift_id=%d event_id=%d user_id=%d source_message_count=%d chat=admin", gift.ID, gift.EventID, gift.UserID, len(sourceRefs))
-	return nil
 }
 
-func (b *Bot) copyOrForwardGiftSources(ctx context.Context, sourceRefs []giftSourceRef) error {
-	if b == nil || len(sourceRefs) == 0 {
-		return nil
-	}
-	if b.api == nil {
-		return fmt.Errorf("telegram api is nil")
-	}
-
-	var lastErr error
-	allDelivered := true
-
-	for _, sourceRef := range sourceRefs {
-		if sourceRef.ChatID == 0 || sourceRef.MessageID <= 0 {
-			log.Printf("WARN Gift source ref skipped: reason=invalid_message_identifiers kind=%s", sourceRef.UpdateKind)
-			allDelivered = false
-			continue
-		}
-
-		copyParams := &telegrambot.CopyMessageParams{
-			ChatID:     b.adminChatID,
-			FromChatID: sourceRef.ChatID,
-			MessageID:  sourceRef.MessageID,
-		}
-
-		if _, err := b.api.CopyMessage(ctx, copyParams); err == nil {
-			b.logDebug("Gift source forwarded by copy: kind=%s message_id=%d", sourceRef.UpdateKind, sourceRef.MessageID)
-			continue
-		} else {
-			forwardParams := &telegrambot.ForwardMessageParams{
-				ChatID:     b.adminChatID,
-				FromChatID: sourceRef.ChatID,
-				MessageID:  sourceRef.MessageID,
-			}
-
-			if _, forwardErr := b.api.ForwardMessage(ctx, forwardParams); forwardErr != nil {
-				log.Printf(
-					"WARN Gift source copy and forward failed: kind=%s copy_error=%v forward_error=%v",
-					sourceRef.UpdateKind,
-					err,
-					forwardErr,
-				)
-				lastErr = forwardErr
-				allDelivered = false
-			}
-		}
-	}
-
-	if allDelivered {
-		return nil
-	}
-
-	if lastErr != nil {
-		return lastErr
-	}
-
-	return fmt.Errorf("some gift source messages not delivered to admin")
-}
-
-func (b *Bot) sendAdminGiftSummary(ctx context.Context, gift *entity.Gift) error {
-	text := b.adminGiftSummaryText(gift)
+func (b *Bot) sendAdminGiftTextNotification(ctx context.Context, gift *entity.Gift) error {
+	text := b.adminGiftNotificationText(gift, telegramTextLimit)
 	_, err := b.SendMessage(ctx, b.adminChatID, text)
 	if err != nil {
-		return fmt.Errorf("send admin gift summary: %w", err)
+		return fmt.Errorf("send admin gift text notification: %w", err)
 	}
 
 	return nil
 }
 
-func (b *Bot) adminGiftSummaryText(gift *entity.Gift) string {
-	if gift == nil {
-		return "Новый подарок на модерацию: данные недоступны."
+func (b *Bot) sendAdminGiftPhotoNotification(ctx context.Context, gift *entity.Gift, photoFileID string) error {
+	caption := b.adminGiftNotificationText(gift, telegramCaptionLimit)
+	_, err := b.api.SendPhoto(ctx, &telegrambot.SendPhotoParams{
+		ChatID:  b.adminChatID,
+		Photo:   &models.InputFileString{Data: photoFileID},
+		Caption: caption,
+	})
+	if err != nil {
+		return fmt.Errorf("send admin gift photo notification: %w", err)
 	}
 
-	return fmt.Sprintf(
-		"Новый подарок на проверку\n\nID подарка: %d\nID события: %d\nПользователь: %d\nФильтр пола: %s\nФильтр велосипеда: %s\nСтатус: %s\nФото: %d",
-		gift.ID,
-		gift.EventID,
-		gift.UserID,
-		gift.GenderFilter,
-		gift.BikeTypeFilter,
-		gift.ReviewStatus,
-		len(gift.Attachments),
+	return nil
+}
+
+func (b *Bot) sendAdminGiftMediaGroupNotification(ctx context.Context, gift *entity.Gift, photoFileIDs []string) (int, error) {
+	chunks := adminGiftMediaGroupChunks(photoFileIDs)
+	if len(chunks) > 1 {
+		giftID, eventID, userID := adminGiftLogFields(gift)
+		log.Printf("INFO Admin gift media group notification chunked: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=%d media_group_count=%d", giftID, eventID, userID, len(photoFileIDs), len(chunks))
+	}
+
+	caption := b.adminGiftNotificationText(gift, telegramCaptionLimit)
+	for chunkIndex, chunk := range chunks {
+		media := make([]models.InputMedia, 0, len(chunk))
+		for photoIndex, photoFileID := range chunk {
+			item := &models.InputMediaPhoto{Media: photoFileID}
+			if chunkIndex == 0 && photoIndex == 0 {
+				item.Caption = caption
+			}
+			media = append(media, item)
+		}
+
+		if _, err := b.api.SendMediaGroup(ctx, &telegrambot.SendMediaGroupParams{
+			ChatID: b.adminChatID,
+			Media:  media,
+		}); err != nil {
+			return chunkIndex + 1, fmt.Errorf("send admin gift media group chunk %d of %d: %w", chunkIndex+1, len(chunks), err)
+		}
+	}
+
+	return len(chunks), nil
+}
+
+func giftPhotoFileIDs(gift *entity.Gift) []string {
+	if gift == nil {
+		return nil
+	}
+
+	fileIDs := make([]string, 0, len(gift.Attachments))
+	for _, attachment := range gift.Attachments {
+		if strings.TrimSpace(attachment.FileType) != "photo" {
+			continue
+		}
+		fileID := strings.TrimSpace(attachment.TelegramFileID)
+		if fileID == "" {
+			continue
+		}
+		fileIDs = append(fileIDs, fileID)
+	}
+
+	return fileIDs
+}
+
+func adminGiftMediaGroupChunks(photoFileIDs []string) [][]string {
+	if len(photoFileIDs) == 0 {
+		return nil
+	}
+
+	chunks := make([][]string, 0, (len(photoFileIDs)+telegramMediaGroupLimit-1)/telegramMediaGroupLimit)
+	for len(photoFileIDs) > 0 {
+		if len(photoFileIDs) <= telegramMediaGroupLimit {
+			chunks = append(chunks, photoFileIDs)
+			break
+		}
+
+		chunkSize := telegramMediaGroupLimit
+		if len(photoFileIDs)-chunkSize == 1 {
+			chunkSize = telegramMediaGroupLimit - 1
+		}
+		chunks = append(chunks, photoFileIDs[:chunkSize])
+		photoFileIDs = photoFileIDs[chunkSize:]
+	}
+
+	return chunks
+}
+
+func adminGiftLogFields(gift *entity.Gift) (uint, uint, int64) {
+	if gift == nil {
+		return 0, 0, 0
+	}
+
+	return gift.ID, gift.EventID, gift.UserID
+}
+
+func (b *Bot) adminGiftNotificationText(gift *entity.Gift, limit int) string {
+	if limit <= 0 {
+		limit = telegramTextLimit
+	}
+	if gift == nil {
+		return truncateTelegramText("Новый подарок на проверку\n\nДанные подарка недоступны.", limit)
+	}
+
+	description := strings.TrimSpace(gift.Description)
+	if description == "" {
+		description = "не указано"
+	}
+
+	prefix := fmt.Sprintf(
+		"Новый подарок на проверку\n\nОт: %s\nОписание: ",
+		adminGiftDonorLabel(gift),
 	)
+	suffix := fmt.Sprintf(
+		"\nГендер: %s\nВелосипед: %s",
+		adminGiftGenderLabel(gift.GenderFilter),
+		adminGiftBikeTypeLabel(gift.BikeTypeFilter),
+	)
+
+	descriptionLimit := limit - runeLen(prefix) - runeLen(suffix)
+	if descriptionLimit < 1 {
+		return truncateTelegramText(prefix+suffix, limit)
+	}
+
+	description = truncateTelegramText(description, descriptionLimit)
+	return prefix + description + suffix
+}
+
+func adminGiftDonorLabel(gift *entity.Gift) string {
+	if gift == nil {
+		return "неизвестен"
+	}
+
+	if gift.User != nil {
+		firstName := strings.TrimSpace(gift.User.FirstName)
+		lastName := strings.TrimSpace(gift.User.LastName)
+		username := strings.TrimPrefix(strings.TrimSpace(gift.User.Username), "@")
+		fullName := strings.TrimSpace(strings.Join([]string{firstName, lastName}, " "))
+
+		switch {
+		case fullName != "" && username != "":
+			return fmt.Sprintf("%s (@%s)", fullName, username)
+		case username != "":
+			return "@" + username
+		case fullName != "":
+			return fullName
+		}
+	}
+
+	if gift.UserID != 0 {
+		return fmt.Sprintf("user_id: %d", gift.UserID)
+	}
+
+	return "неизвестен"
+}
+
+func adminGiftGenderLabel(gender string) string {
+	switch strings.TrimSpace(gender) {
+	case "male":
+		return "👨 Мужской"
+	case "female":
+		return "👩 Женский"
+	case "all", "":
+		return "👥 Любой"
+	default:
+		return gender
+	}
+}
+
+func adminGiftBikeTypeLabel(bikeType string) string {
+	switch strings.TrimSpace(bikeType) {
+	case "gravel":
+		return "🚵 Гравийник"
+	case "mtb":
+		return "🏔 МТБ"
+	case "road":
+		return "🚴 Шоссе"
+	case "single_speed":
+		return "⚡️ Фикс"
+	case "tandem":
+		return "👥 Тандем"
+	case "all", "":
+		return "🚲 Любой"
+	default:
+		return bikeType
+	}
+}
+
+func truncateTelegramText(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if runeLen(text) <= limit {
+		return text
+	}
+	runes := []rune(text)
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-3]) + "..."
+}
+
+func runeLen(text string) int {
+	return len([]rune(text))
 }
 
 // EditMessage редактирует существующее сообщение

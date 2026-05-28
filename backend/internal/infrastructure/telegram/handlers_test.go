@@ -318,35 +318,47 @@ func TestBotHandleWithdrawParticipationCallbackDeletesParticipant(t *testing.T) 
 	}
 }
 
-func TestBotNotifyAdminAboutGiftCopiesSourcesInOrderAndSendsSummary(t *testing.T) {
+func TestBotNotifyAdminAboutGiftSendsSinglePhotoNotification(t *testing.T) {
 	api := &telegramAPIFake{}
 	b := &Bot{
 		api:         api,
 		adminChatID: 900,
 	}
-	gift := &entity.Gift{ID: 10, EventID: 77, UserID: 123, ReviewStatus: entity.GiftReviewStatusPendingReview}
+	gift := &entity.Gift{
+		ID:             10,
+		EventID:        77,
+		UserID:         123,
+		Description:    "Bottle cage",
+		GenderFilter:   "all",
+		BikeTypeFilter: "gravel",
+		ReviewStatus:   entity.GiftReviewStatusPendingReview,
+		User:           &entity.User{ID: 123, FirstName: "Alex", Username: "alex"},
+		Attachments: []entity.GiftAttachment{
+			{ID: 1, FileType: "photo", TelegramFileID: " photo-1 "},
+			{ID: 2, FileType: "document", TelegramFileID: "doc-1"},
+			{ID: 3, FileType: "photo"},
+		},
+	}
 
-	err := b.notifyAdminAboutGift(context.Background(), gift, []giftSourceRef{
-		{ChatID: 500, MessageID: 10, UpdateKind: "text"},
-		{ChatID: 500, MessageID: 11, UpdateKind: "photo"},
-	})
+	err := b.notifyAdminAboutGift(context.Background(), gift)
 	if err != nil {
 		t.Fatalf("notifyAdminAboutGift error: %v", err)
 	}
-	if len(api.copyMessages) != 2 {
-		t.Fatalf("copy count mismatch: got %d, want 2", len(api.copyMessages))
+	if len(api.sentPhotos) != 1 {
+		t.Fatalf("send photo count mismatch: got %d, want 1", len(api.sentPhotos))
 	}
-	if api.copyMessages[0].MessageID != 10 || api.copyMessages[1].MessageID != 11 {
-		t.Fatalf("copy order mismatch: %#v", api.copyMessages)
+	photo, ok := api.sentPhotos[0].Photo.(*models.InputFileString)
+	if !ok {
+		t.Fatalf("photo type mismatch: got %T", api.sentPhotos[0].Photo)
 	}
-	if len(api.forwardMessages) != 0 {
-		t.Fatalf("unexpected forward calls: %d", len(api.forwardMessages))
+	if photo.Data != "photo-1" {
+		t.Fatalf("photo file id mismatch: got %q", photo.Data)
 	}
-	if len(api.sentMessages) != 1 {
-		t.Fatalf("summary send count mismatch: got %d, want 1", len(api.sentMessages))
+	if !strings.Contains(api.sentPhotos[0].Caption, "Описание: Bottle cage") || strings.Contains(api.sentPhotos[0].Caption, "ID подарка") {
+		t.Fatalf("caption mismatch: %q", api.sentPhotos[0].Caption)
 	}
-	if !strings.Contains(api.sentMessages[0].Text, "ID подарка: 10") {
-		t.Fatalf("summary text mismatch: %q", api.sentMessages[0].Text)
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("single photo notification should not send text summary, got %d", len(api.sentMessages))
 	}
 }
 
@@ -390,10 +402,152 @@ func TestBotHandleGiftConfirmationSendsSingleSuccessWithMenu(t *testing.T) {
 	}
 }
 
-func TestBotNotifyAdminAboutGiftSendsSummaryFallbackWhenCopyAndForwardFail(t *testing.T) {
+func TestBotHandleGiftConfirmationNotifiesAdminFromPersistedAttachments(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	userRepo.users[123] = &entity.User{ID: 123, FirstName: "Alex", Username: "alex"}
+	eventRepo := &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
+	giftRepo := &telegramGiftRepoFake{}
+	manager := session.NewManager(0)
+	b := &Bot{
+		api:                      api,
+		adminChatID:              900,
+		sessionManager:           manager,
+		userRepo:                 userRepo,
+		eventRepo:                eventRepo,
+		participantRepo:          &telegramParticipantRepoFake{},
+		addGiftHandler:           command.NewAddGiftHandler(userRepo, eventRepo, giftRepo, &telegramBlacklistRepoFake{}),
+		isUserBlacklistedHandler: query.NewIsUserBlacklistedHandler(&telegramBlacklistRepoFake{}),
+	}
+
+	manager.SetState(123, session.StateAwaitingGiftConfirmation)
+	manager.SetData(123, "event_id", uint(77))
+	manager.SetData(123, "gift_gender", "female")
+	manager.SetData(123, "gift_bike_type", "road")
+	manager.SetData(123, "gift_description", "Bottle cage")
+	manager.SetData(123, "gift_attachments", []command.GiftAttachmentData{
+		{TelegramFileID: "photo-1", FileType: "photo"},
+		{TelegramFileID: "doc-1", FileType: "document"},
+		{TelegramFileID: "photo-2", FileType: "photo"},
+	})
+
+	b.handleStatefulCallback(context.Background(), callbackWithMessage("confirm_gift", 123, 500, 10))
+
+	if giftRepo.createdGift == nil {
+		t.Fatal("gift was not created")
+	}
+	if len(api.mediaGroups) != 1 {
+		t.Fatalf("admin media group count mismatch: got %d, want 1", len(api.mediaGroups))
+	}
+	if got := mediaPhotoIDs(api.mediaGroups[0].Media); !reflect.DeepEqual(got, []string{"photo-1", "photo-2"}) {
+		t.Fatalf("admin notification should use persisted photo attachments in order, got %v", got)
+	}
+	first, ok := api.mediaGroups[0].Media[0].(*models.InputMediaPhoto)
+	if !ok {
+		t.Fatalf("first media type mismatch: got %T", api.mediaGroups[0].Media[0])
+	}
+	if !strings.Contains(first.Caption, "От: Alex (@alex)") || !strings.Contains(first.Caption, "Описание: Bottle cage") {
+		t.Fatalf("admin caption mismatch: %q", first.Caption)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("private user success should be sent once, got %d messages: %#v", len(api.sentMessages), api.sentMessages)
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Bottle cage") {
+		t.Fatalf("private success text mismatch: %q", api.sentMessages[0].Text)
+	}
+	if _, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup); !ok {
+		t.Fatalf("private success message should include menu markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+}
+
+func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:         api,
+		adminChatID: 900,
+	}
+	gift := &entity.Gift{
+		ID:             10,
+		EventID:        77,
+		UserID:         123,
+		Description:    "Bottle cage",
+		GenderFilter:   "all",
+		BikeTypeFilter: "gravel",
+		User:           &entity.User{ID: 123, FirstName: "Alex"},
+		Attachments: []entity.GiftAttachment{
+			{ID: 1, FileType: "photo", TelegramFileID: "photo-1"},
+			{ID: 2, FileType: "document", TelegramFileID: "doc-1"},
+			{ID: 3, FileType: "photo", TelegramFileID: "photo-2"},
+		},
+	}
+
+	err := b.notifyAdminAboutGift(context.Background(), gift)
+	if err != nil {
+		t.Fatalf("notifyAdminAboutGift error: %v", err)
+	}
+	if len(api.mediaGroups) != 1 {
+		t.Fatalf("media group count mismatch: got %d, want 1", len(api.mediaGroups))
+	}
+	if got := mediaPhotoIDs(api.mediaGroups[0].Media); !reflect.DeepEqual(got, []string{"photo-1", "photo-2"}) {
+		t.Fatalf("media photo order mismatch: got %v", got)
+	}
+	first, ok := api.mediaGroups[0].Media[0].(*models.InputMediaPhoto)
+	if !ok {
+		t.Fatalf("first media type mismatch: got %T", api.mediaGroups[0].Media[0])
+	}
+	if !strings.Contains(first.Caption, "Описание: Bottle cage") {
+		t.Fatalf("first media caption mismatch: %q", first.Caption)
+	}
+	second, ok := api.mediaGroups[0].Media[1].(*models.InputMediaPhoto)
+	if !ok {
+		t.Fatalf("second media type mismatch: got %T", api.mediaGroups[0].Media[1])
+	}
+	if second.Caption != "" {
+		t.Fatalf("only first media item should have caption: %q", second.Caption)
+	}
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("successful media group should not send text summary, got %d", len(api.sentMessages))
+	}
+}
+
+func TestBotNotifyAdminAboutGiftSendsTextWhenNoUsablePhotos(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:         api,
+		adminChatID: 900,
+	}
+	gift := &entity.Gift{
+		ID:             10,
+		EventID:        77,
+		UserID:         123,
+		Description:    "Bottle cage",
+		GenderFilter:   "all",
+		BikeTypeFilter: "road",
+		User:           &entity.User{ID: 123, Username: "alex"},
+		Attachments: []entity.GiftAttachment{
+			{ID: 1, FileType: "document", TelegramFileID: "doc-1"},
+			{ID: 2, FileType: "photo", TelegramFileID: " "},
+		},
+	}
+
+	err := b.notifyAdminAboutGift(context.Background(), gift)
+	if err != nil {
+		t.Fatalf("notifyAdminAboutGift error: %v", err)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("text notification count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if len(api.sentPhotos) != 0 || len(api.mediaGroups) != 0 {
+		t.Fatalf("no usable photos should send text only: photos=%d groups=%d", len(api.sentPhotos), len(api.mediaGroups))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "От: @alex") || !strings.Contains(api.sentMessages[0].Text, "Велосипед: 🚴 Шоссе") {
+		t.Fatalf("text notification mismatch: %q", api.sentMessages[0].Text)
+	}
+}
+
+func TestBotNotifyAdminAboutGiftFallsBackToTextWhenPhotoSendFails(t *testing.T) {
 	api := &telegramAPIFake{
-		copyErr:    errors.New("copy failed"),
-		forwardErr: errors.New("forward failed"),
+		sendPhotoErr: errors.New("photo failed"),
 	}
 	b := &Bot{
 		api:         api,
@@ -406,23 +560,114 @@ func TestBotNotifyAdminAboutGiftSendsSummaryFallbackWhenCopyAndForwardFail(t *te
 		GenderFilter:   "all",
 		BikeTypeFilter: "gravel",
 		ReviewStatus:   entity.GiftReviewStatusPendingReview,
-		Attachments:    []entity.GiftAttachment{{ID: 1}},
+		User:           &entity.User{ID: 123, FirstName: "Alex"},
+		Attachments:    []entity.GiftAttachment{{ID: 1, FileType: "photo", TelegramFileID: "photo-1"}},
 	}
 
-	err := b.notifyAdminAboutGift(context.Background(), gift, []giftSourceRef{
-		{ChatID: 500, MessageID: 10, UpdateKind: "text"},
-	})
+	err := b.notifyAdminAboutGift(context.Background(), gift)
 	if err != nil {
-		t.Fatalf("notifyAdminAboutGift should keep user flow successful with summary fallback, got %v", err)
+		t.Fatalf("notifyAdminAboutGift should keep user flow successful with text fallback, got %v", err)
 	}
-	if len(api.copyMessages) != 1 || len(api.forwardMessages) != 1 {
-		t.Fatalf("copy/forward calls mismatch: copies=%d forwards=%d", len(api.copyMessages), len(api.forwardMessages))
+	if len(api.sentPhotos) != 1 {
+		t.Fatalf("send photo should be attempted once, got %d", len(api.sentPhotos))
 	}
 	if len(api.sentMessages) != 1 {
-		t.Fatalf("summary send count mismatch: got %d, want 1", len(api.sentMessages))
+		t.Fatalf("text fallback count mismatch: got %d, want 1", len(api.sentMessages))
 	}
-	if !strings.Contains(api.sentMessages[0].Text, "ID подарка: 10") || !strings.Contains(api.sentMessages[0].Text, "Фото: 1") {
-		t.Fatalf("summary text mismatch: %q", api.sentMessages[0].Text)
+	if !strings.Contains(api.sentMessages[0].Text, "Описание: ") || strings.Contains(api.sentMessages[0].Text, "ID подарка") {
+		t.Fatalf("fallback text mismatch: %q", api.sentMessages[0].Text)
+	}
+}
+
+func TestBotNotifyAdminAboutGiftFallsBackToTextWhenMediaGroupSendFails(t *testing.T) {
+	api := &telegramAPIFake{
+		mediaGroupErr: errors.New("media group failed"),
+	}
+	b := &Bot{
+		api:         api,
+		adminChatID: 900,
+	}
+	gift := &entity.Gift{
+		ID:             10,
+		EventID:        77,
+		UserID:         123,
+		Description:    "Bottle cage",
+		GenderFilter:   "all",
+		BikeTypeFilter: "gravel",
+		User:           &entity.User{ID: 123, FirstName: "Alex"},
+		Attachments: []entity.GiftAttachment{
+			{ID: 1, FileType: "photo", TelegramFileID: "photo-1"},
+			{ID: 2, FileType: "photo", TelegramFileID: "photo-2"},
+		},
+	}
+
+	err := b.notifyAdminAboutGift(context.Background(), gift)
+	if err != nil {
+		t.Fatalf("notifyAdminAboutGift should keep user flow successful with text fallback, got %v", err)
+	}
+	if len(api.mediaGroups) != 1 {
+		t.Fatalf("media group should be attempted once, got %d", len(api.mediaGroups))
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("text fallback count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Описание: Bottle cage") || strings.Contains(api.sentMessages[0].Text, "ID события") {
+		t.Fatalf("fallback text mismatch: %q", api.sentMessages[0].Text)
+	}
+}
+
+func TestBotNotifyAdminAboutGiftSendsAllPhotosInValidMediaGroupChunks(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:         api,
+		adminChatID: 900,
+	}
+	attachments := make([]entity.GiftAttachment, 0, 21)
+	wantPhotoIDs := make([]string, 0, 21)
+	for i := 1; i <= 21; i++ {
+		fileID := fmt.Sprintf("photo-%02d", i)
+		attachments = append(attachments, entity.GiftAttachment{ID: uint(i), FileType: "photo", TelegramFileID: fileID})
+		wantPhotoIDs = append(wantPhotoIDs, fileID)
+	}
+	gift := &entity.Gift{
+		ID:             10,
+		EventID:        77,
+		UserID:         123,
+		Description:    "Bottle cage",
+		GenderFilter:   "all",
+		BikeTypeFilter: "gravel",
+		User:           &entity.User{ID: 123, FirstName: "Alex"},
+		Attachments:    attachments,
+	}
+
+	err := b.notifyAdminAboutGift(context.Background(), gift)
+	if err != nil {
+		t.Fatalf("notifyAdminAboutGift error: %v", err)
+	}
+	if len(api.mediaGroups) != 3 {
+		t.Fatalf("media group chunk count mismatch: got %d, want 3", len(api.mediaGroups))
+	}
+	if got := mediaGroupSizes(api.mediaGroups); !reflect.DeepEqual(got, []int{10, 9, 2}) {
+		t.Fatalf("media group chunk sizes mismatch: got %v", got)
+	}
+	if got := mediaGroupPhotoIDs(api.mediaGroups); !reflect.DeepEqual(got, wantPhotoIDs) {
+		t.Fatalf("media group photo order mismatch: got %v, want %v", got, wantPhotoIDs)
+	}
+	first, ok := api.mediaGroups[0].Media[0].(*models.InputMediaPhoto)
+	if !ok {
+		t.Fatalf("first media type mismatch: got %T", api.mediaGroups[0].Media[0])
+	}
+	if !strings.Contains(first.Caption, "Описание: Bottle cage") {
+		t.Fatalf("first chunk caption mismatch: %q", first.Caption)
+	}
+	for groupIndex, group := range api.mediaGroups[1:] {
+		photo, ok := group.Media[0].(*models.InputMediaPhoto)
+		if !ok {
+			t.Fatalf("chunk %d first media type mismatch: got %T", groupIndex+2, group.Media[0])
+		}
+		if photo.Caption != "" {
+			t.Fatalf("only first media item of first chunk should have caption, chunk=%d caption=%q", groupIndex+2, photo.Caption)
+		}
 	}
 }
 
@@ -442,14 +687,14 @@ func TestBotChatLogMarkerRedactsConfiguredChats(t *testing.T) {
 
 type telegramAPIFake struct {
 	sentMessages    []*telegrambot.SendMessageParams
-	copyMessages    []*telegrambot.CopyMessageParams
-	forwardMessages []*telegrambot.ForwardMessageParams
+	sentPhotos      []*telegrambot.SendPhotoParams
+	mediaGroups     []*telegrambot.SendMediaGroupParams
 	editMessages    []*telegrambot.EditMessageTextParams
 	answerCallbacks []*telegrambot.AnswerCallbackQueryParams
 	deleteMessages  []*telegrambot.DeleteMessageParams
 	sendErr         error
-	copyErr         error
-	forwardErr      error
+	sendPhotoErr    error
+	mediaGroupErr   error
 	editErr         error
 	answerErr       error
 	deleteErr       error
@@ -470,21 +715,32 @@ func (a *telegramAPIFake) SendMessage(ctx context.Context, params *telegrambot.S
 	return &models.Message{ID: a.nextMessageID, Chat: models.Chat{ID: chatIDFromAny(params.ChatID)}, Text: params.Text}, nil
 }
 
-func (a *telegramAPIFake) CopyMessage(ctx context.Context, params *telegrambot.CopyMessageParams) (*models.MessageID, error) {
-	a.copyMessages = append(a.copyMessages, params)
-	if a.copyErr != nil {
-		return nil, a.copyErr
+func (a *telegramAPIFake) SendPhoto(ctx context.Context, params *telegrambot.SendPhotoParams) (*models.Message, error) {
+	if strings.TrimSpace(params.Caption) == "" {
+		return nil, errors.New("telegram photo caption is empty")
 	}
-	return &models.MessageID{ID: params.MessageID}, nil
-}
-
-func (a *telegramAPIFake) ForwardMessage(ctx context.Context, params *telegrambot.ForwardMessageParams) (*models.Message, error) {
-	a.forwardMessages = append(a.forwardMessages, params)
-	if a.forwardErr != nil {
-		return nil, a.forwardErr
+	a.sentPhotos = append(a.sentPhotos, params)
+	if a.sendPhotoErr != nil {
+		return nil, a.sendPhotoErr
 	}
 	a.nextMessageID++
-	return &models.Message{ID: a.nextMessageID, Chat: models.Chat{ID: chatIDFromAny(params.ChatID)}}, nil
+	return &models.Message{ID: a.nextMessageID, Chat: models.Chat{ID: chatIDFromAny(params.ChatID)}, Caption: params.Caption}, nil
+}
+
+func (a *telegramAPIFake) SendMediaGroup(ctx context.Context, params *telegrambot.SendMediaGroupParams) ([]*models.Message, error) {
+	if len(params.Media) < 2 || len(params.Media) > telegramMediaGroupLimit {
+		return nil, fmt.Errorf("telegram media group size invalid: %d", len(params.Media))
+	}
+	a.mediaGroups = append(a.mediaGroups, params)
+	if a.mediaGroupErr != nil {
+		return nil, a.mediaGroupErr
+	}
+	messages := make([]*models.Message, 0, len(params.Media))
+	for range params.Media {
+		a.nextMessageID++
+		messages = append(messages, &models.Message{ID: a.nextMessageID, Chat: models.Chat{ID: chatIDFromAny(params.ChatID)}})
+	}
+	return messages, nil
 }
 
 func (a *telegramAPIFake) EditMessageText(ctx context.Context, params *telegrambot.EditMessageTextParams) (*models.Message, error) {
@@ -595,6 +851,34 @@ func sentTextContains(api *telegramAPIFake, needle string) bool {
 		}
 	}
 	return false
+}
+
+func mediaPhotoIDs(media []models.InputMedia) []string {
+	ids := make([]string, 0, len(media))
+	for _, item := range media {
+		photo, ok := item.(*models.InputMediaPhoto)
+		if !ok {
+			continue
+		}
+		ids = append(ids, photo.Media)
+	}
+	return ids
+}
+
+func mediaGroupSizes(groups []*telegrambot.SendMediaGroupParams) []int {
+	sizes := make([]int, 0, len(groups))
+	for _, group := range groups {
+		sizes = append(sizes, len(group.Media))
+	}
+	return sizes
+}
+
+func mediaGroupPhotoIDs(groups []*telegrambot.SendMediaGroupParams) []string {
+	ids := make([]string, 0)
+	for _, group := range groups {
+		ids = append(ids, mediaPhotoIDs(group.Media)...)
+	}
+	return ids
 }
 
 type telegramUserRepoFake struct {

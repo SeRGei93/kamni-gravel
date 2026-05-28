@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -331,77 +330,5 @@ func TestGiftMessageIDTracking(t *testing.T) {
 	want := []int{10, 11}
 	if got := b.giftMessageIDs(123); !reflect.DeepEqual(got, want) {
 		t.Fatalf("gift message IDs mismatch: got %v, want %v", got, want)
-	}
-}
-
-func TestCaptureGiftMessageSourceRefAddsMessagesInArrivalOrder(t *testing.T) {
-	b := &Bot{
-		sessionManager: session.NewManager(time.Minute),
-	}
-
-	first := &models.Message{
-		ID:   10,
-		Chat: models.Chat{ID: 55},
-		Text: "first",
-	}
-	second := &models.Message{
-		ID:    11,
-		Chat:  models.Chat{ID: 55},
-		Photo: []models.PhotoSize{{FileID: "photo-1", Width: 10, Height: 10}},
-	}
-	third := &models.Message{
-		ID:      12,
-		Chat:    models.Chat{ID: 55},
-		Caption: "caption",
-		Photo:   []models.PhotoSize{{FileID: "photo-2", Width: 12, Height: 12}},
-	}
-
-	b.captureGiftMessageSourceRef(123, first)
-	b.captureGiftMessageSourceRef(123, second)
-	b.captureGiftMessageSourceRef(123, third)
-
-	refs := b.giftSourceRefs(123)
-	if len(refs) != 3 {
-		t.Fatalf("source refs mismatch: got %d, want %d", len(refs), 3)
-	}
-	if refs[0].MessageID != 10 || refs[1].MessageID != 11 || refs[2].MessageID != 12 {
-		t.Fatalf("source refs order mismatch: got %#v", refs)
-	}
-	if refs[0].UpdateKind != "text" || refs[1].UpdateKind != "photo" || refs[2].UpdateKind != "photo" {
-		t.Fatalf("source ref kinds mismatch: got %#v", refs)
-	}
-}
-
-func TestCaptureGiftMessageSourceRefSkipsUnsupportedKinds(t *testing.T) {
-	b := &Bot{
-		sessionManager: session.NewManager(time.Minute),
-	}
-
-	b.captureGiftMessageSourceRef(123, &models.Message{
-		ID:   10,
-		Chat: models.Chat{ID: 55},
-	})
-
-	refs := b.giftSourceRefs(123)
-	if len(refs) != 0 {
-		t.Fatalf("unsupported update kind should be skipped, got %#v", refs)
-	}
-}
-
-func TestHandleGiftMessageDoesNotCaptureOutOfOrderSourceRef(t *testing.T) {
-	b := &Bot{
-		api:            &telegramAPIFake{},
-		sessionManager: session.NewManager(time.Minute),
-	}
-
-	b.handleGiftMessage(context.Background(), &models.Message{
-		ID:   10,
-		Chat: models.Chat{ID: 55},
-		Text: "unexpected text",
-	}, 123, session.StateAwaitingGiftGender)
-
-	refs := b.giftSourceRefs(123)
-	if len(refs) != 0 {
-		t.Fatalf("out-of-order gift input should not be captured as source ref, got %#v", refs)
 	}
 }
