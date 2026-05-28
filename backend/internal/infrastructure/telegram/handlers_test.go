@@ -357,7 +357,7 @@ func TestBotNotifyAdminAboutGiftSendsSinglePhotoNotification(t *testing.T) {
 	if photo.Data != "photo-1" {
 		t.Fatalf("photo file id mismatch: got %q", photo.Data)
 	}
-	if !strings.Contains(api.sentPhotos[0].Caption, "Описание: Bottle cage") || strings.Contains(api.sentPhotos[0].Caption, "ID подарка") {
+	if !strings.HasPrefix(api.sentPhotos[0].Caption, "Bottle cage\n\n") || strings.Contains(api.sentPhotos[0].Caption, "Описание:") || strings.Contains(api.sentPhotos[0].Caption, "ID подарка") {
 		t.Fatalf("caption mismatch: %q", api.sentPhotos[0].Caption)
 	}
 	if len(api.sentMessages) != 0 {
@@ -456,7 +456,7 @@ func TestBotHandleGiftConfirmationNotifiesAdminFromPersistedAttachments(t *testi
 	if !ok {
 		t.Fatalf("first media type mismatch: got %T", api.mediaGroups[0].Media[0])
 	}
-	if !strings.Contains(first.Caption, "От: Alex (@alex)") || !strings.Contains(first.Caption, "Описание: Bottle cage") {
+	if !strings.HasPrefix(first.Caption, "Bottle cage\n\n") || !strings.Contains(first.Caption, "От: Alex (@alex)") || strings.Contains(first.Caption, "Описание:") {
 		t.Fatalf("admin caption mismatch: %q", first.Caption)
 	}
 	if len(api.sentMessages) != 1 {
@@ -805,7 +805,7 @@ func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
 	if !ok {
 		t.Fatalf("first media type mismatch: got %T", api.mediaGroups[0].Media[0])
 	}
-	if !strings.Contains(first.Caption, "Описание: Bottle cage") {
+	if !strings.HasPrefix(first.Caption, "Bottle cage\n\n") || strings.Contains(first.Caption, "Описание:") {
 		t.Fatalf("first media caption mismatch: %q", first.Caption)
 	}
 	if first.ParseMode != models.ParseModeHTML {
@@ -900,7 +900,7 @@ func TestBotNotifyAdminAboutGiftFallsBackToTextWhenPhotoSendFails(t *testing.T) 
 	if len(api.sentMessages) != 1 {
 		t.Fatalf("text fallback count mismatch: got %d, want 1", len(api.sentMessages))
 	}
-	if !strings.Contains(api.sentMessages[0].Text, "Описание: ") || strings.Contains(api.sentMessages[0].Text, "ID подарка") {
+	if strings.Contains(api.sentMessages[0].Text, "Описание:") || strings.Contains(api.sentMessages[0].Text, "ID подарка") {
 		t.Fatalf("fallback text mismatch: %q", api.sentMessages[0].Text)
 	}
 }
@@ -937,7 +937,7 @@ func TestBotNotifyAdminAboutGiftFallsBackToTextWhenMediaGroupSendFails(t *testin
 	if len(api.sentMessages) != 1 {
 		t.Fatalf("text fallback count mismatch: got %d, want 1", len(api.sentMessages))
 	}
-	if !strings.Contains(api.sentMessages[0].Text, "Описание: Bottle cage") || strings.Contains(api.sentMessages[0].Text, "ID события") {
+	if !strings.HasPrefix(api.sentMessages[0].Text, "Bottle cage\n\n") || strings.Contains(api.sentMessages[0].Text, "Описание:") || strings.Contains(api.sentMessages[0].Text, "ID события") {
 		t.Fatalf("fallback text mismatch: %q", api.sentMessages[0].Text)
 	}
 }
@@ -983,7 +983,7 @@ func TestBotNotifyAdminAboutGiftSendsAllPhotosInValidMediaGroupChunks(t *testing
 	if !ok {
 		t.Fatalf("first media type mismatch: got %T", api.mediaGroups[0].Media[0])
 	}
-	if !strings.Contains(first.Caption, "Описание: Bottle cage") {
+	if !strings.HasPrefix(first.Caption, "Bottle cage\n\n") || strings.Contains(first.Caption, "Описание:") {
 		t.Fatalf("first chunk caption mismatch: %q", first.Caption)
 	}
 	for groupIndex, group := range api.mediaGroups[1:] {

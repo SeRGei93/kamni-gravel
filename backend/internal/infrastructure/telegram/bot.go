@@ -622,7 +622,7 @@ func (b *Bot) adminGiftNotificationText(gift *entity.Gift, limit int) string {
 		limit = telegramTextLimit
 	}
 	if gift == nil {
-		return truncateTelegramText("Новый приз\n\nДанные приза недоступны.", limit)
+		return truncateTelegramText("Данные приза недоступны.", limit)
 	}
 
 	description := strings.TrimSpace(gift.Description)
@@ -630,23 +630,20 @@ func (b *Bot) adminGiftNotificationText(gift *entity.Gift, limit int) string {
 		description = "не указано"
 	}
 
-	prefix := fmt.Sprintf(
-		"Новый приз\n\nОт: %s\nОписание: ",
-		adminGiftDonorLabel(gift),
-	)
 	suffix := fmt.Sprintf(
-		"\nГендер: %s\nВелосипед: %s",
+		"\n\nОт: %s\nГендер: %s\nВелосипед: %s",
+		adminGiftDonorLabel(gift),
 		adminGiftGenderLabel(gift.GenderFilter),
 		adminGiftBikeTypeLabel(gift.BikeTypeFilter),
 	)
 
-	descriptionLimit := limit - runeLen(prefix) - runeLen(suffix)
+	descriptionLimit := limit - runeLen(suffix)
 	if descriptionLimit < 1 {
-		return truncateTelegramText(prefix+suffix, limit)
+		return truncateTelegramText(suffix, limit)
 	}
 
 	description = truncateTelegramText(description, descriptionLimit)
-	return prefix + description + suffix
+	return description + suffix
 }
 
 func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, miniappLink string) string {
@@ -655,7 +652,7 @@ func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, miniap
 	}
 
 	if gift == nil {
-		text := "Новый приз\n\nДанные приза недоступны."
+		text := "Данные приза недоступны."
 		if miniappLink != "" {
 			text += b.adminGiftMiniappHTMLSuffix(miniappLink)
 		}
@@ -667,12 +664,9 @@ func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, miniap
 		description = "не указано"
 	}
 
-	prefix := fmt.Sprintf(
-		"Новый приз\n\nОт: %s\nОписание: ",
-		html.EscapeString(adminGiftDonorLabel(gift)),
-	)
 	suffix := fmt.Sprintf(
-		"\nГендер: %s\nВелосипед: %s",
+		"\n\nОт: %s\nГендер: %s\nВелосипед: %s",
+		html.EscapeString(adminGiftDonorLabel(gift)),
 		html.EscapeString(adminGiftGenderLabel(gift.GenderFilter)),
 		html.EscapeString(adminGiftBikeTypeLabel(gift.BikeTypeFilter)),
 	)
@@ -680,13 +674,13 @@ func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, miniap
 		suffix += b.adminGiftMiniappHTMLSuffix(miniappLink)
 	}
 
-	descriptionLimit := limit - runeLen(prefix) - runeLen(suffix)
+	descriptionLimit := limit - runeLen(suffix)
 	if descriptionLimit < 1 {
-		return truncateTelegramText(prefix+suffix, limit)
+		return truncateTelegramText(suffix, limit)
 	}
 
 	description = truncateEscapedHTMLText(description, descriptionLimit)
-	return prefix + description + suffix
+	return description + suffix
 }
 
 func (b *Bot) adminGiftMiniappHTMLSuffix(miniappLink string) string {

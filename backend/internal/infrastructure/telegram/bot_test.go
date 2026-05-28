@@ -24,12 +24,15 @@ func TestAdminGiftNotificationTextContainsPublicReadyGiftData(t *testing.T) {
 	if text == "" {
 		t.Fatal("notification text must not be empty")
 	}
-	for _, token := range []string{"Новый приз", "От: Alex Rider (@alex)", "Описание: Лабуба за 1 и 10 место", "Гендер: 👩 Женский", "Велосипед: 🚵 Гравийник"} {
+	if !strings.HasPrefix(text, "Лабуба за 1 и 10 место\n\n") {
+		t.Fatalf("notification text should start with description, got %q", text)
+	}
+	for _, token := range []string{"От: Alex Rider (@alex)", "Гендер: 👩 Женский", "Велосипед: 🚵 Гравийник"} {
 		if !strings.Contains(text, token) {
 			t.Fatalf("notification text missing token %q in %q", token, text)
 		}
 	}
-	for _, internalToken := range []string{"Новый подарок на проверку", "ID подарка", "ID события", "Статус", "pending_review", "Фото: 2", "12345"} {
+	for _, internalToken := range []string{"Новый приз", "Описание:", "Новый подарок на проверку", "ID подарка", "ID события", "Статус", "pending_review", "Фото: 2", "12345"} {
 		if strings.Contains(text, internalToken) {
 			t.Fatalf("notification text exposes internal token %q in %q", internalToken, text)
 		}
@@ -111,9 +114,11 @@ func TestAdminGiftNotificationHTMLTextAddsHiddenMiniappLinkAndEscapesData(t *tes
 		User:           &entity.User{ID: 12345, Username: "alex&co", FirstName: "Alex", LastName: "<Rider>"},
 	}, telegramCaptionLimit, "https://t.me/GravelBot?startapp")
 
+	if !strings.HasPrefix(text, "Фляга &lt;тест&gt; &amp; ремешок\n\n") {
+		t.Fatalf("html notification text should start with escaped description, got %q", text)
+	}
 	for _, token := range []string{
 		"От: Alex &lt;Rider&gt; (@alex&amp;co)",
-		"Описание: Фляга &lt;тест&gt; &amp; ремешок",
 		"Гендер: 👩 Женский",
 		"Велосипед: 🚴 Шоссе",
 		`<a href="https://t.me/GravelBot?startapp">призовой фонд</a>`,
