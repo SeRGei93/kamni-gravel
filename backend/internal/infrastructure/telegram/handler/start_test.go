@@ -50,6 +50,32 @@ func TestStartHandlerHandleConditionsPayload(t *testing.T) {
 	}
 }
 
+func TestStartHandlerHandleStartShowsDescriptionOnly(t *testing.T) {
+	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
+		ID:                      11,
+		Name:                    "Gran Fondo Test",
+		Description:             "Описание тестового старта",
+		ParticipationConditions: "Условия тестового старта",
+	}}, &startParticipantRepoFake{}, "")
+
+	text, markup := h.Handle(context.Background(), &models.Message{
+		ID:   10,
+		Chat: models.Chat{ID: 20},
+		From: &models.User{ID: 123, FirstName: "Alex"},
+		Text: "/start",
+	})
+
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil")
+	}
+	if !strings.Contains(text, "Описание тестового старта") {
+		t.Fatalf("start text should contain description, got %q", text)
+	}
+	if strings.Contains(text, "Условия тестового старта") {
+		t.Fatalf("start text should not contain participation conditions: %q", text)
+	}
+}
+
 func TestStartHandlerHandleUnknownPayloadKeepsMenu(t *testing.T) {
 	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
 		ID:   11,

@@ -39,6 +39,11 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 			want: []string{"gender_male", "gender_female", "cancel"},
 		},
 		{
+			name: "registration consent menu",
+			menu: RegistrationConsentMenu(),
+			want: []string{"registration_accept_conditions", "registration_decline_conditions"},
+		},
+		{
 			name: "gift photo menu",
 			menu: GiftPhotoMenu(),
 			want: []string{"finish_gift", "skip_photos", "cancel"},

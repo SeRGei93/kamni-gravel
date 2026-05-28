@@ -10,15 +10,16 @@ import (
 type SessionState string
 
 const (
-	StateIdle                     SessionState = "idle"
-	StateAwaitingBikeType         SessionState = "awaiting_bike_type"
-	StateAwaitingGender           SessionState = "awaiting_gender"
-	StateAwaitingGiftGender       SessionState = "awaiting_gift_gender"
-	StateAwaitingGiftBikeType     SessionState = "awaiting_gift_bike_type"
-	StateAwaitingGiftDesc         SessionState = "awaiting_gift_desc"
-	StateAwaitingGiftPhoto        SessionState = "awaiting_gift_photo"
-	StateAwaitingGiftConfirmation SessionState = "awaiting_gift_confirmation"
-	StateAwaitingResultLink       SessionState = "awaiting_result_link"
+	StateIdle                        SessionState = "idle"
+	StateAwaitingBikeType            SessionState = "awaiting_bike_type"
+	StateAwaitingGender              SessionState = "awaiting_gender"
+	StateAwaitingRegistrationConsent SessionState = "awaiting_registration_consent"
+	StateAwaitingGiftGender          SessionState = "awaiting_gift_gender"
+	StateAwaitingGiftBikeType        SessionState = "awaiting_gift_bike_type"
+	StateAwaitingGiftDesc            SessionState = "awaiting_gift_desc"
+	StateAwaitingGiftPhoto           SessionState = "awaiting_gift_photo"
+	StateAwaitingGiftConfirmation    SessionState = "awaiting_gift_confirmation"
+	StateAwaitingResultLink          SessionState = "awaiting_result_link"
 )
 
 // Session представляет сессию пользователя

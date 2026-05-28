@@ -47,7 +47,7 @@ func (b *Bot) handleStartCommand(ctx context.Context, msg *models.Message) {
 	startHandler := handler.NewStartHandler(b.userRepo, b.eventRepo, b.participantRepo, b.miniappURL)
 	text, markup := startHandler.Handle(ctx, msg)
 
-	if _, err := b.sendWithOptionalKeyboard(ctx, msg.Chat.ID, text, markup); err != nil {
+	if _, err := b.sendLongTextWithOptionalKeyboard(ctx, msg.Chat.ID, text, markup); err != nil {
 		return
 	}
 }
@@ -264,7 +264,7 @@ func (b *Bot) handleEventConditionsCallback(ctx context.Context, callback *model
 		return
 	}
 
-	_, _ = b.SendMessage(ctx, msgRef.ChatID, text)
+	_, _ = b.sendLongTextWithOptionalKeyboard(ctx, msgRef.ChatID, text, nil)
 }
 
 // handleStatefulCallback обрабатывает callback в зависимости от состояния сессии
@@ -308,7 +308,7 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 				b.participantRepo,
 				b.registerParticipantHandler,
 			)
-			text, _ := registrationHandler.HandleGenderSelection(ctx, userID, gender)
+			text, markup := registrationHandler.HandleGenderSelection(ctx, userID, gender)
 			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 				return
 			}
@@ -316,8 +316,39 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 			// Удаляем сообщение с кнопками выбора
 			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 
-			// Отправляем сообщение с результатом и стартовыми кнопками
+			// Отправляем условия участия и кнопки согласия/отказа.
+			_, _ = b.sendLongTextWithOptionalKeyboard(ctx, msgRef.ChatID, text, markup)
+		}
+
+	case session.StateAwaitingRegistrationConsent:
+		registrationHandler := handler.NewRegistrationHandler(
+			b.sessionManager,
+			b.eventRepo,
+			b.participantRepo,
+			b.registerParticipantHandler,
+		)
+		switch data {
+		case "registration_accept_conditions":
+			text, err := registrationHandler.ConfirmRegistration(ctx, userID)
+			if err != nil {
+				_ = b.AnswerCallback(ctx, callback.ID, "Ошибка")
+				_, _ = b.SendMessage(ctx, msgRef.ChatID, text)
+				return
+			}
+			if err := b.AnswerCallback(ctx, callback.ID, "Согласие принято"); err != nil {
+				return
+			}
 			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx, userID))
+		case "registration_decline_conditions":
+			text := registrationHandler.DeclineRegistration(userID)
+			if err := b.AnswerCallback(ctx, callback.ID, "Регистрация отменена"); err != nil {
+				return
+			}
+			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx, userID))
+		default:
+			if isRegistrationConsentCallback(data) {
+				_ = b.AnswerCallback(ctx, callback.ID, "Начните регистрацию заново")
+			}
 		}
 
 	case session.StateAwaitingGiftGender:
@@ -521,6 +552,10 @@ func isGiftFlowCallback(data string) bool {
 	default:
 		return strings.HasPrefix(data, "gift_gender_") || strings.HasPrefix(data, "gift_bike_")
 	}
+}
+
+func isRegistrationConsentCallback(data string) bool {
+	return data == "registration_accept_conditions" || data == "registration_decline_conditions"
 }
 
 // handleMessage обрабатывает обычные сообщения
@@ -916,6 +951,73 @@ func (b *Bot) sendWithOptionalKeyboard(ctx context.Context, chatID int64, text s
 	}
 
 	return b.SendMessage(ctx, chatID, text)
+}
+
+func (b *Bot) sendLongTextWithOptionalKeyboard(ctx context.Context, chatID int64, text string, markup *models.InlineKeyboardMarkup) (*models.Message, error) {
+	chunks := splitTelegramText(text, telegramTextLimit)
+	if len(chunks) == 0 {
+		return b.sendWithOptionalKeyboard(ctx, chatID, text, markup)
+	}
+
+	var sent *models.Message
+	var err error
+	for i, chunk := range chunks {
+		if i == len(chunks)-1 {
+			sent, err = b.sendWithOptionalKeyboard(ctx, chatID, chunk, markup)
+		} else {
+			sent, err = b.SendMessage(ctx, chatID, chunk)
+		}
+		if err != nil {
+			return sent, err
+		}
+	}
+
+	return sent, nil
+}
+
+func splitTelegramText(text string, limit int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if limit <= 0 || runeLen(text) <= limit {
+		return []string{text}
+	}
+
+	chunks := make([]string, 0, runeLen(text)/limit+1)
+	remaining := text
+	for runeLen(remaining) > limit {
+		runes := []rune(remaining)
+		prefix := string(runes[:limit])
+		splitAt := telegramTextSplitIndex(prefix, limit)
+		if splitAt <= 0 {
+			chunks = append(chunks, strings.TrimSpace(prefix))
+			remaining = strings.TrimSpace(string(runes[limit:]))
+			continue
+		}
+
+		chunks = append(chunks, strings.TrimSpace(prefix[:splitAt]))
+		remaining = strings.TrimSpace(prefix[splitAt:] + string(runes[limit:]))
+	}
+	if strings.TrimSpace(remaining) != "" {
+		chunks = append(chunks, strings.TrimSpace(remaining))
+	}
+
+	return chunks
+}
+
+func telegramTextSplitIndex(text string, limit int) int {
+	minRunes := limit / 2
+	for _, separator := range []string{"\n\n", "\n", " "} {
+		idx := strings.LastIndex(text, separator)
+		if idx <= 0 {
+			continue
+		}
+		if runeLen(text[:idx]) >= minRunes {
+			return idx + len(separator)
+		}
+	}
+	return -1
 }
 
 func (b *Bot) replaceGiftControlMessage(ctx context.Context, userID int64, chatID int64, text string, markup *models.InlineKeyboardMarkup, extraDeleteMessageIDs ...int) (*models.Message, error) {

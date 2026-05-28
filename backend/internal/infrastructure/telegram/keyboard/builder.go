@@ -172,6 +172,16 @@ func GenderMenu() models.InlineKeyboardMarkup {
 		Build()
 }
 
+// RegistrationConsentMenu создаёт меню согласия с условиями участия.
+func RegistrationConsentMenu() models.InlineKeyboardMarkup {
+	return NewBuilder().
+		AddRow(
+			Button("✅ Согласен", "registration_accept_conditions"),
+			Button("❌ Отказываюсь", "registration_decline_conditions"),
+		).
+		Build()
+}
+
 // CancelMenu создаёт меню с кнопкой отмены
 func CancelMenu() models.InlineKeyboardMarkup {
 	return NewBuilder().

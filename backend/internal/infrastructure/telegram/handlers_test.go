@@ -110,10 +110,10 @@ func TestBotHandleCallbackIgnoresGroupChat(t *testing.T) {
 	}
 }
 
-func TestBotHandleCallbackEnsuresTelegramUserBeforeRegistrationCompletion(t *testing.T) {
+func TestBotHandleCallbackEnsuresTelegramUserBeforeRegistrationConsent(t *testing.T) {
 	api := &telegramAPIFake{}
 	userRepo := newTelegramUserRepoFake()
-	eventRepo := &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
+	eventRepo := &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true, ParticipationConditions: "Условия участия"}}
 	participantRepo := &telegramParticipantRepoFake{}
 	manager := session.NewManager(0)
 	b := &Bot{
@@ -132,7 +132,57 @@ func TestBotHandleCallbackEnsuresTelegramUserBeforeRegistrationCompletion(t *tes
 	b.handleCallback(context.Background(), callbackWithMessage("gender_male", 123, 500, 10))
 
 	if _, ok := userRepo.users[123]; !ok {
-		t.Fatal("callback user should be created before registration command")
+		t.Fatal("callback user should be created before consent step")
+	}
+	if len(api.answerCallbacks) != 1 {
+		t.Fatalf("answer callback count mismatch: got %d, want 1", len(api.answerCallbacks))
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("conditions message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Условия участия") {
+		t.Fatalf("conditions message mismatch: %q", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("conditions message should include consent markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"registration_accept_conditions", "registration_decline_conditions"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("consent callback data mismatch: got %v, want %v", got, want)
+	}
+	if participantRepo.participant != nil {
+		t.Fatalf("participant should not be created before consent: %#v", participantRepo.participant)
+	}
+	if got := manager.GetState(123); got != session.StateAwaitingRegistrationConsent {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingRegistrationConsent)
+	}
+}
+
+func TestBotRegistrationConsentCreatesParticipant(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	userRepo.users[123] = &entity.User{ID: 123, FirstName: "Alex"}
+	eventRepo := &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true, ParticipationConditions: "Условия участия"}}
+	participantRepo := &telegramParticipantRepoFake{}
+	manager := session.NewManager(0)
+	b := &Bot{
+		api:                        api,
+		sessionManager:             manager,
+		userRepo:                   userRepo,
+		eventRepo:                  eventRepo,
+		participantRepo:            participantRepo,
+		registerParticipantHandler: command.NewRegisterParticipantHandler(userRepo, eventRepo, participantRepo, &telegramBlacklistRepoFake{}),
+	}
+
+	manager.SetState(123, session.StateAwaitingRegistrationConsent)
+	manager.SetData(123, "event_id", uint(77))
+	manager.SetData(123, "bike_type", "gravel")
+	manager.SetData(123, "gender", "male")
+
+	b.handleCallback(context.Background(), callbackWithMessage("registration_accept_conditions", 123, 500, 10))
+
+	if participantRepo.participant == nil {
+		t.Fatal("participant should be created after consent")
 	}
 	if len(api.answerCallbacks) != 1 {
 		t.Fatalf("answer callback count mismatch: got %d, want 1", len(api.answerCallbacks))
@@ -141,7 +191,90 @@ func TestBotHandleCallbackEnsuresTelegramUserBeforeRegistrationCompletion(t *tes
 		t.Fatalf("registration success message count mismatch: got %d, want 1", len(api.sentMessages))
 	}
 	if strings.Contains(api.sentMessages[0].Text, "Ошибка при регистрации") {
-		t.Fatalf("registration should not fail with missing user: %q", api.sentMessages[0].Text)
+		t.Fatalf("registration should not fail: %q", api.sentMessages[0].Text)
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Регистрация успешно завершена") {
+		t.Fatalf("registration success text mismatch: %q", api.sentMessages[0].Text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestBotRegistrationConsentStepSplitsLongConditions(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	eventRepo := &telegramEventRepoFake{event: &entity.Event{
+		ID:                      77,
+		Active:                  true,
+		ParticipationConditions: strings.Repeat("Условия участия\n", 500),
+	}}
+	participantRepo := &telegramParticipantRepoFake{}
+	manager := session.NewManager(0)
+	b := &Bot{
+		api:                        api,
+		sessionManager:             manager,
+		userRepo:                   userRepo,
+		eventRepo:                  eventRepo,
+		participantRepo:            participantRepo,
+		registerParticipantHandler: command.NewRegisterParticipantHandler(userRepo, eventRepo, participantRepo, &telegramBlacklistRepoFake{}),
+	}
+
+	manager.SetState(123, session.StateAwaitingGender)
+	manager.SetData(123, "event_id", uint(77))
+	manager.SetData(123, "bike_type", "gravel")
+
+	b.handleCallback(context.Background(), callbackWithMessage("gender_male", 123, 500, 10))
+
+	if len(api.sentMessages) < 2 {
+		t.Fatalf("long conditions should be split, got %d messages", len(api.sentMessages))
+	}
+	for i, msg := range api.sentMessages {
+		if runeLen(msg.Text) > telegramTextLimit {
+			t.Fatalf("message %d exceeds Telegram text limit: %d", i, runeLen(msg.Text))
+		}
+		if i < len(api.sentMessages)-1 && msg.ReplyMarkup != nil {
+			t.Fatalf("only last conditions message should include markup, message %d has %T", i, msg.ReplyMarkup)
+		}
+	}
+	if _, ok := api.sentMessages[len(api.sentMessages)-1].ReplyMarkup.(models.InlineKeyboardMarkup); !ok {
+		t.Fatalf("last conditions message should include consent markup, got %T", api.sentMessages[len(api.sentMessages)-1].ReplyMarkup)
+	}
+}
+
+func TestBotRegistrationDeclineDoesNotCreateParticipant(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	eventRepo := &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true, ParticipationConditions: "Условия участия"}}
+	participantRepo := &telegramParticipantRepoFake{}
+	manager := session.NewManager(0)
+	b := &Bot{
+		api:                        api,
+		sessionManager:             manager,
+		userRepo:                   userRepo,
+		eventRepo:                  eventRepo,
+		participantRepo:            participantRepo,
+		registerParticipantHandler: command.NewRegisterParticipantHandler(userRepo, eventRepo, participantRepo, &telegramBlacklistRepoFake{}),
+	}
+
+	manager.SetState(123, session.StateAwaitingRegistrationConsent)
+	manager.SetData(123, "event_id", uint(77))
+	manager.SetData(123, "bike_type", "gravel")
+	manager.SetData(123, "gender", "male")
+
+	b.handleCallback(context.Background(), callbackWithMessage("registration_decline_conditions", 123, 500, 10))
+
+	if participantRepo.participant != nil {
+		t.Fatalf("participant should not be created after decline: %#v", participantRepo.participant)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("decline message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Регистрация отменена") {
+		t.Fatalf("decline message mismatch: %q", api.sentMessages[0].Text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
 	}
 }
 
@@ -298,11 +431,11 @@ func TestBotHandleUpdateIgnoresNewChatMembersOutsidePrivateChat(t *testing.T) {
 	}
 }
 
-func TestBotHandleEventConditionsCallbackSendsDescription(t *testing.T) {
+func TestBotHandleEventConditionsCallbackSendsParticipationConditions(t *testing.T) {
 	api := &telegramAPIFake{}
 	b := &Bot{
 		api:       api,
-		eventRepo: &telegramEventRepoFake{event: &entity.Event{ID: 77, ParticipationConditions: "Условия участия"}},
+		eventRepo: &telegramEventRepoFake{event: &entity.Event{ID: 77, Description: "Описание события", ParticipationConditions: "Условия участия"}},
 	}
 
 	b.handleEventConditionsCallback(context.Background(), callbackWithMessage("event_conditions", 123, 500, 10))
@@ -1347,6 +1480,10 @@ type telegramParticipantRepoFake struct {
 }
 
 func (r *telegramParticipantRepoFake) Create(ctx context.Context, participant *entity.Participant) error {
+	if participant != nil && participant.ID == 0 {
+		participant.ID = 1
+	}
+	r.participant = participant
 	return nil
 }
 func (r *telegramParticipantRepoFake) Update(ctx context.Context, participant *entity.Participant) error {
