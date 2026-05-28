@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { participantsApi } from '@/api/participants';
 import { resultsApi } from '@/api/results';
-import type { ParticipantDetail, Gift, Result } from '@/types';
+import type { ParticipantDetail, Gift, Result, PrizeGiftAssignment } from '@/types';
 import Badge from '@/components/ui/badge/Badge';
 import Button from '@/components/ui/button/Button';
 import TextArea from '@/components/form/input/TextArea';
@@ -26,6 +26,19 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
   single_speed: 'Фикс',
   tandem: 'Тандем',
 };
+
+function formatPrizeAssignment(assignment: PrizeGiftAssignment): string {
+  const target = assignment.target_rank
+    ? `место ${assignment.target_rank}`
+    : 'без привязки к месту';
+  const assigned = `выдано месту ${assignment.assigned_rank}`;
+
+  if (assignment.is_fallback) {
+    return `${target} -> ${assigned}`;
+  }
+
+  return target === 'без привязки к месту' ? assigned : target;
+}
 
 export default function ParticipantDetailPage() {
   const params = useParams();
@@ -566,7 +579,33 @@ export default function ParticipantDetailPage() {
             <h3 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
               Подобранные призы
             </h3>
-            {participant.matched_gifts && participant.matched_gifts.length > 0 ? (
+            {participant.matched_gift_assignments && participant.matched_gift_assignments.length > 0 ? (
+              <div className="space-y-3">
+                {participant.matched_gift_assignments.map((assignment, index) => (
+                  <div key={`${assignment.gift_id}-${assignment.target_rank || 'none'}-${index}`} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                      {assignment.gift.description}
+                    </p>
+                    {assignment.gift.criteria && assignment.gift.criteria.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {assignment.gift.criteria.map((c) => (
+                          <Badge
+                            key={c.id}
+                            color={getCriteriaColor(c.criteria_type)}
+                            size="sm"
+                          >
+                            {c.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      {formatPrizeAssignment(assignment)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : participant.matched_gifts && participant.matched_gifts.length > 0 ? (
               <div className="space-y-3">
                 {participant.matched_gifts.map((gift, index) => (
                   <div key={gift.id || index} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">

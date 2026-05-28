@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/valueobject"
 )
 
 // GiftDTO представляет DTO подарка для API
@@ -19,9 +20,17 @@ type GiftDTO struct {
 	BikeTypeFilter string               `json:"bike_type_filter,omitempty"` // all, gravel, mtb, road, single_speed, tandem
 	ReviewStatus   string               `json:"review_status"`
 	Place          *int                 `json:"place,omitempty"` // место (позиция)
+	PlaceRule      *GiftPlaceRuleDTO    `json:"place_rule"`
 	Attachments    []*GiftAttachmentDTO `json:"attachments,omitempty"`
 	Criteria       []*CriteriaDTO       `json:"criteria,omitempty"`
 	CreatedAt      time.Time            `json:"created_at"`
+}
+
+// GiftPlaceRuleDTO представляет правило привязки подарка к местам.
+type GiftPlaceRuleDTO struct {
+	Type      string `json:"type"`
+	Places    []int  `json:"places,omitempty"`
+	LastCount *int   `json:"last_count,omitempty"`
 }
 
 // GiftAttachmentDTO представляет DTO прикреплённого файла
@@ -42,7 +51,8 @@ func FromGift(g *entity.Gift) *GiftDTO {
 		GenderFilter:   g.GenderFilter,
 		BikeTypeFilter: g.BikeTypeFilter,
 		ReviewStatus:   g.ReviewStatus.String(),
-		Place:          g.Place,
+		Place:          g.FirstLegacyPlace(),
+		PlaceRule:      FromGiftPlaceRule(g.PlaceRule),
 		CreatedAt:      g.CreatedAt,
 	}
 
@@ -75,6 +85,25 @@ func FromGift(g *entity.Gift) *GiftDTO {
 	}
 
 	return dto
+}
+
+// FromGiftPlaceRule создаёт DTO правила мест.
+func FromGiftPlaceRule(rule valueobject.GiftPlaceRule) *GiftPlaceRuleDTO {
+	switch rule.Type() {
+	case valueobject.GiftPlaceRuleTypePlaces:
+		return &GiftPlaceRuleDTO{
+			Type:   string(valueobject.GiftPlaceRuleTypePlaces),
+			Places: rule.Places(),
+		}
+	case valueobject.GiftPlaceRuleTypeLastN:
+		lastCount := rule.LastCount()
+		return &GiftPlaceRuleDTO{
+			Type:      string(valueobject.GiftPlaceRuleTypeLastN),
+			LastCount: &lastCount,
+		}
+	default:
+		return nil
+	}
 }
 
 // GiftListResponse представляет ответ со списком подарков

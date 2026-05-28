@@ -10,14 +10,15 @@ import (
 
 // EventStats представляет статистику события
 type EventStats struct {
-	EventID              uint
-	EventName            string
-	ParticipantsCount    int
-	FinishedCount        int
-	GiftsCount           int
-	PrizesAssignedCount  int
-	ByGender             map[string]int // разбивка по полу
-	ByBikeType           map[string]int // разбивка по типу велосипеда
+	EventID                     uint
+	EventName                   string
+	ParticipantsCount           int
+	FinishedCount               int
+	GiftsCount                  int
+	PrizesAssignedCount         int
+	ParticipantsWithPrizesCount int
+	ByGender                    map[string]int // разбивка по полу
+	ByBikeType                  map[string]int // разбивка по типу велосипеда
 }
 
 // GetStatsQuery представляет запрос на получение статистики
@@ -90,9 +91,9 @@ func (h *GetStatsHandler) Handle(ctx context.Context, query GetStatsQuery) ([]*E
 // calculateEventStats рассчитывает статистику для одного события
 func (h *GetStatsHandler) calculateEventStats(ctx context.Context, event *entity.Event) (*EventStats, error) {
 	stats := &EventStats{
-		EventID:   event.ID,
-		EventName: event.Name,
-		ByGender:  make(map[string]int),
+		EventID:    event.ID,
+		EventName:  event.Name,
+		ByGender:   make(map[string]int),
 		ByBikeType: make(map[string]int),
 	}
 
@@ -141,10 +142,15 @@ func (h *GetStatsHandler) calculateEventStats(ctx context.Context, event *entity
 		// Если не удалось получить распределение, просто ставим 0
 		stats.PrizesAssignedCount = 0
 	} else {
-		// Считаем участников с подарками
+		// Считаем конкретные назначения призов отдельно от участников с призами.
 		for _, dist := range distribution {
-			if len(dist.MatchedGifts) > 0 {
-				stats.PrizesAssignedCount++
+			assignmentsCount := len(dist.MatchedGiftAssignments)
+			if assignmentsCount == 0 {
+				assignmentsCount = len(dist.MatchedGifts)
+			}
+			stats.PrizesAssignedCount += assignmentsCount
+			if assignmentsCount > 0 {
+				stats.ParticipantsWithPrizesCount++
 			}
 		}
 	}

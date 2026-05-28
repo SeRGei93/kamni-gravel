@@ -39,6 +39,12 @@ export const GIFT_REVIEW_STATUS_OPTIONS = [
   { value: 'approved', label: 'Проверен' },
 ];
 
+export const GIFT_PLACE_RULE_OPTIONS = [
+  { value: 'none', label: 'Без привязки' },
+  { value: 'places', label: 'Места и диапазоны' },
+  { value: 'last_n', label: 'Последние N' },
+];
+
 export const CRITERIA_TYPE_OPTIONS = [
   { value: 'speed', label: 'Скорость' },
   { value: 'photo', label: 'Фото' },

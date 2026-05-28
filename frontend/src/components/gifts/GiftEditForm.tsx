@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Label from '@/components/form/Label';
 import TextArea from '@/components/form/input/TextArea';
 import InputField from '@/components/form/input/InputField';
@@ -17,8 +17,15 @@ import type {
   UpdateGiftRequest,
 } from '@/types';
 import {
+  buildGiftPlaceRuleFromForm,
+  formatGiftPlaceRule,
+  getGiftPlaceRuleFormState,
+  type GiftPlaceRuleMode,
+} from '@/utils/giftPlaceRule';
+import {
   BIKE_TYPE_OPTIONS,
   GENDER_OPTIONS,
+  GIFT_PLACE_RULE_OPTIONS,
   GIFT_REVIEW_STATUS_OPTIONS,
 } from '@/constants';
 
@@ -27,25 +34,6 @@ interface GiftEditFormProps {
   criteria: Criteria[];
   onSubmit: (data: UpdateGiftRequest) => Promise<void>;
   onCancel: () => void;
-}
-
-function normalizePlace(value: string): number | null {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
-  if (!/^\d+$/.test(trimmed)) {
-    throw new Error('place_must_be_positive_integer');
-  }
-
-  const place = Number(trimmed);
-  if (!Number.isSafeInteger(place) || place <= 0) {
-    throw new Error('place_must_be_positive_integer');
-  }
-
-  return place;
 }
 
 export default function GiftEditForm({
@@ -64,7 +52,16 @@ export default function GiftEditForm({
   const [reviewStatus, setReviewStatus] = useState<GiftReviewStatus>(
     gift.review_status
   );
-  const [place, setPlace] = useState(gift.place?.toString() || '');
+  const initialPlaceRule = getGiftPlaceRuleFormState(gift);
+  const [placeRuleMode, setPlaceRuleMode] = useState<GiftPlaceRuleMode>(
+    initialPlaceRule.mode
+  );
+  const [placeRuleInput, setPlaceRuleInput] = useState(
+    initialPlaceRule.placesInput
+  );
+  const [lastCountInput, setLastCountInput] = useState(
+    initialPlaceRule.lastCount
+  );
   const [selectedCriteriaIds, setSelectedCriteriaIds] = useState<number[]>(
     gift.criteria?.map((item) => item.id) || []
   );
@@ -76,10 +73,23 @@ export default function GiftEditForm({
     setGenderFilter(gift.gender_filter || 'all');
     setBikeTypeFilter(gift.bike_type_filter || 'all');
     setReviewStatus(gift.review_status);
-    setPlace(gift.place?.toString() || '');
+    const nextPlaceRule = getGiftPlaceRuleFormState(gift);
+    setPlaceRuleMode(nextPlaceRule.mode);
+    setPlaceRuleInput(nextPlaceRule.placesInput);
+    setLastCountInput(nextPlaceRule.lastCount);
     setSelectedCriteriaIds(gift.criteria?.map((item) => item.id) || []);
     setError(null);
   }, [gift]);
+
+  const placeRulePreview = useMemo(() => {
+    try {
+      return formatGiftPlaceRule(
+        buildGiftPlaceRuleFromForm(placeRuleMode, placeRuleInput, lastCountInput)
+      );
+    } catch {
+      return 'Проверьте формат правила';
+    }
+  }, [lastCountInput, placeRuleInput, placeRuleMode]);
 
   const toggleCriteria = (criteriaId: number) => {
     setSelectedCriteriaIds((current) =>
@@ -98,11 +108,11 @@ export default function GiftEditForm({
       return;
     }
 
-    let normalizedPlace: number | null;
+    let placeRule: UpdateGiftRequest['place_rule'];
     try {
-      normalizedPlace = normalizePlace(place);
+      placeRule = buildGiftPlaceRuleFromForm(placeRuleMode, placeRuleInput, lastCountInput);
     } catch {
-      setError('Место должно быть положительным целым числом');
+      setError('Проверьте правило мест: используйте числа, запятые и диапазоны вроде 10-15');
       return;
     }
 
@@ -115,7 +125,7 @@ export default function GiftEditForm({
         gender_filter: genderFilter || 'all',
         bike_type_filter: bikeTypeFilter || 'all',
         review_status: reviewStatus,
-        place: normalizedPlace,
+        place_rule: placeRule,
         criteria_ids: selectedCriteriaIds,
       });
     } catch (err) {
@@ -150,7 +160,7 @@ export default function GiftEditForm({
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
           <Label>Фильтр по полу</Label>
           <Select
@@ -168,17 +178,6 @@ export default function GiftEditForm({
           />
         </div>
         <div>
-          <Label>Место (позиция)</Label>
-          <InputField
-            type="number"
-            min="1"
-            step={1}
-            placeholder="Например: 1, 2, 3"
-            value={place}
-            onChange={(event) => setPlace(event.target.value)}
-          />
-        </div>
-        <div>
           <Label>Статус проверки</Label>
           <Select
             options={GIFT_REVIEW_STATUS_OPTIONS}
@@ -186,6 +185,44 @@ export default function GiftEditForm({
             onChange={(value) => setReviewStatus(value as GiftReviewStatus)}
           />
         </div>
+      </div>
+
+      <div className="space-y-3 border-t border-gray-100 pt-5 dark:border-white/[0.05]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr_160px]">
+          <div>
+            <Label>Правило мест</Label>
+            <Select
+              options={GIFT_PLACE_RULE_OPTIONS}
+              defaultValue={placeRuleMode}
+              onChange={(value) => setPlaceRuleMode(value as GiftPlaceRuleMode)}
+            />
+          </div>
+          <div>
+            <Label>Места или диапазоны</Label>
+            <InputField
+              type="text"
+              placeholder="Например: 1, 3, 10-15"
+              value={placeRuleInput}
+              onChange={(event) => setPlaceRuleInput(event.target.value)}
+              disabled={placeRuleMode !== 'places'}
+            />
+          </div>
+          <div>
+            <Label>Последние N</Label>
+            <InputField
+              type="number"
+              min="1"
+              step={1}
+              placeholder="5"
+              value={lastCountInput}
+              onChange={(event) => setLastCountInput(event.target.value)}
+              disabled={placeRuleMode !== 'last_n'}
+            />
+          </div>
+        </div>
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+          {placeRulePreview}
+        </p>
       </div>
 
       <div>

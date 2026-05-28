@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/valueobject"
 )
 
 func TestUpdateGiftHandlerRejectsInvalidReviewStatusAndFilters(t *testing.T) {
@@ -29,8 +30,13 @@ func TestUpdateGiftHandlerRejectsInvalidReviewStatusAndFilters(t *testing.T) {
 
 func TestUpdateGiftHandlerPlacePresenceSemantics(t *testing.T) {
 	place := 3
+	placeRule, err := valueobject.NewGiftPlaceRulePlaces([]int{place})
+	if err != nil {
+		t.Fatalf("place rule setup error: %v", err)
+	}
 	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
 	repo.gift.Place = &place
+	repo.gift.PlaceRule = placeRule
 	h := NewUpdateGiftHandler(repo)
 
 	description := "Updated"
@@ -46,6 +52,103 @@ func TestUpdateGiftHandlerPlacePresenceSemantics(t *testing.T) {
 	}
 	if repo.updatedGift.Place != nil {
 		t.Fatalf("place should be cleared by explicit null, got %v", *repo.updatedGift.Place)
+	}
+	if !repo.updatedGift.PlaceRule.IsNone() {
+		t.Fatalf("place rule should be cleared by legacy null, got %s", repo.updatedGift.PlaceRule.Type())
+	}
+}
+
+func TestUpdateGiftHandlerPlaceRulePresenceSemantics(t *testing.T) {
+	existingRule, err := valueobject.NewGiftPlaceRulePlaces([]int{3})
+	if err != nil {
+		t.Fatalf("existing rule setup error: %v", err)
+	}
+	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
+	repo.gift.PlaceRule = existingRule
+	h := NewUpdateGiftHandler(repo)
+
+	description := "Updated"
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{GiftID: 1, Description: &description}); err != nil {
+		t.Fatalf("preserve rule update error: %v", err)
+	}
+	assertUpdateGiftRulePlaces(t, repo.updatedGift.PlaceRule, []int{3})
+
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:       1,
+		PlaceRuleSet: true,
+		PlaceRule:    valueobject.NewGiftPlaceRuleNone(),
+	}); err != nil {
+		t.Fatalf("clear rule update error: %v", err)
+	}
+	if !repo.updatedGift.PlaceRule.IsNone() {
+		t.Fatalf("place rule should be cleared by explicit null, got %s", repo.updatedGift.PlaceRule.Type())
+	}
+	if repo.updatedGift.Place != nil {
+		t.Fatalf("legacy place should be cleared with rule, got %v", *repo.updatedGift.Place)
+	}
+}
+
+func TestUpdateGiftHandlerAcceptsStructuredPlaceRules(t *testing.T) {
+	placesRule, err := valueobject.NewGiftPlaceRulePlaces([]int{3, 1, 3})
+	if err != nil {
+		t.Fatalf("places rule setup error: %v", err)
+	}
+	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
+	h := NewUpdateGiftHandler(repo)
+
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:       1,
+		PlaceRuleSet: true,
+		PlaceRule:    placesRule,
+	}); err != nil {
+		t.Fatalf("places rule update error: %v", err)
+	}
+	assertUpdateGiftRulePlaces(t, repo.updatedGift.PlaceRule, []int{1, 3})
+	if repo.updatedGift.Place == nil || *repo.updatedGift.Place != 1 {
+		t.Fatalf("legacy place = %v, want 1", repo.updatedGift.Place)
+	}
+
+	lastRule, err := valueobject.NewGiftPlaceRuleLastN(5)
+	if err != nil {
+		t.Fatalf("last_n rule setup error: %v", err)
+	}
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:       1,
+		PlaceRuleSet: true,
+		PlaceRule:    lastRule,
+	}); err != nil {
+		t.Fatalf("last_n rule update error: %v", err)
+	}
+	if repo.updatedGift.PlaceRule.Type() != valueobject.GiftPlaceRuleTypeLastN || repo.updatedGift.PlaceRule.LastCount() != 5 {
+		t.Fatalf("place rule = %s/%d, want last_n/5", repo.updatedGift.PlaceRule.Type(), repo.updatedGift.PlaceRule.LastCount())
+	}
+	if repo.updatedGift.Place != nil {
+		t.Fatalf("legacy place should be nil for last_n, got %v", *repo.updatedGift.Place)
+	}
+}
+
+func TestUpdateGiftHandlerPlaceRuleWinsOverLegacyPlace(t *testing.T) {
+	legacyPlace := 2
+	placesRule, err := valueobject.NewGiftPlaceRulePlaces([]int{10, 11})
+	if err != nil {
+		t.Fatalf("places rule setup error: %v", err)
+	}
+	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
+	h := NewUpdateGiftHandler(repo)
+
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:       1,
+		Place:        &legacyPlace,
+		PlaceSet:     true,
+		PlaceRule:    placesRule,
+		PlaceRuleSet: true,
+	}); err != nil {
+		t.Fatalf("place_rule winning update error: %v", err)
+	}
+
+	assertUpdateGiftRulePlaces(t, repo.updatedGift.PlaceRule, []int{10, 11})
+	if repo.updatedGift.Place == nil || *repo.updatedGift.Place != 10 {
+		t.Fatalf("legacy place should mirror place_rule first place, got %v", repo.updatedGift.Place)
 	}
 }
 
@@ -130,4 +233,18 @@ func (r *updateGiftRepoFake) AddAttachment(ctx context.Context, attachment *enti
 }
 func (r *updateGiftRepoFake) GetAttachments(ctx context.Context, giftID uint) ([]*entity.GiftAttachment, error) {
 	return nil, nil
+}
+
+func assertUpdateGiftRulePlaces(t *testing.T, rule valueobject.GiftPlaceRule, want []int) {
+	t.Helper()
+
+	got := rule.Places()
+	if len(got) != len(want) {
+		t.Fatalf("place rule places = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("place rule places = %v, want %v", got, want)
+		}
+	}
 }

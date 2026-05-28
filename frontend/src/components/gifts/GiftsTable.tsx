@@ -8,6 +8,7 @@ import Badge from '../ui/badge/Badge';
 import Button from '../ui/button/Button';
 import { TrashBinIcon, CheckLineIcon } from '@/icons';
 import { getCriteriaColor } from '@/utils/criteria';
+import { formatGiftPlaceRule } from '@/utils/giftPlaceRule';
 import type { Gift } from '@/types';
 import { useGiftPhotoUrls } from './useGiftPhotoUrls';
 
@@ -90,7 +91,7 @@ export default function GiftsTable({
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
       <div className="max-w-full overflow-x-auto">
-        <div className="min-w-[1120px]">
+        <div className="min-w-[1220px]">
           <Table>
             <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
               <TableRow>
@@ -117,6 +118,12 @@ export default function GiftsTable({
                   className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
                 >
                   Статус
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
+                  Правило
                 </TableCell>
                 <TableCell
                   isHeader
@@ -212,6 +219,11 @@ export default function GiftsTable({
                       >
                         {isPendingReview ? 'Новый / на проверке' : 'Проверен'}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 text-start">
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {formatGiftPlaceRule(gift.place_rule ?? (gift.place ? { type: 'places', places: [gift.place] } : null))}
+                      </span>
                     </TableCell>
                     <TableCell className="px-5 py-4 text-start">
                       {gift.criteria && gift.criteria.length > 0 ? (

@@ -192,11 +192,15 @@ func (h *ParticipantsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		// Находим запись для участника
 		for _, dist := range distribution {
-			if dist.ParticipantID == participant.ID && len(dist.MatchedGifts) > 0 {
+			if dist.ParticipantID == participant.ID && (len(dist.MatchedGifts) > 0 || len(dist.MatchedGiftAssignments) > 0) {
 				// Собираем все подарки
 				participantDTO.MatchedGifts = make([]*dto.GiftDTO, 0, len(dist.MatchedGifts))
 				for _, gift := range dist.MatchedGifts {
 					participantDTO.MatchedGifts = append(participantDTO.MatchedGifts, dto.FromGift(gift))
+				}
+				participantDTO.MatchedGiftAssignments = make([]*dto.PrizeGiftAssignmentDTO, 0, len(dist.MatchedGiftAssignments))
+				for _, assignment := range dist.MatchedGiftAssignments {
+					participantDTO.MatchedGiftAssignments = append(participantDTO.MatchedGiftAssignments, dto.FromPrizeGiftAssignment(assignment))
 				}
 				break
 			}

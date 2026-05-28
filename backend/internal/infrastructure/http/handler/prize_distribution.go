@@ -39,7 +39,7 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 	}
 
 	// Вызываем query handler
-	distribution, err := h.getPrizeDistributionHandler.Handle(r.Context(), query.GetPrizeDistributionQuery{
+	distributionOutput, err := h.getPrizeDistributionHandler.HandleDetailed(r.Context(), query.GetPrizeDistributionQuery{
 		EventID: uint(eventID),
 	})
 	if err != nil {
@@ -49,16 +49,18 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 	}
 
 	// Конвертируем в DTO
+	distribution := distributionOutput.Results
 	distributionDTOs := make([]*dto.PrizeDistributionDTO, 0, len(distribution))
 	for _, dist := range distribution {
 		dtoObj := &dto.PrizeDistributionDTO{
-			ParticipantID:   dist.ParticipantID,
-			ParticipantName: dist.ParticipantName,
-			Gender:          dist.Gender,
-			BikeType:        dist.BikeType,
-			PlaceAbsolute:   dist.PlaceAbsolute,
-			PlaceByGender:   dist.PlaceByGender,
-			MatchReason:     dist.MatchReason,
+			ParticipantID:     dist.ParticipantID,
+			ParticipantName:   dist.ParticipantName,
+			Gender:            dist.Gender,
+			BikeType:          dist.BikeType,
+			PlaceAbsolute:     dist.PlaceAbsolute,
+			PlaceByGender:     dist.PlaceByGender,
+			PlaceByGenderBike: dist.PlaceByGenderBike,
+			MatchReason:       dist.MatchReason,
 		}
 
 		// Конвертируем критерии результата
@@ -76,13 +78,24 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 				dtoObj.MatchedGifts[i] = dto.FromGift(gift)
 			}
 		}
+		if len(dist.MatchedGiftAssignments) > 0 {
+			dtoObj.MatchedGiftAssignments = make([]*dto.PrizeGiftAssignmentDTO, len(dist.MatchedGiftAssignments))
+			for i, assignment := range dist.MatchedGiftAssignments {
+				dtoObj.MatchedGiftAssignments[i] = dto.FromPrizeGiftAssignment(assignment)
+			}
+		}
 
 		distributionDTOs = append(distributionDTOs, dtoObj)
 	}
+	unassignedSlots := make([]*dto.UnassignedPrizeSlotDTO, 0, len(distributionOutput.UnassignedSlots))
+	for _, slot := range distributionOutput.UnassignedSlots {
+		unassignedSlots = append(unassignedSlots, dto.FromUnassignedPrizeSlot(slot))
+	}
 
 	response.Success(w, dto.PrizeDistributionListResponse{
-		Distribution: distributionDTOs,
-		Total:        len(distributionDTOs),
+		Distribution:    distributionDTOs,
+		UnassignedSlots: unassignedSlots,
+		Total:           len(distributionDTOs),
 	})
 }
 

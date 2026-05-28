@@ -55,6 +55,7 @@ export interface Participant {
   has_gift: boolean;
   prizes_count: number;
   matched_gifts?: Gift[]; // все подобранные призы
+  matched_gift_assignments?: PrizeGiftAssignment[];
 }
 
 export interface ParticipantDetail extends Participant {
@@ -134,6 +135,14 @@ export interface GiftAttachment {
   file_type: FileType;
 }
 
+export type GiftPlaceRuleType = 'places' | 'last_n';
+
+export interface GiftPlaceRule {
+  type: GiftPlaceRuleType;
+  places?: number[];
+  last_count?: number;
+}
+
 export interface Gift {
   id: number;
   user_id: number;
@@ -146,6 +155,7 @@ export interface Gift {
   bike_type_filter?: BikeTypeFilter;
   review_status: GiftReviewStatus;
   place?: number;
+  place_rule?: GiftPlaceRule | null;
   attachments?: GiftAttachment[];
   criteria?: Criteria[];
   created_at: string;
@@ -221,6 +231,7 @@ export interface Stats {
   finished_count: number;
   gifts_count: number;
   prizes_assigned_count: number;
+  participants_with_prizes_count: number;
   by_gender: Record<string, number>;
   by_bike_type: Record<string, number>;
 }
@@ -333,6 +344,7 @@ export interface UpdateGiftRequest {
   bike_type_filter?: BikeTypeFilter;
   review_status?: GiftReviewStatus;
   place?: number | null;
+  place_rule?: GiftPlaceRule | null;
   criteria_ids?: number[];
 }
 
@@ -343,13 +355,36 @@ export interface PrizeDistribution {
   bike_type: string;
   place_absolute: number;
   place_by_gender: number;
+  place_by_gender_bike: number;
   result_criteria: Criteria[];
   matched_gifts?: Gift[];
+  matched_gift_assignments?: PrizeGiftAssignment[];
   match_reason: string; // "criteria", "place", "no_match"
+}
+
+export interface PrizeGiftAssignment {
+  gift: Gift;
+  gift_id: number;
+  rule_type: 'none' | GiftPlaceRuleType;
+  target_rank?: number;
+  assigned_rank: number;
+  is_fallback: boolean;
+  fallback_reason?: string;
+  match_reason: string;
+}
+
+export interface UnassignedPrizeSlot {
+  gift_id: number;
+  gift?: Gift;
+  rule_type: GiftPlaceRuleType;
+  target_rank?: number;
+  reason: string;
+  fallback_reason?: string;
 }
 
 export interface PrizeDistributionListResponse {
   distribution: PrizeDistribution[];
+  unassigned_slots?: UnassignedPrizeSlot[];
   total: number;
 }
 

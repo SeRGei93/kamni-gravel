@@ -1,13 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
-import type { Event, PrizeDistribution } from '@/types';
+import type { Event, PrizeDistribution, UnassignedPrizeSlot } from '@/types';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
 import Badge from '@/components/ui/badge/Badge';
 import { getCriteriaColor } from '@/utils/criteria';
+import { formatPrizeAssignment } from '@/utils/giftPlaceRule';
+import {
+  countParticipantsWithPrizes,
+  countPrizeAssignmentSlots,
+  formatUnassignedPrizeSlot,
+} from '@/utils/prizeDistribution';
 import Link from 'next/link';
 
 const GENDER_LABELS: Record<string, string> = {
@@ -41,25 +47,14 @@ export default function PrizeDistributionPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [distribution, setDistribution] = useState<PrizeDistribution[]>([]);
+  const [unassignedSlots, setUnassignedSlots] = useState<UnassignedPrizeSlot[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Фильтры
   const [matchReasonFilter, setMatchReasonFilter] = useState<string>('');
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
-
-  useEffect(() => {
-    if (selectedEventId) {
-      loadDistribution();
-    } else {
-      setDistribution([]);
-    }
-  }, [selectedEventId]);
-
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     try {
       const response = await eventsApi.getAll();
       setEvents(response.events);
@@ -74,9 +69,9 @@ export default function PrizeDistributionPage() {
       setError('Ошибка загрузки событий');
       console.error('Failed to load events:', err);
     }
-  };
+  }, []);
 
-  const loadDistribution = async () => {
+  const loadDistribution = useCallback(async () => {
     if (!selectedEventId) return;
 
     try {
@@ -86,13 +81,27 @@ export default function PrizeDistributionPage() {
         selectedEventId
       );
       setDistribution(response.distribution);
+      setUnassignedSlots(response.unassigned_slots ?? []);
     } catch (err) {
       setError('Ошибка загрузки распределения призов');
       console.error('Failed to load prize distribution:', err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  useEffect(() => {
+    if (selectedEventId) {
+      loadDistribution();
+    } else {
+      setDistribution([]);
+      setUnassignedSlots([]);
+    }
+  }, [loadDistribution, selectedEventId]);
 
   const eventOptions = events.map((e) => ({
     value: String(e.id),
@@ -108,8 +117,9 @@ export default function PrizeDistributionPage() {
   });
 
   // Статистика
-  const withPrizes = distribution.filter((d) => d.matched_gifts && d.matched_gifts.length > 0).length;
+  const withPrizes = countParticipantsWithPrizes(distribution);
   const withoutPrizes = distribution.length - withPrizes;
+  const totalPrizeAssignments = countPrizeAssignmentSlots(distribution);
 
   return (
     <div className="space-y-6">
@@ -162,7 +172,7 @@ export default function PrizeDistributionPage() {
       </div>
 
       {/* Статистика */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Всего участников
@@ -181,6 +191,14 @@ export default function PrizeDistributionPage() {
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
           <p className="text-sm text-gray-600 dark:text-gray-400">
+            Призовых слотов
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-brand-600 dark:text-brand-400">
+            {totalPrizeAssignments}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Без призов
           </p>
           <p className="mt-1 text-2xl font-semibold text-gray-600 dark:text-gray-400">
@@ -188,6 +206,21 @@ export default function PrizeDistributionPage() {
           </p>
         </div>
       </div>
+
+      {unassignedSlots.length > 0 && (
+        <div className="rounded-xl border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
+          <p className="text-sm font-semibold text-warning-700 dark:text-warning-300">
+            Невыданные слоты: {unassignedSlots.length}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {unassignedSlots.map((slot, index) => (
+              <Badge key={`${slot.gift_id}-${slot.target_rank || 'none'}-${index}`} color="warning" size="sm">
+                {formatUnassignedPrizeSlot(slot)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Таблица */}
       <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
@@ -211,6 +244,9 @@ export default function PrizeDistributionPage() {
                   Место (гендер)
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Место (гендер+тип)
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
                   Критерии
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -224,7 +260,7 @@ export default function PrizeDistributionPage() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center">
+                  <td colSpan={9} className="px-4 py-8 text-center">
                     <div className="text-gray-500 dark:text-gray-400">
                       Загрузка...
                     </div>
@@ -232,7 +268,7 @@ export default function PrizeDistributionPage() {
                 </tr>
               ) : filteredDistribution.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center">
+                  <td colSpan={9} className="px-4 py-8 text-center">
                     <div className="text-gray-500 dark:text-gray-400">
                       Нет данных
                     </div>
@@ -276,6 +312,11 @@ export default function PrizeDistributionPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
+                      <span className="text-sm font-medium text-gray-800 dark:text-white/90">
+                        {dist.place_by_gender_bike}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       {dist.result_criteria && dist.result_criteria.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {dist.result_criteria.map((c) => (
@@ -295,7 +336,33 @@ export default function PrizeDistributionPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {dist.matched_gifts && dist.matched_gifts.length > 0 ? (
+                      {dist.matched_gift_assignments && dist.matched_gift_assignments.length > 0 ? (
+                        <div className="space-y-2 max-w-xs">
+                          {dist.matched_gift_assignments.map((assignment, index) => (
+                            <div key={`${assignment.gift_id}-${assignment.target_rank || 'none'}-${index}`} className="border-b border-gray-100 pb-2 last:border-0 last:pb-0 dark:border-gray-700">
+                              <p className="text-sm text-gray-800 dark:text-white/90">
+                                {assignment.gift.description}
+                              </p>
+                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                {formatPrizeAssignment(assignment)}
+                              </p>
+                              {assignment.gift.criteria && assignment.gift.criteria.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {assignment.gift.criteria.map((c) => (
+                                    <Badge
+                                      key={c.id}
+                                      color={getCriteriaColor(c.criteria_type)}
+                                      size="sm"
+                                    >
+                                      {c.name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : dist.matched_gifts && dist.matched_gifts.length > 0 ? (
                         <div className="space-y-2 max-w-xs">
                           {dist.matched_gifts.map((gift, index) => (
                             <div key={gift.id || index} className="border-b border-gray-100 pb-2 last:border-0 last:pb-0 dark:border-gray-700">

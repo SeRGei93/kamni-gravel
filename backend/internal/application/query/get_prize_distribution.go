@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 
 	"gravel_bot/internal/domain/entity"
@@ -39,6 +40,15 @@ func NewGetPrizeDistributionHandler(
 
 // Handle выполняет запрос на получение распределения призов
 func (h *GetPrizeDistributionHandler) Handle(ctx context.Context, query GetPrizeDistributionQuery) ([]*PrizeDistributionResult, error) {
+	output, err := h.HandleDetailed(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return output.Results, nil
+}
+
+// HandleDetailed выполняет запрос на получение распределения призов с метаданными слотов.
+func (h *GetPrizeDistributionHandler) HandleDetailed(ctx context.Context, query GetPrizeDistributionQuery) (*PrizeDistributionOutput, error) {
 	// Получаем результаты с местами
 	resultsWithPlaces, err := h.resultRepo.FindByEventWithPlaces(ctx, query.EventID)
 	if err != nil {
@@ -82,22 +92,37 @@ func (h *GetPrizeDistributionHandler) Handle(ctx context.Context, query GetPrize
 	}
 
 	// Распределяем призы
-	distribution := h.distributePrizes(resultsWithPlaces, gifts, participantMap)
+	output := h.distributePrizeSlots(resultsWithPlaces, gifts, participantMap)
+	assignedSlots := 0
+	for _, result := range output.Results {
+		assignedSlots += len(result.MatchedGiftAssignments)
+	}
+	log.Printf(
+		"level=info msg=\"Prize distribution calculated\" event_id=%d participants=%d approved_gifts=%d assigned_slots=%d unassigned_slots=%d",
+		query.EventID,
+		len(output.Results),
+		len(gifts),
+		assignedSlots,
+		len(output.UnassignedSlots),
+	)
 
-	return distribution, nil
+	return output, nil
 }
 
 // PrizeDistributionResult представляет результат распределения приза
 type PrizeDistributionResult struct {
-	ParticipantID   uint
-	ParticipantName string
-	Gender          string
-	BikeType        string
-	PlaceAbsolute   int
-	PlaceByGender   int
-	ResultCriteria  []*entity.Criteria
-	MatchedGifts    []*entity.Gift // Все подходящие подарки
-	MatchReason     string         // "criteria", "place", "no_match"
+	ParticipantID          uint
+	ParticipantName        string
+	Gender                 string
+	BikeType               string
+	PlaceAbsolute          int
+	PlaceByGender          int
+	PlaceByGenderBike      int
+	ResultCriteria         []*entity.Criteria
+	MatchedGifts           []*entity.Gift // Все подходящие подарки
+	MatchedGiftAssignments []*PrizeGiftAssignment
+	UnassignedSlots        []*UnassignedPrizeSlot
+	MatchReason            string // "criteria", "place", "no_match"
 }
 
 // distributePrizes распределяет призы по алгоритму matching
@@ -106,43 +131,7 @@ func (h *GetPrizeDistributionHandler) distributePrizes(
 	gifts []*entity.Gift,
 	participantMap map[uint]*entity.Participant,
 ) []*PrizeDistributionResult {
-	var distribution []*PrizeDistributionResult
-	usedGifts := make(map[uint]bool) // Отслеживаем использованные подарки
-
-	// Для каждого результата находим ВСЕ подходящие подарки
-	for _, rwp := range resultsWithPlaces {
-		participant := participantMap[rwp.Result.ParticipantID]
-		if participant == nil {
-			continue
-		}
-
-		result := &PrizeDistributionResult{
-			ParticipantID:   participant.ID,
-			ParticipantName: participant.User.Username,
-			Gender:          string(participant.Gender),
-			BikeType:        string(participant.BikeType),
-			PlaceAbsolute:   rwp.PlaceAbsolute,
-			PlaceByGender:   rwp.PlaceByGender,
-			ResultCriteria:  rwp.Result.Criteria,
-			MatchedGifts:    []*entity.Gift{},
-			MatchReason:     "no_match",
-		}
-
-		// Ищем ВСЕ подходящие подарки
-		matchedGifts := h.findAllMatchingGifts(rwp, participant, gifts, usedGifts)
-		if len(matchedGifts) > 0 {
-			result.MatchedGifts = matchedGifts
-			result.MatchReason = h.getMatchReason(matchedGifts[0], rwp)
-			// Помечаем все подарки как использованные
-			for _, gift := range matchedGifts {
-				usedGifts[gift.ID] = true
-			}
-		}
-
-		distribution = append(distribution, result)
-	}
-
-	return distribution
+	return h.distributePrizeSlots(resultsWithPlaces, gifts, participantMap).Results
 }
 
 type giftMatchPriority int

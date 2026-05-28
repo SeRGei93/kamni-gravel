@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
 import type { BikeTypeFilter, GenderFilter, Gift, GiftAttachment } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
+import { formatGiftPlaceRule } from "@/utils/giftPlaceRule";
 import GiftImage from "./GiftImage";
 
 interface GiftDetailViewProps {
@@ -59,9 +60,11 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
             <div className="tg-divider grid grid-cols-2 rounded-lg border text-sm">
               <DetailCell label="Пол" value={genderText[gender] ?? gender} />
               <DetailCell label="Велосипед" value={bikeText[bikeType] ?? bikeType} />
-              {gift.place !== undefined && (
-                <DetailCell label="Место" value={String(gift.place)} wide />
-              )}
+              <DetailCell
+                label="Места"
+                value={formatGiftPlaceRule(gift.place_rule ?? (gift.place ? { type: "places", places: [gift.place] } : null))}
+                wide
+              />
             </div>
 
             {criteria.length > 0 ? (

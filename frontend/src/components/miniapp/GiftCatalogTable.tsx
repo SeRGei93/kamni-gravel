@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
 import type { BikeTypeFilter, GenderFilter, Gift } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
+import { formatGiftPlaceRule } from "@/utils/giftPlaceRule";
 import GiftImage from "./GiftImage";
 
 interface GiftCatalogTableProps {
@@ -121,7 +122,10 @@ function GiftCompactConditions({ gift }: { gift: Gift }) {
     <div className="tg-muted space-y-0.5 text-[10px] font-medium leading-[14px]">
       <ConditionLine label="Пол" value={genderText[gender] ?? gender} />
       <ConditionLine label="Вело" value={bikeText[bikeType] ?? bikeType} />
-      {gift.place !== undefined && <ConditionLine label="Место" value={String(gift.place)} />}
+      <ConditionLine
+        label="Места"
+        value={formatGiftPlaceRule(gift.place_rule ?? (gift.place ? { type: "places", places: [gift.place] } : null))}
+      />
       {criteriaText && <ConditionLine label="Кр." value={criteriaText} />}
     </div>
   );

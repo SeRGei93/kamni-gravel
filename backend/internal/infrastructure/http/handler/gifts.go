@@ -15,6 +15,7 @@ import (
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/domain/valueobject"
 	"gravel_bot/internal/infrastructure/http/response"
 )
 
@@ -131,6 +132,8 @@ type UpdateGiftRequest struct {
 	ReviewStatus   *string
 	Place          *int
 	PlaceSet       bool
+	PlaceRule      valueobject.GiftPlaceRule
+	PlaceRuleSet   bool
 	CriteriaIDs    []uint
 	CriteriaIDsSet bool
 }
@@ -147,6 +150,10 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	req, err := decodeUpdateGiftRequest(r)
 	if err != nil {
+		var placeRuleErr invalidPlaceRulePayloadError
+		if errors.As(err, &placeRuleErr) {
+			log.Printf("level=warn msg=\"Invalid gift place_rule payload\" gift_id=%d rule_type=%s reason=%s", id, placeRuleErr.ruleType, placeRuleErr.reason)
+		}
 		response.BadRequest(w, "Invalid request body")
 		return
 	}
@@ -159,6 +166,8 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		ReviewStatus:   req.ReviewStatus,
 		Place:          req.Place,
 		PlaceSet:       req.PlaceSet,
+		PlaceRule:      req.PlaceRule,
+		PlaceRuleSet:   req.PlaceRuleSet,
 		CriteriaIDs:    req.CriteriaIDs,
 		CriteriaIDsSet: req.CriteriaIDsSet,
 	})
@@ -172,6 +181,7 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 			errors.Is(err, command.ErrInvalidGiftBikeTypeFilter),
 			errors.Is(err, command.ErrInvalidGiftReviewStatus),
 			errors.Is(err, command.ErrInvalidGiftPlace),
+			errors.Is(err, command.ErrInvalidGiftPlaceRule),
 			errors.Is(err, command.ErrGiftCriteriaPayloadRequired):
 			response.BadRequest(w, err.Error())
 		default:
@@ -243,6 +253,15 @@ func decodeUpdateGiftRequest(r *http.Request) (UpdateGiftRequest, error) {
 		}
 	}
 
+	if value, ok := raw["place_rule"]; ok {
+		req.PlaceRuleSet = true
+		placeRule, err := decodeGiftPlaceRule(value)
+		if err != nil {
+			return UpdateGiftRequest{}, err
+		}
+		req.PlaceRule = placeRule
+	}
+
 	if value, ok := raw["criteria_ids"]; ok {
 		var criteriaIDs []uint
 		if err := json.Unmarshal(value, &criteriaIDs); err != nil {
@@ -253,6 +272,54 @@ func decodeUpdateGiftRequest(r *http.Request) (UpdateGiftRequest, error) {
 	}
 
 	return req, nil
+}
+
+type giftPlaceRulePayload struct {
+	Type      string `json:"type"`
+	Places    []int  `json:"places"`
+	LastCount *int   `json:"last_count"`
+}
+
+type invalidPlaceRulePayloadError struct {
+	ruleType string
+	reason   string
+}
+
+func (e invalidPlaceRulePayloadError) Error() string {
+	return "invalid gift place_rule payload: " + e.reason
+}
+
+func decodeGiftPlaceRule(raw json.RawMessage) (valueobject.GiftPlaceRule, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return valueobject.NewGiftPlaceRuleNone(), nil
+	}
+
+	var payload giftPlaceRulePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return valueobject.GiftPlaceRule{}, invalidPlaceRulePayloadError{reason: "invalid_json"}
+	}
+
+	switch payload.Type {
+	case string(valueobject.GiftPlaceRuleTypeNone):
+		return valueobject.NewGiftPlaceRuleNone(), nil
+	case string(valueobject.GiftPlaceRuleTypePlaces):
+		rule, err := valueobject.NewGiftPlaceRulePlaces(payload.Places)
+		if err != nil {
+			return valueobject.GiftPlaceRule{}, invalidPlaceRulePayloadError{ruleType: payload.Type, reason: err.Error()}
+		}
+		return rule, nil
+	case string(valueobject.GiftPlaceRuleTypeLastN):
+		if payload.LastCount == nil {
+			return valueobject.GiftPlaceRule{}, invalidPlaceRulePayloadError{ruleType: payload.Type, reason: "missing_last_count"}
+		}
+		rule, err := valueobject.NewGiftPlaceRuleLastN(*payload.LastCount)
+		if err != nil {
+			return valueobject.GiftPlaceRule{}, invalidPlaceRulePayloadError{ruleType: payload.Type, reason: err.Error()}
+		}
+		return rule, nil
+	default:
+		return valueobject.GiftPlaceRule{}, invalidPlaceRulePayloadError{ruleType: payload.Type, reason: "unsupported_rule_type"}
+	}
 }
 
 // Delete обрабатывает DELETE /api/gifts/:id - удаление подарка

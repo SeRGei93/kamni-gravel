@@ -749,11 +749,35 @@ paths:
                 place:
                   type: integer
                   nullable: true
-                  description: Явный null очищает место, отсутствие поля сохраняет текущее значение
+                  description: Legacy-поле. Если place_rule не передан, значение мапится в single-place rule. Явный null очищает legacy place/rule, отсутствие поля сохраняет текущее значение.
+                place_rule:
+                  nullable: true
+                  allOf:
+                    - $ref: '#/components/schemas/GiftPlaceRule'
+                  description: |
+                    Новое правило мест. Отсутствие поля сохраняет текущее правило.
+                    `null` очищает правило. Если одновременно переданы `place_rule` и legacy `place`, выигрывает `place_rule`.
                 criteria_ids:
                   type: array
                   items:
                     type: integer
+            examples:
+              range:
+                summary: Диапазон мест
+                value:
+                  place_rule:
+                    type: places
+                    places: [10, 11, 12, 13, 14, 15]
+              last_n:
+                summary: Последние пять мест eligible-группы
+                value:
+                  place_rule:
+                    type: last_n
+                    last_count: 5
+              no_rule:
+                summary: Без правила мест
+                value:
+                  place_rule: null
       responses:
         '200':
           description: Подарок обновлён
@@ -780,6 +804,21 @@ paths:
       responses:
         '204':
           description: Подарок удалён
+
+  /events/{eventId}/prize-distribution:
+    get:
+      tags: [Gifts]
+      summary: Автоматическое распределение подарков
+      description: Возвращает строки участников, legacy matched_gifts, slot-level matched_gift_assignments и невыданные слоты правил.
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Распределение подарков
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrizeDistributionList'
 
   # ==================== CRITERIA ====================
   /criteria:
@@ -1030,6 +1069,8 @@ paths:
                     type: integer
                   total_assignments:
                     type: integer
+                  participants_with_prizes_count:
+                    type: integer
 
   /events/{eventId}/stats:
     get:
@@ -1052,6 +1093,8 @@ paths:
                   gifts_count:
                     type: integer
                   assignments_count:
+                    type: integer
+                  participants_with_prizes_count:
                     type: integer
                   by_bike_type:
                     type: object
@@ -1452,12 +1495,29 @@ components:
         place:
           type: integer
           description: Место в зачёте (0 если не финишировал)
+        place_absolute:
+          type: integer
+          description: Место в абсолютном зачёте
+        place_by_gender:
+          type: integer
+          description: Место в гендерном зачёте
+        place_by_gender_bike:
+          type: integer
+          description: Место в зачёте по гендеру и типу велосипеда
         has_gift:
           type: boolean
           description: Добавил ли подарок
         prizes_count:
           type: integer
           description: Количество полученных призов
+        matched_gifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Gift'
+        matched_gift_assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrizeGiftAssignment'
 
     Result:
       type: object
@@ -1519,6 +1579,11 @@ components:
         place:
           type: integer
           nullable: true
+          description: Legacy compatibility field. Для rules типа places содержит первое место, для last_n или отсутствия правила не передаётся.
+        place_rule:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/GiftPlaceRule'
         attachments:
           type: array
           items:
@@ -1542,6 +1607,117 @@ components:
           format: date-time
         is_assigned:
           type: boolean
+
+    GiftPlaceRule:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [places, last_n]
+          description: "places задаёт явные места/диапазоны, last_n задаёт последние N участников eligible-группы."
+        places:
+          type: array
+          description: Нормализованный список уникальных положительных мест. Используется только для type=places.
+          items:
+            type: integer
+            minimum: 1
+          example: [10, 11, 12, 13, 14, 15]
+        last_count:
+          type: integer
+          minimum: 1
+          description: Количество последних мест eligible-группы. Используется только для type=last_n.
+          example: 5
+
+    PrizeDistributionList:
+      type: object
+      properties:
+        distribution:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrizeDistribution'
+        unassigned_slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnassignedPrizeSlot'
+        total:
+          type: integer
+
+    PrizeDistribution:
+      type: object
+      properties:
+        participant_id:
+          type: integer
+        participant_name:
+          type: string
+        gender:
+          type: string
+        bike_type:
+          type: string
+        place_absolute:
+          type: integer
+        place_by_gender:
+          type: integer
+        place_by_gender_bike:
+          type: integer
+          description: Место в зачёте по гендеру и типу велосипеда.
+        result_criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/Criteria'
+        matched_gifts:
+          type: array
+          description: Legacy compatibility list, populated from matched_gift_assignments during transition.
+          items:
+            $ref: '#/components/schemas/Gift'
+        matched_gift_assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrizeGiftAssignment'
+        match_reason:
+          type: string
+          enum: [criteria, place, match, no_match]
+
+    PrizeGiftAssignment:
+      type: object
+      properties:
+        gift_id:
+          type: integer
+        gift:
+          $ref: '#/components/schemas/Gift'
+        rule_type:
+          type: string
+          enum: [none, places, last_n]
+        target_rank:
+          type: integer
+          description: Целевой ранг внутри eligible-группы.
+        assigned_rank:
+          type: integer
+          description: Фактический ранг участника внутри eligible-группы.
+        is_fallback:
+          type: boolean
+        fallback_reason:
+          type: string
+        match_reason:
+          type: string
+          enum: [criteria, place, match]
+
+    UnassignedPrizeSlot:
+      type: object
+      properties:
+        gift_id:
+          type: integer
+        gift:
+          $ref: '#/components/schemas/Gift'
+        rule_type:
+          type: string
+          enum: [places, last_n]
+        target_rank:
+          type: integer
+        reason:
+          type: string
+        fallback_reason:
+          type: string
 
     GiftList:
       type: object

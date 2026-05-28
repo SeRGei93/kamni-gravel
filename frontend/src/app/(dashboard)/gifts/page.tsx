@@ -156,6 +156,9 @@ export default function GiftsPage() {
         // Собираем ID всех назначенных призов
         const assignedIds = new Set<number>();
         distribution.distribution.forEach((dist) => {
+          if (dist.matched_gift_assignments && dist.matched_gift_assignments.length > 0) {
+            dist.matched_gift_assignments.forEach((assignment) => assignedIds.add(assignment.gift_id));
+          }
           if (dist.matched_gifts && dist.matched_gifts.length > 0) {
             dist.matched_gifts.forEach((gift) => assignedIds.add(gift.id));
           }
@@ -216,7 +219,9 @@ export default function GiftsPage() {
         gender_filter: gift.gender_filter || 'all',
         bike_type_filter: gift.bike_type_filter || 'all',
         review_status: 'approved',
-        place: gift.place ?? null,
+        place_rule:
+          gift.place_rule ??
+          (gift.place ? { type: 'places', places: [gift.place] } : null),
         criteria_ids: gift.criteria?.map((criteria) => criteria.id) || [],
       });
       await loadGifts();

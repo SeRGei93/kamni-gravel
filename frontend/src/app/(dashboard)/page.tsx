@@ -50,6 +50,8 @@ export default function DashboardPage() {
       finished_count: acc.finished_count + stat.finished_count,
       gifts_count: acc.gifts_count + stat.gifts_count,
       prizes_assigned_count: acc.prizes_assigned_count + stat.prizes_assigned_count,
+      participants_with_prizes_count:
+        acc.participants_with_prizes_count + stat.participants_with_prizes_count,
       by_gender: {
         male: (acc.by_gender.male || 0) + (stat.by_gender.male || 0),
         female: (acc.by_gender.female || 0) + (stat.by_gender.female || 0),
@@ -67,6 +69,7 @@ export default function DashboardPage() {
       finished_count: 0,
       gifts_count: 0,
       prizes_assigned_count: 0,
+      participants_with_prizes_count: 0,
       by_gender: {} as Record<string, number>,
       by_bike_type: {} as Record<string, number>,
     }
@@ -211,10 +214,18 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Призов
+                      Слотов выдано
                     </span>
                     <p className="text-lg font-semibold text-gray-800 dark:text-white">
                       {stat.prizes_assigned_count}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      Участников с призами
+                    </span>
+                    <p className="text-lg font-semibold text-gray-800 dark:text-white">
+                      {stat.participants_with_prizes_count}
                     </p>
                   </div>
                 </div>

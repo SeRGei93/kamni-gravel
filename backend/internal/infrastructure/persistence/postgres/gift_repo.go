@@ -9,6 +9,9 @@ import (
 
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/domain/valueobject"
+
+	"github.com/lib/pq"
 )
 
 type giftRepository struct {
@@ -21,6 +24,10 @@ type queryRowExecutor interface {
 
 type execContextExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+type queryContextExecutor interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 func NewGiftRepository(db *sql.DB) repository.GiftRepository {
@@ -104,13 +111,20 @@ func insertGift(ctx context.Context, exec queryRowExecutor, gift *entity.Gift) e
 }
 
 func (r *giftRepository) Update(ctx context.Context, gift *entity.Gift) error {
+	if err := normalizeGiftPlaceRuleForUpdate(gift); err != nil {
+		return err
+	}
 	return updateGiftFields(ctx, r.db, gift)
 }
 
 func (r *giftRepository) UpdateWithCriteria(ctx context.Context, gift *entity.Gift, criteriaIDs []uint) error {
+	if err := normalizeGiftPlaceRuleForUpdate(gift); err != nil {
+		return err
+	}
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("Gift update transaction begin failed: gift_id=%d error=%v", gift.ID, err)
+		log.Printf("ERROR gift update transaction begin failed: gift_id=%d rule_type=%s error=%v", gift.ID, gift.PlaceRule.Type(), err)
 		return fmt.Errorf("begin gift update transaction for gift %d: %w", gift.ID, err)
 	}
 
@@ -120,17 +134,17 @@ func (r *giftRepository) UpdateWithCriteria(ctx context.Context, gift *entity.Gi
 			return
 		}
 		if rollbackErr := tx.Rollback(); rollbackErr != nil && rollbackErr != sql.ErrTxDone {
-			log.Printf("Gift update transaction rollback failed: gift_id=%d error=%v", gift.ID, rollbackErr)
+			log.Printf("ERROR gift update transaction rollback failed: gift_id=%d rule_type=%s error=%v", gift.ID, gift.PlaceRule.Type(), rollbackErr)
 		}
 	}()
 
 	if err := updateGiftFields(ctx, tx, gift); err != nil {
-		log.Printf("Gift update failed: gift_id=%d stage=update_fields error=%v", gift.ID, err)
+		log.Printf("ERROR gift update failed: gift_id=%d stage=update_fields rule_type=%s error=%v", gift.ID, gift.PlaceRule.Type(), err)
 		return fmt.Errorf("update gift fields: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM entity_criteria WHERE entity_type = 'gift' AND entity_id = $1`, gift.ID); err != nil {
-		log.Printf("Gift update failed: gift_id=%d stage=delete_criteria error=%v", gift.ID, err)
+		log.Printf("ERROR gift update failed: gift_id=%d stage=delete_criteria rule_type=%s error=%v", gift.ID, gift.PlaceRule.Type(), err)
 		return fmt.Errorf("replace gift criteria: delete old criteria: %w", err)
 	}
 
@@ -142,13 +156,18 @@ func (r *giftRepository) UpdateWithCriteria(ctx context.Context, gift *entity.Gi
 			criteriaID,
 		)
 		if err != nil {
-			log.Printf("Gift update failed: gift_id=%d stage=insert_criteria criteria_index=%d criteria_id=%d error=%v", gift.ID, index, criteriaID, err)
+			log.Printf("ERROR gift update failed: gift_id=%d stage=insert_criteria criteria_index=%d criteria_id=%d rule_type=%s error=%v", gift.ID, index, criteriaID, gift.PlaceRule.Type(), err)
 			return fmt.Errorf("replace gift criteria: insert criteria %d: %w", criteriaID, err)
 		}
 	}
 
+	if err := replaceGiftPlaceRule(ctx, tx, gift); err != nil {
+		log.Printf("ERROR gift update failed: gift_id=%d stage=replace_place_rule %s error=%v", gift.ID, giftPlaceRuleLogMeta(gift.PlaceRule), err)
+		return fmt.Errorf("replace gift place rule: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
-		log.Printf("Gift update transaction commit failed: gift_id=%d criteria_count=%d error=%v", gift.ID, len(criteriaIDs), err)
+		log.Printf("ERROR gift update transaction commit failed: gift_id=%d criteria_count=%d %s error=%v", gift.ID, len(criteriaIDs), giftPlaceRuleLogMeta(gift.PlaceRule), err)
 		return fmt.Errorf("commit gift update transaction for gift %d: %w", gift.ID, err)
 	}
 	committed = true
@@ -199,6 +218,9 @@ func (r *giftRepository) FindByID(ctx context.Context, id uint) (*entity.Gift, e
 		return nil, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
 	}
 	gift.User.ID = gift.UserID
+	if err := r.loadGiftPlaceRules(ctx, []*entity.Gift{gift}); err != nil {
+		return nil, err
+	}
 	return gift, nil
 }
 
@@ -239,7 +261,13 @@ func (r *giftRepository) FindByEvent(ctx context.Context, eventID uint) ([]*enti
 		gifts = append(gifts, gift)
 	}
 
-	return gifts, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
+		return nil, err
+	}
+	return gifts, nil
 }
 
 func (r *giftRepository) FindByEventAndReviewStatus(ctx context.Context, eventID uint, reviewStatus entity.GiftReviewStatus) ([]*entity.Gift, error) {
@@ -283,7 +311,13 @@ func (r *giftRepository) FindByEventAndReviewStatus(ctx context.Context, eventID
 		gifts = append(gifts, gift)
 	}
 
-	return gifts, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
+		return nil, err
+	}
+	return gifts, nil
 }
 
 func (r *giftRepository) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
@@ -318,7 +352,13 @@ func (r *giftRepository) FindByUser(ctx context.Context, userID int64) ([]*entit
 		gifts = append(gifts, gift)
 	}
 
-	return gifts, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
+		return nil, err
+	}
+	return gifts, nil
 }
 
 func (r *giftRepository) Delete(ctx context.Context, id uint) error {
@@ -392,7 +432,158 @@ func applyGiftNullableFields(
 	if place.Valid {
 		p := int(place.Int32)
 		gift.Place = &p
+	} else {
+		gift.Place = nil
 	}
 
 	return nil
+}
+
+func normalizeGiftPlaceRuleForUpdate(gift *entity.Gift) error {
+	if gift.PlaceRule.IsNone() && gift.Place != nil {
+		rule, err := valueobject.NewGiftPlaceRulePlaces([]int{*gift.Place})
+		if err != nil {
+			return err
+		}
+		gift.PlaceRule = rule
+	}
+	gift.Place = gift.PlaceRule.FirstLegacyPlace()
+	return nil
+}
+
+func (r *giftRepository) loadGiftPlaceRules(ctx context.Context, gifts []*entity.Gift) error {
+	return loadGiftPlaceRules(ctx, r.db, gifts)
+}
+
+func loadGiftPlaceRules(ctx context.Context, db queryContextExecutor, gifts []*entity.Gift) error {
+	if len(gifts) == 0 {
+		return nil
+	}
+
+	giftsByID := make(map[uint]*entity.Gift, len(gifts))
+	giftIDs := make([]uint, 0, len(gifts))
+	for _, gift := range gifts {
+		giftsByID[gift.ID] = gift
+		giftIDs = append(giftIDs, gift.ID)
+	}
+
+	query := `
+		SELECT r.gift_id, r.rule_type, r.last_count, p.place
+		FROM gift_place_rules r
+		LEFT JOIN gift_place_rule_places p ON p.gift_id = r.gift_id
+		WHERE r.gift_id = ANY($1)
+		ORDER BY r.gift_id, p.place
+	`
+
+	rows, err := db.QueryContext(ctx, query, pq.Array(giftIDs))
+	if err != nil {
+		return fmt.Errorf("load gift place rules: %w", err)
+	}
+	defer rows.Close()
+
+	storedRules := make(map[uint]*storedGiftPlaceRule)
+	for rows.Next() {
+		var giftID uint
+		var ruleType string
+		var lastCount sql.NullInt32
+		var place sql.NullInt32
+		if err := rows.Scan(&giftID, &ruleType, &lastCount, &place); err != nil {
+			return fmt.Errorf("scan gift place rule: %w", err)
+		}
+		if _, ok := giftsByID[giftID]; !ok {
+			continue
+		}
+
+		storedRule := storedRules[giftID]
+		if storedRule == nil {
+			storedRule = &storedGiftPlaceRule{ruleType: ruleType, lastCount: lastCount}
+			storedRules[giftID] = storedRule
+		}
+		if place.Valid {
+			storedRule.places = append(storedRule.places, int(place.Int32))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate gift place rules: %w", err)
+	}
+
+	for giftID, storedRule := range storedRules {
+		rule, err := storedRule.toValueObject()
+		if err != nil {
+			return fmt.Errorf("invalid stored gift place rule for gift %d: %w", giftID, err)
+		}
+		giftsByID[giftID].PlaceRule = rule
+		giftsByID[giftID].Place = rule.FirstLegacyPlace()
+	}
+
+	return nil
+}
+
+type storedGiftPlaceRule struct {
+	ruleType  string
+	lastCount sql.NullInt32
+	places    []int
+}
+
+func (r *storedGiftPlaceRule) toValueObject() (valueobject.GiftPlaceRule, error) {
+	switch valueobject.GiftPlaceRuleType(r.ruleType) {
+	case valueobject.GiftPlaceRuleTypePlaces:
+		return valueobject.NewGiftPlaceRulePlaces(r.places)
+	case valueobject.GiftPlaceRuleTypeLastN:
+		if !r.lastCount.Valid {
+			return valueobject.GiftPlaceRule{}, fmt.Errorf("last_n rule is missing last_count")
+		}
+		return valueobject.NewGiftPlaceRuleLastN(int(r.lastCount.Int32))
+	default:
+		return valueobject.GiftPlaceRule{}, fmt.Errorf("unsupported rule type: %s", r.ruleType)
+	}
+}
+
+func replaceGiftPlaceRule(ctx context.Context, exec execContextExecutor, gift *entity.Gift) error {
+	if _, err := exec.ExecContext(ctx, `DELETE FROM gift_place_rules WHERE gift_id = $1`, gift.ID); err != nil {
+		return fmt.Errorf("delete existing rule: %w", err)
+	}
+
+	switch gift.PlaceRule.Type() {
+	case valueobject.GiftPlaceRuleTypeNone:
+		return nil
+	case valueobject.GiftPlaceRuleTypePlaces:
+		if _, err := exec.ExecContext(
+			ctx,
+			`INSERT INTO gift_place_rules (gift_id, rule_type, last_count) VALUES ($1, $2, $3)`,
+			gift.ID,
+			string(valueobject.GiftPlaceRuleTypePlaces),
+			nil,
+		); err != nil {
+			return fmt.Errorf("insert places rule: %w", err)
+		}
+		for _, place := range gift.PlaceRule.Places() {
+			if _, err := exec.ExecContext(
+				ctx,
+				`INSERT INTO gift_place_rule_places (gift_id, place) VALUES ($1, $2)`,
+				gift.ID,
+				place,
+			); err != nil {
+				return fmt.Errorf("insert rule place %d: %w", place, err)
+			}
+		}
+		return nil
+	case valueobject.GiftPlaceRuleTypeLastN:
+		if _, err := exec.ExecContext(
+			ctx,
+			`INSERT INTO gift_place_rules (gift_id, rule_type, last_count) VALUES ($1, $2, $3)`,
+			gift.ID,
+			string(valueobject.GiftPlaceRuleTypeLastN),
+			gift.PlaceRule.LastCount(),
+		); err != nil {
+			return fmt.Errorf("insert last_n rule: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported gift place rule type: %s", gift.PlaceRule.Type())
+	}
+}
+
+func giftPlaceRuleLogMeta(rule valueobject.GiftPlaceRule) string {
+	return fmt.Sprintf("rule_type=%s place_count=%d last_count=%d", rule.Type(), len(rule.Places()), rule.LastCount())
 }

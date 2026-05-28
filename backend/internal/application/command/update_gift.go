@@ -17,6 +17,7 @@ var (
 	ErrInvalidGiftBikeTypeFilter   = errors.New("invalid gift bike type filter")
 	ErrInvalidGiftReviewStatus     = errors.New("invalid gift review status")
 	ErrInvalidGiftPlace            = errors.New("gift place must be greater than zero")
+	ErrInvalidGiftPlaceRule        = errors.New("invalid gift place rule")
 	ErrGiftCriteriaPayloadRequired = errors.New("criteria_ids are required when approving a gift")
 )
 
@@ -29,6 +30,8 @@ type UpdateGiftCommand struct {
 	ReviewStatus   *string
 	Place          *int
 	PlaceSet       bool
+	PlaceRule      valueobject.GiftPlaceRule
+	PlaceRuleSet   bool
 	CriteriaIDs    []uint
 	CriteriaIDsSet bool
 }
@@ -86,23 +89,37 @@ func (h *UpdateGiftHandler) Handle(ctx context.Context, cmd UpdateGiftCommand) (
 		gift.ReviewStatus = reviewStatus
 	}
 
-	if cmd.PlaceSet {
+	if cmd.PlaceRuleSet {
+		gift.PlaceRule = cmd.PlaceRule
+		gift.Place = gift.PlaceRule.FirstLegacyPlace()
+	} else if cmd.PlaceSet {
 		if cmd.Place != nil && *cmd.Place <= 0 {
+			log.Printf("level=warn msg=\"Invalid legacy gift place\" gift_id=%d reason=non_positive", cmd.GiftID)
 			return nil, ErrInvalidGiftPlace
 		}
 		gift.Place = cmd.Place
+		if cmd.Place == nil {
+			gift.PlaceRule = valueobject.NewGiftPlaceRuleNone()
+		} else {
+			placeRule, err := valueobject.NewGiftPlaceRulePlaces([]int{*cmd.Place})
+			if err != nil {
+				log.Printf("level=warn msg=\"Invalid gift place rule\" gift_id=%d rule_type=places reason=%q", cmd.GiftID, err.Error())
+				return nil, fmt.Errorf("%w: %v", ErrInvalidGiftPlaceRule, err)
+			}
+			gift.PlaceRule = placeRule
+		}
 	}
 
 	if cmd.CriteriaIDsSet {
 		if err := h.giftRepo.UpdateWithCriteria(ctx, gift, cmd.CriteriaIDs); err != nil {
-			log.Printf("Gift update failed: gift_id=%d stage=update_with_criteria error=%v", cmd.GiftID, err)
+			log.Printf("ERROR gift update failed: gift_id=%d stage=update_with_criteria error=%v", cmd.GiftID, err)
 			return nil, fmt.Errorf("failed to update gift %d with criteria: %w", cmd.GiftID, err)
 		}
 		return gift, nil
 	}
 
 	if err := h.giftRepo.Update(ctx, gift); err != nil {
-		log.Printf("Gift update failed: gift_id=%d stage=update_fields error=%v", cmd.GiftID, err)
+		log.Printf("ERROR gift update failed: gift_id=%d stage=update_fields error=%v", cmd.GiftID, err)
 		return nil, fmt.Errorf("failed to update gift %d fields: %w", cmd.GiftID, err)
 	}
 
