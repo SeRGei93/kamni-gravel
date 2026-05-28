@@ -104,7 +104,7 @@ func (h *RegistrationHandler) HandleGenderSelection(ctx context.Context, userID 
 
 	_, err := h.registerParticipantHandler.Handle(ctx, cmd)
 	if err != nil {
-		log.Printf("Error registering participant: %v", err)
+		log.Printf("Error registering participant: telegram_user_id=%d event_id=%d bike_type=%s gender=%s error=%v", userID, eventID, bikeType, gender, err)
 		return fmt.Sprintf("Ошибка при регистрации: %v", err), err
 	}
 

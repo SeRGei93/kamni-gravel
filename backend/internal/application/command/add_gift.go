@@ -57,6 +57,16 @@ func NewAddGiftHandler(
 
 // Handle выполняет команду добавления подарка
 func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entity.Gift, error) {
+	log.Printf(
+		"INFO Gift creation requested: telegram_user_id=%d event_id=%d gender_filter=%q bike_type_filter=%q attachment_count=%d description_len=%d",
+		cmd.UserID,
+		cmd.EventID,
+		cmd.GenderFilter,
+		cmd.BikeTypeFilter,
+		len(cmd.Attachments),
+		len([]rune(cmd.Description)),
+	)
+
 	isBlacklisted, err := h.userBlacklistRepo.IsBlacklisted(ctx, cmd.UserID)
 	if err != nil {
 		log.Printf("ERROR Gift creation blacklist check failed: telegram_user_id=%d event_id=%d error=%v", cmd.UserID, cmd.EventID, err)
@@ -70,17 +80,20 @@ func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entit
 	// Проверяем существование пользователя
 	user, err := h.userRepo.FindByID(ctx, cmd.UserID)
 	if err != nil {
+		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=find_user error=%v", cmd.UserID, cmd.EventID, err)
 		return nil, ErrUserNotFound
 	}
 
 	// Проверяем существование события
 	_, err = h.eventRepo.FindByID(ctx, cmd.EventID)
 	if err != nil {
+		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=find_event error=%v", cmd.UserID, cmd.EventID, err)
 		return nil, ErrEventNotFound
 	}
 
 	// Валидация описания
 	if cmd.Description == "" {
+		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=validate_description reason=empty_description", cmd.UserID, cmd.EventID)
 		return nil, ErrEmptyDescription
 	}
 
@@ -108,8 +121,9 @@ func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entit
 
 	// Готовим прикреплённые файлы до создания domain entities с невалидным типом.
 	attachments := make([]*entity.GiftAttachment, 0, len(cmd.Attachments))
-	for _, attachData := range cmd.Attachments {
+	for index, attachData := range cmd.Attachments {
 		if !isValidGiftAttachmentFileType(attachData.FileType) {
+			log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=validate_attachment attachment_index=%d file_type=%q error=%v", cmd.UserID, cmd.EventID, index, attachData.FileType, ErrInvalidAttachmentFileType)
 			return nil, fmt.Errorf("%w: %s", ErrInvalidAttachmentFileType, attachData.FileType)
 		}
 		attachments = append(attachments, &entity.GiftAttachment{
@@ -120,6 +134,7 @@ func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entit
 
 	// Сохраняем подарок и файлы атомарно.
 	if err := h.giftRepo.CreateWithAttachments(ctx, gift, attachments); err != nil {
+		log.Printf("ERROR Gift creation failed: telegram_user_id=%d event_id=%d stage=create_gift attachment_count=%d error=%v", cmd.UserID, cmd.EventID, len(attachments), err)
 		return nil, fmt.Errorf("failed to create gift with attachments: %w", err)
 	}
 
@@ -128,6 +143,7 @@ func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entit
 		gift.Attachments[i] = *attachment
 	}
 
+	log.Printf("INFO Gift creation completed: telegram_user_id=%d event_id=%d gift_id=%d attachment_count=%d review_status=%s", cmd.UserID, cmd.EventID, gift.ID, len(gift.Attachments), gift.ReviewStatus)
 	return gift, nil
 }
 

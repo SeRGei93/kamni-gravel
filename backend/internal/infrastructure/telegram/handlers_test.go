@@ -110,6 +110,41 @@ func TestBotHandleCallbackIgnoresGroupChat(t *testing.T) {
 	}
 }
 
+func TestBotHandleCallbackEnsuresTelegramUserBeforeRegistrationCompletion(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	eventRepo := &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
+	participantRepo := &telegramParticipantRepoFake{}
+	manager := session.NewManager(0)
+	b := &Bot{
+		api:                        api,
+		sessionManager:             manager,
+		userRepo:                   userRepo,
+		eventRepo:                  eventRepo,
+		participantRepo:            participantRepo,
+		registerParticipantHandler: command.NewRegisterParticipantHandler(userRepo, eventRepo, participantRepo, &telegramBlacklistRepoFake{}),
+	}
+
+	manager.SetState(123, session.StateAwaitingGender)
+	manager.SetData(123, "event_id", uint(77))
+	manager.SetData(123, "bike_type", "gravel")
+
+	b.handleCallback(context.Background(), callbackWithMessage("gender_male", 123, 500, 10))
+
+	if _, ok := userRepo.users[123]; !ok {
+		t.Fatal("callback user should be created before registration command")
+	}
+	if len(api.answerCallbacks) != 1 {
+		t.Fatalf("answer callback count mismatch: got %d, want 1", len(api.answerCallbacks))
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("registration success message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if strings.Contains(api.sentMessages[0].Text, "Ошибка при регистрации") {
+		t.Fatalf("registration should not fail with missing user: %q", api.sentMessages[0].Text)
+	}
+}
+
 func TestBotHandleMessageIgnoresAdminChat(t *testing.T) {
 	api := &telegramAPIFake{}
 	b := &Bot{
@@ -367,8 +402,8 @@ func TestBotNotifyAdminAboutGiftSendsSinglePhotoNotification(t *testing.T) {
 	if !ok {
 		t.Fatalf("single photo notification should include miniapp button, got %T", api.sentPhotos[0].ReplyMarkup)
 	}
-	if !publicMenuHasWebApp(markup, adminGiftMiniappLabel, miniappURL) {
-		t.Fatalf("single photo miniapp button not found: %#v", markup)
+	if !publicMenuHasURL(markup, adminGiftMiniappLabel, "https://t.me/GravelBot?startapp") {
+		t.Fatalf("single photo miniapp URL button not found: %#v", markup)
 	}
 }
 
@@ -833,6 +868,7 @@ func TestBotNotifyAdminAboutGiftSendsTextWhenNoUsablePhotos(t *testing.T) {
 	b := &Bot{
 		api:         api,
 		adminChatID: 900,
+		botUsername: "GravelBot",
 		miniappURL:  miniappURL,
 	}
 	gift := &entity.Gift{
@@ -866,8 +902,8 @@ func TestBotNotifyAdminAboutGiftSendsTextWhenNoUsablePhotos(t *testing.T) {
 	if !ok {
 		t.Fatalf("text notification should include miniapp button, got %T", api.sentMessages[0].ReplyMarkup)
 	}
-	if !publicMenuHasWebApp(markup, adminGiftMiniappLabel, miniappURL) {
-		t.Fatalf("text miniapp button not found: %#v", markup)
+	if !publicMenuHasURL(markup, adminGiftMiniappLabel, "https://t.me/GravelBot?startapp") {
+		t.Fatalf("text miniapp URL button not found: %#v", markup)
 	}
 }
 

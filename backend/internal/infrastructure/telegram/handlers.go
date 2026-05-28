@@ -87,6 +87,17 @@ func (b *Bot) handleCallback(ctx context.Context, callback *models.CallbackQuery
 		return
 	}
 
+	if err := b.ensureTelegramUser(ctx, callback.From); err != nil {
+		log.Printf("ERROR Telegram callback user ensure failed: telegram_user_id=%d data=%s error=%v", userID, data, err)
+		_ = b.AnswerCallback(ctx, callback.ID, "Ошибка")
+		return
+	}
+	sessionState := session.SessionState("unknown")
+	if b.sessionManager != nil {
+		sessionState = b.sessionManager.GetState(userID)
+	}
+	log.Printf("INFO Telegram callback accepted: telegram_user_id=%d chat=%s data=%s state=%s user_ensured=true", userID, b.chatLogMarker(chatID), data, sessionState)
+
 	// Обрабатываем отмену
 	if data == "cancel" {
 		b.sessionManager.ResetState(userID)
@@ -854,6 +865,27 @@ func (b *Bot) botUsernameAlias() string {
 
 func (b *Bot) eventConditionsText(event *entity.Event) string {
 	return handler.EventConditionsText(event)
+}
+
+func (b *Bot) ensureTelegramUser(ctx context.Context, user models.User) error {
+	if b == nil || b.userRepo == nil {
+		return nil
+	}
+	if user.ID == 0 {
+		return fmt.Errorf("missing telegram user id")
+	}
+
+	telegramUser := &entity.User{
+		ID:        user.ID,
+		Username:  user.Username,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
+	}
+	if err := b.userRepo.Create(ctx, telegramUser); err != nil {
+		return fmt.Errorf("upsert telegram user %d: %w", user.ID, err)
+	}
+
+	return nil
 }
 
 func (b *Bot) deepLink(payload string) string {

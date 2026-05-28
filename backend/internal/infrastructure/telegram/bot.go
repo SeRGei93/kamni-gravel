@@ -456,8 +456,10 @@ func (b *Bot) notifyAdminAboutGift(ctx context.Context, gift *entity.Gift) error
 }
 
 func (b *Bot) sendAdminGiftTextNotification(ctx context.Context, gift *entity.Gift) error {
+	giftID, eventID, userID := adminGiftLogFields(gift)
 	text := b.adminGiftNotificationText(gift, telegramTextLimit)
 	if markup, ok := b.adminGiftMiniappMarkup(); ok {
+		log.Printf("INFO Admin gift text notification sending: gift_id=%d event_id=%d user_id=%d chat=admin text_len=%d markup=miniapp_url_button", giftID, eventID, userID, len([]rune(text)))
 		_, err := b.SendMessageWithKeyboard(ctx, b.adminChatID, text, markup)
 		if err != nil {
 			return fmt.Errorf("send admin gift text notification: %w", err)
@@ -465,6 +467,7 @@ func (b *Bot) sendAdminGiftTextNotification(ctx context.Context, gift *entity.Gi
 		return nil
 	}
 
+	log.Printf("INFO Admin gift text notification sending: gift_id=%d event_id=%d user_id=%d chat=admin text_len=%d markup=none", giftID, eventID, userID, len([]rune(text)))
 	_, err := b.SendMessage(ctx, b.adminChatID, text)
 	if err != nil {
 		return fmt.Errorf("send admin gift text notification: %w", err)
@@ -474,18 +477,23 @@ func (b *Bot) sendAdminGiftTextNotification(ctx context.Context, gift *entity.Gi
 }
 
 func (b *Bot) sendAdminGiftPhotoNotification(ctx context.Context, gift *entity.Gift, photoFileID string) error {
+	giftID, eventID, userID := adminGiftLogFields(gift)
 	caption := b.adminGiftNotificationText(gift, telegramCaptionLimit)
 	params := &telegrambot.SendPhotoParams{
 		ChatID:  b.adminChatID,
 		Photo:   &models.InputFileString{Data: photoFileID},
 		Caption: caption,
 	}
+	markupMode := "none"
 	if markup, ok := b.adminGiftMiniappMarkup(); ok {
 		params.ReplyMarkup = markup
+		markupMode = "miniapp_url_button"
 	}
 
+	log.Printf("INFO Admin gift photo notification sending: gift_id=%d event_id=%d user_id=%d chat=admin caption_len=%d markup=%s", giftID, eventID, userID, len([]rune(caption)), markupMode)
 	_, err := b.api.SendPhoto(ctx, params)
 	if err != nil {
+		log.Printf("Telegram API call failed: operation=send_photo chat=%s error=%v", b.chatLogMarker(b.adminChatID), err)
 		return fmt.Errorf("send admin gift photo notification: %w", err)
 	}
 
@@ -494,12 +502,13 @@ func (b *Bot) sendAdminGiftPhotoNotification(ctx context.Context, gift *entity.G
 
 func (b *Bot) sendAdminGiftMediaGroupNotification(ctx context.Context, gift *entity.Gift, photoFileIDs []string) (int, error) {
 	chunks := adminGiftMediaGroupChunks(photoFileIDs)
+	giftID, eventID, userID := adminGiftLogFields(gift)
 	if len(chunks) > 1 {
-		giftID, eventID, userID := adminGiftLogFields(gift)
 		log.Printf("INFO Admin gift media group notification chunked: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=%d media_group_count=%d", giftID, eventID, userID, len(photoFileIDs), len(chunks))
 	}
 
 	caption, parseMode := b.adminGiftMediaGroupCaption(gift)
+	log.Printf("INFO Admin gift media group notification sending: gift_id=%d event_id=%d user_id=%d chat=admin photo_count=%d media_group_count=%d caption_len=%d parse_mode=%q", giftID, eventID, userID, len(photoFileIDs), len(chunks), len([]rune(caption)), parseMode)
 	for chunkIndex, chunk := range chunks {
 		media := make([]models.InputMedia, 0, len(chunk))
 		for photoIndex, photoFileID := range chunk {
@@ -515,6 +524,7 @@ func (b *Bot) sendAdminGiftMediaGroupNotification(ctx context.Context, gift *ent
 			ChatID: b.adminChatID,
 			Media:  media,
 		}); err != nil {
+			log.Printf("Telegram API call failed: operation=send_media_group chat=%s chunk=%d/%d media_count=%d error=%v", b.chatLogMarker(b.adminChatID), chunkIndex+1, len(chunks), len(media), err)
 			return chunkIndex + 1, fmt.Errorf("send admin gift media group chunk %d of %d: %w", chunkIndex+1, len(chunks), err)
 		}
 	}
@@ -523,7 +533,8 @@ func (b *Bot) sendAdminGiftMediaGroupNotification(ctx context.Context, gift *ent
 }
 
 func (b *Bot) adminGiftMiniappMarkup() (models.InlineKeyboardMarkup, bool) {
-	if b == nil || strings.TrimSpace(b.miniappURL) == "" {
+	miniappLink, ok := b.adminGiftMiniappTelegramLink()
+	if !ok {
 		return models.InlineKeyboardMarkup{}, false
 	}
 
@@ -531,8 +542,8 @@ func (b *Bot) adminGiftMiniappMarkup() (models.InlineKeyboardMarkup, bool) {
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
 				{
-					Text:   adminGiftMiniappLabel,
-					WebApp: &models.WebAppInfo{URL: b.miniappURL},
+					Text: adminGiftMiniappLabel,
+					URL:  miniappLink,
 				},
 			},
 		},
