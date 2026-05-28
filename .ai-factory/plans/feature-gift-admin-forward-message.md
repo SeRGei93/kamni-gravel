@@ -167,7 +167,7 @@ For a gift with one photo, admins receive one photo message with a caption simil
 
 When `MINIAPP_URL` is configured, one-photo and text-only notifications include a WebApp button named `призовой фонд`.
 
-For a gift with multiple photos, admins receive a media group containing all usable photos, with the same caption on the first photo and no separate text summary after the album. When `MINIAPP_URL` is configured, the first caption includes a hidden HTML link under the text `призовой фонд`.
+For a gift with multiple photos, admins receive a media group containing all usable photos, with the same caption on the first photo and no separate text summary after the album. When `MINIAPP_URL` is configured and the bot username is known, the first caption includes a hidden HTML link under the text `призовой фонд`; the link must use a Telegram direct Mini App URL such as `https://t.me/<botUsername>?startapp`, not the HTTPS frontend URL, so Telegram opens the Mini App inside the client.
 
 For a gift without usable photos, admins receive the same content as one text message.
 
