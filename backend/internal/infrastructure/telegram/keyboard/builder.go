@@ -192,6 +192,19 @@ func GiftPhotoMenu() models.InlineKeyboardMarkup {
 		Build()
 }
 
+// GiftDraftMenu создаёт актуальную клавиатуру черновика подарка.
+func GiftDraftMenu(hasDescription bool) models.InlineKeyboardMarkup {
+	builder := NewBuilder()
+	if hasDescription {
+		builder.AddRow(Button("✅ Готово", "finish_gift"))
+	}
+
+	builder.AddRow(Button("🔄 Заполнить заново", "restart_gift"))
+	builder.AddRow(Button("❌ Отмена", "cancel"))
+
+	return builder.Build()
+}
+
 // GiftConfirmationMenu создаёт меню подтверждения подарка перед сохранением.
 func GiftConfirmationMenu() models.InlineKeyboardMarkup {
 	return NewBuilder().

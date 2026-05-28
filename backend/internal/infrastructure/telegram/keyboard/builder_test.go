@@ -44,6 +44,16 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 			want: []string{"finish_gift", "skip_photos", "cancel"},
 		},
 		{
+			name: "gift draft menu without description",
+			menu: GiftDraftMenu(false),
+			want: []string{"restart_gift", "cancel"},
+		},
+		{
+			name: "gift draft menu with description",
+			menu: GiftDraftMenu(true),
+			want: []string{"finish_gift", "restart_gift", "cancel"},
+		},
+		{
 			name: "gift confirmation menu",
 			menu: GiftConfirmationMenu(),
 			want: []string{"confirm_gift", "restart_gift", "cancel"},

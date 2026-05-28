@@ -470,6 +470,303 @@ func TestBotHandleGiftConfirmationNotifiesAdminFromPersistedAttachments(t *testi
 	}
 }
 
+func TestBotHandleGiftDescriptionPhotoWithoutCaptionStoresPhotoAndKeepsDraft(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingGiftDesc)
+	manager.SetData(userID, "gift_gender", "all")
+	manager.SetData(userID, "gift_bike_type", "gravel")
+	b.setGiftMessageIDs(userID, []int{44, 45})
+
+	b.handleGiftMessage(context.Background(), &models.Message{
+		ID:   100,
+		From: &models.User{ID: userID},
+		Chat: chatWithID(500),
+		Photo: []models.PhotoSize{
+			{FileID: "small-photo", Width: 10, Height: 10},
+			{FileID: "large-photo", Width: 20, Height: 20},
+		},
+	}, userID, session.StateAwaitingGiftDesc)
+
+	if got := manager.GetState(userID); got != session.StateAwaitingGiftDesc {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftDesc)
+	}
+	if _, ok := manager.GetData(userID, "gift_description"); ok {
+		t.Fatal("gift_description should still be missing")
+	}
+	attachments := giftAttachmentsFromTelegramSession(t, manager, userID)
+	if len(attachments) != 1 || attachments[0].TelegramFileID != "large-photo" {
+		t.Fatalf("attachments mismatch: %#v", attachments)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("draft reply count mismatch: got %d", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Описание: нужно отправить") {
+		t.Fatalf("draft text should require description, got: %s", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("draft reply should include markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"restart_gift", "cancel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("draft callbacks mismatch: got %v, want %v", got, want)
+	}
+	if got, want := deletedMessageIDs(api), []int{44, 45}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("deleted message IDs mismatch: got %v, want %v", got, want)
+	}
+	if got, want := b.giftMessageIDs(userID), []int{1}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("gift message IDs mismatch: got %v, want %v", got, want)
+	}
+}
+
+func TestBotHandleGiftAlbumStoresEveryPhotoAndSendsOneDraft(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingGiftDesc)
+	manager.SetData(userID, "gift_gender", "all")
+	manager.SetData(userID, "gift_bike_type", "gravel")
+
+	for _, msg := range []*models.Message{
+		{
+			ID:           100,
+			From:         &models.User{ID: userID},
+			Chat:         chatWithID(500),
+			MediaGroupID: "album-1",
+			Photo:        []models.PhotoSize{{FileID: "photo-1", Width: 20, Height: 20}},
+		},
+		{
+			ID:           101,
+			From:         &models.User{ID: userID},
+			Chat:         chatWithID(500),
+			MediaGroupID: "album-1",
+			Photo:        []models.PhotoSize{{FileID: "photo-2", Width: 20, Height: 20}},
+		},
+	} {
+		b.handleGiftMessage(context.Background(), msg, userID, session.StateAwaitingGiftDesc)
+	}
+
+	attachments := giftAttachmentsFromTelegramSession(t, manager, userID)
+	if got, want := attachmentFileIDs(attachments), []string{"photo-1", "photo-2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("attachment IDs mismatch: got %v, want %v", got, want)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("draft reply count mismatch: got %d", len(api.sentMessages))
+	}
+}
+
+func TestBotHandleGiftPhotoStateCaptionDoesNotOverwriteDescription(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingGiftPhoto)
+	manager.SetData(userID, "gift_gender", "female")
+	manager.SetData(userID, "gift_bike_type", "road")
+	manager.SetData(userID, "gift_description", "Original description")
+
+	b.handleGiftMessage(context.Background(), &models.Message{
+		ID:      100,
+		From:    &models.User{ID: userID},
+		Chat:    chatWithID(500),
+		Caption: "Replacement caption",
+		Photo:   []models.PhotoSize{{FileID: "photo-1", Width: 20, Height: 20}},
+	}, userID, session.StateAwaitingGiftPhoto)
+
+	descriptionRaw, ok := manager.GetData(userID, "gift_description")
+	if !ok {
+		t.Fatal("gift_description missing")
+	}
+	if descriptionRaw != "Original description" {
+		t.Fatalf("gift_description mismatch: got %v", descriptionRaw)
+	}
+	attachments := giftAttachmentsFromTelegramSession(t, manager, userID)
+	if len(attachments) != 1 || attachments[0].TelegramFileID != "photo-1" {
+		t.Fatalf("attachments mismatch: %#v", attachments)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("draft reply count mismatch: got %d", len(api.sentMessages))
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("draft reply should include markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"finish_gift", "restart_gift", "cancel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("draft callbacks mismatch: got %v, want %v", got, want)
+	}
+}
+
+func TestBotHandleGiftFinishRequiresDescriptionAndKeepsDraftRecoverable(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingGiftDesc)
+	manager.SetData(userID, "event_id", uint(77))
+	manager.SetData(userID, "gift_gender", "all")
+	manager.SetData(userID, "gift_bike_type", "gravel")
+	b.setGiftMessageIDs(userID, []int{40})
+
+	b.handleStatefulCallback(context.Background(), callbackWithMessage("finish_gift", userID, 500, 40))
+
+	if got := manager.GetState(userID); got != session.StateAwaitingGiftDesc {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftDesc)
+	}
+	if len(api.answerCallbacks) != 1 || api.answerCallbacks[0].Text == "" {
+		t.Fatalf("callback answer mismatch: %#v", api.answerCallbacks)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("draft message count mismatch: got %d", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Описание: нужно отправить") {
+		t.Fatalf("draft should require description, got: %s", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("draft reply should include markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"restart_gift", "cancel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("draft callbacks mismatch: got %v, want %v", got, want)
+	}
+}
+
+func TestBotHandleGiftFinishShowsPreviewWhenDraftIsComplete(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingGiftPhoto)
+	setCompleteGiftDraft(manager, userID)
+	b.setGiftMessageIDs(userID, []int{40})
+
+	b.handleStatefulCallback(context.Background(), callbackWithMessage("finish_gift", userID, 500, 40))
+
+	if got := manager.GetState(userID); got != session.StateAwaitingGiftConfirmation {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftConfirmation)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("preview message count mismatch: got %d", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "Проверьте приз") {
+		t.Fatalf("preview text mismatch: %s", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("preview should include markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"confirm_gift", "restart_gift", "cancel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("preview callbacks mismatch: got %v, want %v", got, want)
+	}
+	if got, want := deletedMessageIDs(api), []int{40}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("deleted message IDs mismatch: got %v, want %v", got, want)
+	}
+}
+
+func TestBotHandleGiftLegacySkipPhotosUsesPreviewWhenDraftIsComplete(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingGiftPhoto)
+	setCompleteGiftDraft(manager, userID)
+
+	b.handleStatefulCallback(context.Background(), callbackWithMessage("skip_photos", userID, 500, 40))
+
+	if got := manager.GetState(userID); got != session.StateAwaitingGiftConfirmation {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftConfirmation)
+	}
+	if len(api.sentMessages) != 1 || !strings.Contains(api.sentMessages[0].Text, "Проверьте приз") {
+		t.Fatalf("preview message mismatch: %#v", api.sentMessages)
+	}
+}
+
+func TestBotHandleGiftConfirmOutsideConfirmationReturnsToDraftWithoutSaving(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingGiftPhoto)
+	setCompleteGiftDraft(manager, userID)
+
+	b.handleStatefulCallback(context.Background(), callbackWithMessage("confirm_gift", userID, 500, 40))
+
+	if got := manager.GetState(userID); got != session.StateAwaitingGiftPhoto {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftPhoto)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("draft message count mismatch: got %d", len(api.sentMessages))
+	}
+	if strings.Contains(api.sentMessages[0].Text, "Приз успешно добавлен") {
+		t.Fatalf("stale confirm should not save gift: %s", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("draft should include markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"finish_gift", "restart_gift", "cancel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("draft callbacks mismatch: got %v, want %v", got, want)
+	}
+}
+
+func TestBotHandleGiftRestartFromUnrelatedStateDoesNotMutateSession(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	userID := int64(123)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+	}
+
+	manager.SetState(userID, session.StateAwaitingResultLink)
+	manager.SetData(userID, "participant_id", uint(55))
+
+	b.handleStatefulCallback(context.Background(), callbackWithMessage("restart_gift", userID, 500, 40))
+
+	if got := manager.GetState(userID); got != session.StateAwaitingResultLink {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingResultLink)
+	}
+	if value, ok := manager.GetData(userID, "participant_id"); !ok || value != uint(55) {
+		t.Fatalf("session data mutated: value=%v ok=%t", value, ok)
+	}
+	if len(api.answerCallbacks) != 1 {
+		t.Fatalf("answer callback count mismatch: got %d", len(api.answerCallbacks))
+	}
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("unrelated restart should not send messages, got %#v", api.sentMessages)
+	}
+}
+
 func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
 	const miniappURL = "https://example.com/miniapp/gifts"
 	api := &telegramAPIFake{}
@@ -880,6 +1177,43 @@ func sentTextContains(api *telegramAPIFake, needle string) bool {
 		}
 	}
 	return false
+}
+
+func deletedMessageIDs(api *telegramAPIFake) []int {
+	ids := make([]int, 0, len(api.deleteMessages))
+	for _, msg := range api.deleteMessages {
+		ids = append(ids, msg.MessageID)
+	}
+	return ids
+}
+
+func giftAttachmentsFromTelegramSession(t *testing.T, manager *session.Manager, userID int64) []command.GiftAttachmentData {
+	t.Helper()
+
+	attachmentsRaw, ok := manager.GetData(userID, "gift_attachments")
+	if !ok {
+		t.Fatal("gift_attachments missing from session")
+	}
+	attachments, ok := attachmentsRaw.([]command.GiftAttachmentData)
+	if !ok {
+		t.Fatalf("gift_attachments type mismatch: got %T", attachmentsRaw)
+	}
+	return attachments
+}
+
+func attachmentFileIDs(attachments []command.GiftAttachmentData) []string {
+	ids := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		ids = append(ids, attachment.TelegramFileID)
+	}
+	return ids
+}
+
+func setCompleteGiftDraft(manager *session.Manager, userID int64) {
+	manager.SetData(userID, "event_id", uint(77))
+	manager.SetData(userID, "gift_gender", "all")
+	manager.SetData(userID, "gift_bike_type", "gravel")
+	manager.SetData(userID, "gift_description", "Bottle cage")
 }
 
 func mediaPhotoIDs(media []models.InputMedia) []string {

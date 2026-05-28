@@ -24,6 +24,7 @@ const (
 	giftMessageReplyGiftDescriptionStep
 	giftMessageReplyGiftPhotoStep
 	giftMessageReplyGiftPhotoAdded
+	giftMessageReplyGiftDraft
 	giftMessageReplyGiftConfirmationStep
 )
 
@@ -225,7 +226,7 @@ func giftMessageAction(state session.SessionState, msg *models.Message, mediaGro
 		if description != "" {
 			action.Description = description
 			action.ProcessDescription = true
-			action.Reply = giftMessageReplyGiftPhotoStep
+			action.Reply = giftMessageReplyGiftDraft
 			if hasPhoto {
 				action.PhotoFileID = photoFileID
 				action.ProcessPhoto = true
@@ -233,20 +234,18 @@ func giftMessageAction(state session.SessionState, msg *models.Message, mediaGro
 			break
 		}
 
-		action.Reply = giftMessageReplyGiftDescriptionStep
+		action.Reply = giftMessageReplyGiftDraft
 		action.MissingInput = true
-		if hasPhoto {
-			action.OutOfOrder = true
-		}
-
-	case session.StateAwaitingGiftPhoto:
-		action.Reply = giftMessageReplyGiftPhotoStep
 		if hasPhoto {
 			action.PhotoFileID = photoFileID
 			action.ProcessPhoto = true
-			if msg.MediaGroupID == "" {
-				action.Reply = giftMessageReplyGiftPhotoAdded
-			}
+		}
+
+	case session.StateAwaitingGiftPhoto:
+		action.Reply = giftMessageReplyGiftDraft
+		if hasPhoto {
+			action.PhotoFileID = photoFileID
+			action.ProcessPhoto = true
 		} else {
 			action.MissingInput = true
 			action.OutOfOrder = true

@@ -183,16 +183,7 @@ func (b *Bot) handleAddGiftCallback(ctx context.Context, callback *models.Callba
 		return
 	}
 
-	// Удаляем предыдущее сообщение
-	_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
-
-	// Сохраняем ID нового сообщения для последующего удаления
-	if markup != nil {
-		sentMsg, err := b.SendMessageWithKeyboard(ctx, msgRef.ChatID, text, *markup)
-		if err == nil && sentMsg != nil {
-			b.setGiftMessageIDs(callback.From.ID, []int{sentMsg.ID})
-		}
-	}
+	_, _ = b.replaceGiftControlMessage(ctx, callback.From.ID, msgRef.ChatID, text, markup, msgRef.MessageID)
 }
 
 // handleSubmitResultCallback обрабатывает начало отправки результата
@@ -319,83 +310,102 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		}
 
 	case session.StateAwaitingGiftGender:
+		giftHandler := handler.NewGiftHandler(
+			b.sessionManager,
+			b.eventRepo,
+			b.addGiftHandler,
+		)
 		if strings.HasPrefix(data, "gift_gender_") {
 			gender := strings.TrimPrefix(data, "gift_gender_")
-			giftHandler := handler.NewGiftHandler(
-				b.sessionManager,
-				b.eventRepo,
-				b.addGiftHandler,
-			)
 			text, markup := giftHandler.HandleGiftGenderSelection(ctx, userID, gender)
 			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 				return
 			}
 
-			// Удаляем предыдущее сообщение
-			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
-
-			// Отправляем новое сообщение и сохраняем его ID
-			if markup != nil {
-				sentMsg, err := b.SendMessageWithKeyboard(ctx, msgRef.ChatID, text, *markup)
-				if err == nil && sentMsg != nil {
-					b.appendGiftMessageID(userID, sentMsg.ID)
-				}
-			}
+			_, _ = b.replaceGiftControlMessage(ctx, userID, msgRef.ChatID, text, markup, msgRef.MessageID)
+			return
+		}
+		if data == "restart_gift" {
+			b.handleGiftRestartCallback(ctx, callback, msgRef, userID, giftHandler)
+			return
+		}
+		if isGiftFlowCallback(data) {
+			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
+			text, markup := giftHandler.GiftGenderPrompt(userID)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
 		}
 
 	case session.StateAwaitingGiftBikeType:
+		giftHandler := handler.NewGiftHandler(
+			b.sessionManager,
+			b.eventRepo,
+			b.addGiftHandler,
+		)
 		if strings.HasPrefix(data, "gift_bike_") {
 			bikeType := strings.TrimPrefix(data, "gift_bike_")
-			giftHandler := handler.NewGiftHandler(
-				b.sessionManager,
-				b.eventRepo,
-				b.addGiftHandler,
-			)
 			text, markup := giftHandler.HandleGiftBikeTypeSelection(ctx, userID, bikeType)
 			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
 				return
 			}
 
-			// Удаляем предыдущее сообщение
-			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
+			_, _ = b.replaceGiftControlMessage(ctx, userID, msgRef.ChatID, text, markup, msgRef.MessageID)
+			return
+		}
+		if data == "restart_gift" {
+			b.handleGiftRestartCallback(ctx, callback, msgRef, userID, giftHandler)
+			return
+		}
+		if isGiftFlowCallback(data) {
+			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
+			text, markup := giftHandler.GiftBikeTypePrompt(userID)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
+		}
 
-			// Отправляем новое сообщение и сохраняем его ID
-			if markup != nil {
-				sentMsg, err := b.SendMessageWithKeyboard(ctx, msgRef.ChatID, text, *markup)
-				if err == nil && sentMsg != nil {
-					b.appendGiftMessageID(userID, sentMsg.ID)
-				}
+	case session.StateAwaitingGiftDesc:
+		giftHandler := handler.NewGiftHandler(
+			b.sessionManager,
+			b.eventRepo,
+			b.addGiftHandler,
+		)
+		switch data {
+		case "finish_gift", "skip_photos":
+			log.Printf("WARN Gift finish rejected: user_id=%d state=%s callback_data=%s missing_key=gift_description", userID, state, data)
+			text, markup := giftHandler.GiftDraftPrompt(userID)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Добавьте описание", text, markup)
+		case "confirm_gift":
+			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
+			text, markup := giftHandler.GiftDraftPrompt(userID)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Сначала проверьте приз", text, markup)
+		case "restart_gift":
+			b.handleGiftRestartCallback(ctx, callback, msgRef, userID, giftHandler)
+		default:
+			if isGiftFlowCallback(data) {
+				log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
+				text, markup := giftHandler.GiftDraftPrompt(userID)
+				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
 			}
 		}
 
 	case session.StateAwaitingGiftPhoto:
-		if data == "finish_gift" || data == "skip_photos" {
-			giftHandler := handler.NewGiftHandler(
-				b.sessionManager,
-				b.eventRepo,
-				b.addGiftHandler,
-			)
-			messageIDs := b.giftMessageIDs(userID)
-			text, markup := giftHandler.PreviewGift(userID)
-			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
-				return
-			}
-
-			// Удаляем все промежуточные сообщения от бота (кроме фото)
-			for _, msgID := range messageIDs {
-				if msgID == msgRef.MessageID {
-					continue
-				}
-				_ = b.DeleteMessage(ctx, msgRef.ChatID, msgID)
-			}
-
-			// Удаляем текущее сообщение с кнопками
-			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
-
-			// Отправляем сводку с явным подтверждением перед сохранением.
-			sentMsg, err := b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, markup)
-			if err == nil && sentMsg != nil && markup != nil {
-				b.setGiftMessageIDs(userID, []int{sentMsg.ID})
+		giftHandler := handler.NewGiftHandler(
+			b.sessionManager,
+			b.eventRepo,
+			b.addGiftHandler,
+		)
+		switch data {
+		case "finish_gift", "skip_photos":
+			b.handleGiftFinishCallback(ctx, callback, msgRef, userID, giftHandler)
+		case "confirm_gift":
+			log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
+			text, markup := giftHandler.GiftDraftPrompt(userID)
+			b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Сначала проверьте приз", text, markup)
+		case "restart_gift":
+			b.handleGiftRestartCallback(ctx, callback, msgRef, userID, giftHandler)
+		default:
+			if isGiftFlowCallback(data) {
+				log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
+				text, markup := giftHandler.GiftDraftPrompt(userID)
+				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Продолжите добавление", text, markup)
 			}
 		}
 
@@ -435,29 +445,65 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 			_, _ = b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, b.getStartKeyboard(ctx, userID))
 
 		case "restart_gift":
-			messageIDs := b.giftMessageIDs(userID)
-			text, markup := giftHandler.RestartAddGift(ctx, userID)
-			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
-				return
-			}
-			for _, msgID := range messageIDs {
-				if msgID == msgRef.MessageID {
-					continue
-				}
-				_ = b.DeleteMessage(ctx, msgRef.ChatID, msgID)
-			}
-			_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
-			sentMsg, err := b.sendWithOptionalKeyboard(ctx, msgRef.ChatID, text, markup)
-			if err == nil && sentMsg != nil && markup != nil {
-				b.setGiftMessageIDs(userID, []int{sentMsg.ID})
-			}
+			b.handleGiftRestartCallback(ctx, callback, msgRef, userID, giftHandler)
 
 		default:
+			if isGiftFlowCallback(data) {
+				log.Printf("INFO Gift stale callback recovered: user_id=%d callback_data=%s state=%s", userID, data, state)
+				text, markup := giftHandler.GiftConfirmationPrompt(userID)
+				b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Подтвердите приз", text, markup)
+				return
+			}
 			b.logDebug("Unsupported gift confirmation callback: user_id=%d data=%s", userID, data)
 		}
 
 	default:
+		if isGiftFlowCallback(data) {
+			log.Printf("INFO Gift stale callback ignored: user_id=%d callback_data=%s state=%s", userID, data, state)
+			_ = b.AnswerCallback(ctx, callback.ID, "Сначала откройте меню")
+			return
+		}
 		b.logDebug("Unsupported Telegram callback state: user_id=%d state=%s data=%s", userID, state, data)
+	}
+}
+
+func (b *Bot) handleGiftFinishCallback(ctx context.Context, callback *models.CallbackQuery, msgRef callbackMessageRef, userID int64, giftHandler *handler.GiftHandler) {
+	data := callback.Data
+	if missingKey, missing := giftHandler.GiftDraftMissingRequiredKey(userID); missing {
+		log.Printf("WARN Gift finish rejected: user_id=%d state=%s callback_data=%s missing_key=%s", userID, b.sessionManager.GetState(userID), data, missingKey)
+		text, markup := giftHandler.GiftDraftPrompt(userID)
+		b.answerAndReplaceGiftControl(ctx, callback, msgRef, userID, "Добавьте описание", text, markup)
+		return
+	}
+
+	text, markup := giftHandler.PreviewGift(userID)
+	if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
+		return
+	}
+	_, _ = b.replaceGiftControlMessage(ctx, userID, msgRef.ChatID, text, markup, msgRef.MessageID)
+}
+
+func (b *Bot) handleGiftRestartCallback(ctx context.Context, callback *models.CallbackQuery, msgRef callbackMessageRef, userID int64, giftHandler *handler.GiftHandler) {
+	text, markup := giftHandler.RestartAddGift(ctx, userID)
+	if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
+		return
+	}
+	_, _ = b.replaceGiftControlMessage(ctx, userID, msgRef.ChatID, text, markup, msgRef.MessageID)
+}
+
+func (b *Bot) answerAndReplaceGiftControl(ctx context.Context, callback *models.CallbackQuery, msgRef callbackMessageRef, userID int64, answerText string, text string, markup *models.InlineKeyboardMarkup) {
+	if err := b.AnswerCallback(ctx, callback.ID, answerText); err != nil {
+		return
+	}
+	_, _ = b.replaceGiftControlMessage(ctx, userID, msgRef.ChatID, text, markup, msgRef.MessageID)
+}
+
+func isGiftFlowCallback(data string) bool {
+	switch data {
+	case "finish_gift", "skip_photos", "confirm_gift", "restart_gift":
+		return true
+	default:
+		return strings.HasPrefix(data, "gift_gender_") || strings.HasPrefix(data, "gift_bike_")
 	}
 }
 
@@ -742,6 +788,8 @@ func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID
 	case giftMessageReplyGiftPhotoAdded:
 		replyText = giftHandler.GiftPhotoAddedText(userID, photoCount)
 		replyMarkup = nil
+	case giftMessageReplyGiftDraft:
+		replyText, replyMarkup = giftHandler.GiftDraftPrompt(userID)
 	case giftMessageReplyGiftConfirmationStep:
 		replyText, replyMarkup = giftHandler.GiftConfirmationPrompt(userID)
 	case giftMessageReplyNone:
@@ -758,10 +806,7 @@ func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID
 		return
 	}
 
-	sentMsg, err := b.sendWithOptionalKeyboard(ctx, chatID, replyText, replyMarkup)
-	if err == nil && sentMsg != nil {
-		b.appendGiftMessageID(userID, sentMsg.ID)
-	}
+	_, _ = b.replaceGiftControlMessage(ctx, userID, chatID, replyText, replyMarkup)
 }
 
 // getStartKeyboard возвращает стартовую клавиатуру с основными действиями
@@ -836,6 +881,40 @@ func (b *Bot) sendWithOptionalKeyboard(ctx context.Context, chatID int64, text s
 	return b.SendMessage(ctx, chatID, text)
 }
 
+func (b *Bot) replaceGiftControlMessage(ctx context.Context, userID int64, chatID int64, text string, markup *models.InlineKeyboardMarkup, extraDeleteMessageIDs ...int) (*models.Message, error) {
+	b.deleteGiftControlMessages(ctx, userID, chatID, extraDeleteMessageIDs...)
+
+	sentMsg, err := b.sendWithOptionalKeyboard(ctx, chatID, text, markup)
+	if err != nil {
+		return nil, err
+	}
+	if sentMsg != nil && markup != nil {
+		b.setGiftMessageIDs(userID, []int{sentMsg.ID})
+		return sentMsg, nil
+	}
+
+	b.setGiftMessageIDs(userID, []int{})
+	return sentMsg, nil
+}
+
+func (b *Bot) deleteGiftControlMessages(ctx context.Context, userID int64, chatID int64, extraMessageIDs ...int) {
+	messageIDs := append([]int{}, b.giftMessageIDs(userID)...)
+	messageIDs = append(messageIDs, extraMessageIDs...)
+	seen := make(map[int]struct{}, len(messageIDs))
+	for _, messageID := range messageIDs {
+		if messageID <= 0 {
+			continue
+		}
+		if _, ok := seen[messageID]; ok {
+			continue
+		}
+		seen[messageID] = struct{}{}
+		_ = b.DeleteMessage(ctx, chatID, messageID)
+	}
+
+	b.setGiftMessageIDs(userID, []int{})
+}
+
 func (b *Bot) setGiftMessageIDs(userID int64, messageIDs []int) {
 	b.sessionManager.SetData(userID, "gift_message_ids", messageIDs)
 }
@@ -854,7 +933,7 @@ func (b *Bot) giftMessageIDs(userID int64) []int {
 
 	messageIDs, ok := messageIDsRaw.([]int)
 	if !ok {
-		log.Printf("Invalid gift message IDs state: user_id=%d", userID)
+		log.Printf("WARN Invalid gift message IDs state: user_id=%d state=%s", userID, b.sessionManager.GetState(userID))
 		return nil
 	}
 

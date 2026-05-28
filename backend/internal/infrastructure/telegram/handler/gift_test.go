@@ -41,7 +41,7 @@ func TestGiftHandlerStartAddGiftUsesEventTelegramTexts(t *testing.T) {
 	}
 }
 
-func TestGiftHandlerDefaultDescriptionPromptMentionsInputField(t *testing.T) {
+func TestGiftHandlerDefaultDescriptionPromptMentionsPhotoCaptionAndBottomButtons(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	h := NewGiftHandler(manager, nil, nil)
 
@@ -50,8 +50,10 @@ func TestGiftHandlerDefaultDescriptionPromptMentionsInputField(t *testing.T) {
 	if markup == nil {
 		t.Fatal("markup mismatch: got nil")
 	}
-	if !strings.Contains(text, "поле ввода ниже") {
-		t.Fatalf("text should mention input field, got: %s", text)
+	for _, want := range []string{"фото с подписью", "последнем сообщении снизу"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text should contain %q, got: %s", want, text)
+		}
 	}
 }
 

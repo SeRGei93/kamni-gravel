@@ -190,7 +190,7 @@ func TestLargestPhotoFileID(t *testing.T) {
 }
 
 func TestGiftMessageAction(t *testing.T) {
-	t.Run("description caption with photo processes both and asks for photo step", func(t *testing.T) {
+	t.Run("description caption with photo processes both and asks for draft step", func(t *testing.T) {
 		action := giftMessageAction(session.StateAwaitingGiftDesc, &models.Message{
 			Caption: "  Bottle cage  ",
 			Photo: []models.PhotoSize{
@@ -208,24 +208,27 @@ func TestGiftMessageAction(t *testing.T) {
 		if action.PhotoFileID != "photo-large" {
 			t.Fatalf("photo file id mismatch: got %q", action.PhotoFileID)
 		}
-		if action.Reply != giftMessageReplyGiftPhotoStep {
-			t.Fatalf("reply mismatch: got %v, want gift photo step", action.Reply)
+		if action.Reply != giftMessageReplyGiftDraft {
+			t.Fatalf("reply mismatch: got %v, want gift draft", action.Reply)
 		}
 	})
 
-	t.Run("description photo without caption keeps description state", func(t *testing.T) {
+	t.Run("description photo without caption stores photo and keeps description required", func(t *testing.T) {
 		action := giftMessageAction(session.StateAwaitingGiftDesc, &models.Message{
 			Photo: []models.PhotoSize{{FileID: "photo", Width: 20, Height: 20}},
 		}, false)
 
-		if action.ProcessDescription || action.ProcessPhoto {
-			t.Fatalf("action should not process incomplete description input: %#v", action)
+		if action.ProcessDescription || !action.ProcessPhoto {
+			t.Fatalf("action should process only photo for incomplete description input: %#v", action)
 		}
-		if action.Reply != giftMessageReplyGiftDescriptionStep {
-			t.Fatalf("reply mismatch: got %v, want gift description step", action.Reply)
+		if action.PhotoFileID != "photo" {
+			t.Fatalf("photo file id mismatch: got %q", action.PhotoFileID)
 		}
-		if !action.MissingInput || !action.OutOfOrder {
-			t.Fatalf("action should flag missing/out-of-order input: %#v", action)
+		if action.Reply != giftMessageReplyGiftDraft {
+			t.Fatalf("reply mismatch: got %v, want gift draft", action.Reply)
+		}
+		if !action.MissingInput || action.OutOfOrder {
+			t.Fatalf("action should flag missing description without out-of-order input: %#v", action)
 		}
 	})
 
@@ -258,8 +261,8 @@ func TestGiftMessageAction(t *testing.T) {
 		if !action.ProcessPhoto {
 			t.Fatalf("action should process photo: %#v", action)
 		}
-		if action.Reply != giftMessageReplyGiftPhotoAdded {
-			t.Fatalf("reply mismatch: got %v, want photo added", action.Reply)
+		if action.Reply != giftMessageReplyGiftDraft {
+			t.Fatalf("reply mismatch: got %v, want gift draft", action.Reply)
 		}
 	})
 

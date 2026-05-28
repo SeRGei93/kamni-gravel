@@ -125,7 +125,7 @@ func (h *GiftHandler) HandleGiftDescription(ctx context.Context, userID int64, d
 	h.sessionManager.SetData(userID, "gift_description", description)
 	h.sessionManager.SetState(userID, session.StateAwaitingGiftPhoto)
 
-	return h.GiftPhotoPrompt(userID)
+	return h.GiftDraftPrompt(userID)
 }
 
 // HandleGiftPhoto обрабатывает фото подарка
@@ -239,24 +239,138 @@ func (h *GiftHandler) GiftBikeTypePrompt(userID int64) (string, *models.InlineKe
 
 // GiftDescriptionPrompt возвращает текущую подсказку ввода описания подарка без изменения сессии.
 func (h *GiftHandler) GiftDescriptionPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
-	texts := h.giftTexts(userID)
-	text := texts.GiftDescriptionStep
-	keyboard := keyboard.CancelMenu()
-	return text, &keyboard
+	return h.GiftDraftPrompt(userID)
 }
 
 // GiftPhotoPrompt возвращает текущую подсказку добавления фото подарка без изменения сессии.
 func (h *GiftHandler) GiftPhotoPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
+	return h.GiftDraftPrompt(userID)
+}
+
+// GiftDraftPrompt возвращает текущую подсказку черновика подарка без изменения сессии.
+func (h *GiftHandler) GiftDraftPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
+	status := h.giftDraftStatus(userID)
 	texts := h.giftTexts(userID)
-	text := texts.GiftPhotoStep
-	keyboard := keyboard.GiftPhotoMenu()
-	return text, &keyboard
+	stepText := texts.GiftDescriptionStep
+	if status.hasDescription {
+		stepText = texts.GiftPhotoStep
+	}
+
+	markup := keyboard.GiftDraftMenu(status.hasDescription)
+	return buildGiftDraftText(stepText, status), &markup
 }
 
 // GiftConfirmationPrompt возвращает подсказку подтверждения без изменения сессии.
 func (h *GiftHandler) GiftConfirmationPrompt(userID int64) (string, *models.InlineKeyboardMarkup) {
 	markup := keyboard.GiftConfirmationMenu()
 	return "Приз уже заполнен. Подтвердите отправку кнопками ниже или отмените добавление.", &markup
+}
+
+// GiftDraftMissingRequiredKey возвращает первый отсутствующий или повреждённый ключ черновика.
+func (h *GiftHandler) GiftDraftMissingRequiredKey(userID int64) (string, bool) {
+	state := h.sessionManager.GetState(userID)
+
+	eventIDRaw, ok := h.sessionManager.GetData(userID, "event_id")
+	if !ok {
+		return "event_id", true
+	}
+	if _, ok := giftEventIDFromSession(eventIDRaw); !ok {
+		log.Printf("Invalid gift session data: user_id=%d state=%s key=event_id type=%T", userID, state, eventIDRaw)
+		return "event_id", true
+	}
+
+	genderRaw, ok := h.sessionManager.GetData(userID, "gift_gender")
+	if !ok {
+		return "gift_gender", true
+	}
+	gender, ok := genderRaw.(string)
+	if !ok || !isKnownGiftGender(gender) {
+		log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_gender type=%T", userID, state, genderRaw)
+		return "gift_gender", true
+	}
+
+	bikeTypeRaw, ok := h.sessionManager.GetData(userID, "gift_bike_type")
+	if !ok {
+		return "gift_bike_type", true
+	}
+	bikeType, ok := bikeTypeRaw.(string)
+	if !ok || !isKnownGiftBikeType(bikeType) {
+		log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_bike_type type=%T", userID, state, bikeTypeRaw)
+		return "gift_bike_type", true
+	}
+
+	descriptionRaw, ok := h.sessionManager.GetData(userID, "gift_description")
+	if !ok {
+		return "gift_description", true
+	}
+	description, ok := descriptionRaw.(string)
+	if !ok || strings.TrimSpace(description) == "" {
+		log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_description type=%T", userID, state, descriptionRaw)
+		return "gift_description", true
+	}
+
+	attachmentsRaw, ok := h.sessionManager.GetData(userID, "gift_attachments")
+	if !ok {
+		return "", false
+	}
+	attachments, ok := attachmentsRaw.([]command.GiftAttachmentData)
+	if !ok {
+		log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_attachments type=%T", userID, state, attachmentsRaw)
+		return "gift_attachments", true
+	}
+	for index, attachment := range attachments {
+		if !isKnownGiftAttachmentFileType(attachment.FileType) {
+			log.Printf("Invalid gift attachment file type in session: user_id=%d state=%s attachment_index=%d file_type=%s", userID, state, index, attachment.FileType)
+			return "gift_attachments", true
+		}
+	}
+
+	return "", false
+}
+
+type giftDraftStatus struct {
+	gender         string
+	bikeType       string
+	hasDescription bool
+	photoCount     int
+}
+
+func (h *GiftHandler) giftDraftStatus(userID int64) giftDraftStatus {
+	state := h.sessionManager.GetState(userID)
+	status := giftDraftStatus{
+		gender:   "не выбран",
+		bikeType: "не выбран",
+	}
+
+	if genderRaw, ok := h.sessionManager.GetData(userID, "gift_gender"); ok {
+		gender, ok := genderRaw.(string)
+		if !ok || !isKnownGiftGender(gender) {
+			log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_gender type=%T", userID, state, genderRaw)
+		} else {
+			status.gender = giftGenderLabel(gender)
+		}
+	}
+
+	if bikeTypeRaw, ok := h.sessionManager.GetData(userID, "gift_bike_type"); ok {
+		bikeType, ok := bikeTypeRaw.(string)
+		if !ok || !isKnownGiftBikeType(bikeType) {
+			log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_bike_type type=%T", userID, state, bikeTypeRaw)
+		} else {
+			status.bikeType = giftBikeTypeLabel(bikeType)
+		}
+	}
+
+	if descriptionRaw, ok := h.sessionManager.GetData(userID, "gift_description"); ok {
+		description, ok := descriptionRaw.(string)
+		if !ok {
+			log.Printf("Invalid gift session data: user_id=%d state=%s key=gift_description type=%T", userID, state, descriptionRaw)
+		} else if strings.TrimSpace(description) != "" {
+			status.hasDescription = true
+		}
+	}
+
+	status.photoCount = h.giftPhotoCount(userID)
+	return status
 }
 
 // PreviewGift показывает сводку подарка и переводит сессию в ожидание подтверждения.
@@ -422,6 +536,36 @@ func buildGiftPreviewText(data giftSessionData, texts entity.EventTelegramTexts)
 		"photo_count": photoText,
 		"photo_line":  photoText,
 	})
+}
+
+func buildGiftDraftText(stepText string, status giftDraftStatus) string {
+	descriptionStatus := "нужно отправить"
+	if status.hasDescription {
+		descriptionStatus = "добавлено"
+	}
+
+	actionHint := "Отправьте описание текстом или фото с подписью. Фото без подписи прикрепится к черновику, но описание всё равно нужно будет отправить."
+	if status.hasDescription {
+		actionHint = "Можно отправить ещё фото. Когда всё готово, нажмите «Готово» в последнем сообщении снизу."
+	}
+
+	return fmt.Sprintf(`%s
+
+Черновик приза:
+• Пол участника: %s
+• Тип велосипеда: %s
+• Описание: %s
+• Фото: %d
+
+%s
+После каждого сообщения используйте кнопки в последнем сообщении снизу.`,
+		stepText,
+		status.gender,
+		status.bikeType,
+		descriptionStatus,
+		status.photoCount,
+		actionHint,
+	)
 }
 
 func (h *GiftHandler) giftTexts(userID int64) entity.EventTelegramTexts {
