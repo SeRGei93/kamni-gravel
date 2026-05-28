@@ -101,7 +101,7 @@ func TestAdminGiftNotificationTextTruncatesOnlyDescriptionToCaptionLimit(t *test
 }
 
 func TestAdminGiftNotificationHTMLTextAddsHiddenMiniappLinkAndEscapesData(t *testing.T) {
-	b := &Bot{miniappURL: "https://example.com/miniapp/gifts?event=1&tab=all"}
+	b := &Bot{}
 
 	text := b.adminGiftNotificationHTMLText(&entity.Gift{
 		UserID:         12345,
@@ -109,17 +109,41 @@ func TestAdminGiftNotificationHTMLTextAddsHiddenMiniappLinkAndEscapesData(t *tes
 		GenderFilter:   "female",
 		BikeTypeFilter: "road",
 		User:           &entity.User{ID: 12345, Username: "alex&co", FirstName: "Alex", LastName: "<Rider>"},
-	}, telegramCaptionLimit, true)
+	}, telegramCaptionLimit, "https://t.me/GravelBot?startapp")
 
 	for _, token := range []string{
 		"От: Alex &lt;Rider&gt; (@alex&amp;co)",
 		"Описание: Фляга &lt;тест&gt; &amp; ремешок",
 		"Гендер: 👩 Женский",
 		"Велосипед: 🚴 Шоссе",
-		`<a href="https://example.com/miniapp/gifts?event=1&amp;tab=all">призовой фонд</a>`,
+		`<a href="https://t.me/GravelBot?startapp">призовой фонд</a>`,
 	} {
 		if !strings.Contains(text, token) {
 			t.Fatalf("html notification text missing token %q in %q", token, text)
 		}
+	}
+}
+
+func TestAdminGiftMiniappTelegramLinkUsesBotUsername(t *testing.T) {
+	b := &Bot{
+		botUsername: "@GravelBot",
+		miniappURL:  "https://example.com/miniapp/gifts",
+	}
+
+	link, ok := b.adminGiftMiniappTelegramLink()
+	if !ok {
+		t.Fatal("miniapp Telegram link should be available")
+	}
+	if link != "https://t.me/GravelBot?startapp" {
+		t.Fatalf("miniapp Telegram link mismatch: got %q", link)
+	}
+}
+
+func TestAdminGiftMiniappTelegramLinkMissingUsername(t *testing.T) {
+	b := &Bot{miniappURL: "https://example.com/miniapp/gifts"}
+
+	link, ok := b.adminGiftMiniappTelegramLink()
+	if ok || link != "" {
+		t.Fatalf("miniapp Telegram link should be unavailable without bot username, ok=%t link=%q", ok, link)
 	}
 }

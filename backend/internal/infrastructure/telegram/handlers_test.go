@@ -324,6 +324,7 @@ func TestBotNotifyAdminAboutGiftSendsSinglePhotoNotification(t *testing.T) {
 	b := &Bot{
 		api:         api,
 		adminChatID: 900,
+		botUsername: "GravelBot",
 		miniappURL:  miniappURL,
 	}
 	gift := &entity.Gift{
@@ -475,6 +476,7 @@ func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
 	b := &Bot{
 		api:         api,
 		adminChatID: 900,
+		botUsername: "GravelBot",
 		miniappURL:  miniappURL,
 	}
 	gift := &entity.Gift{
@@ -512,7 +514,7 @@ func TestBotNotifyAdminAboutGiftSendsMediaGroupForMultiplePhotos(t *testing.T) {
 	if first.ParseMode != models.ParseModeHTML {
 		t.Fatalf("first media parse mode mismatch: got %q, want %q", first.ParseMode, models.ParseModeHTML)
 	}
-	wantLink := `<a href="https://example.com/miniapp/gifts">призовой фонд</a>`
+	wantLink := `<a href="https://t.me/GravelBot?startapp">призовой фонд</a>`
 	if !strings.Contains(first.Caption, wantLink) {
 		t.Fatalf("first media caption missing hidden miniapp link %q in %q", wantLink, first.Caption)
 	}

@@ -544,7 +544,26 @@ func (b *Bot) adminGiftMediaGroupCaption(gift *entity.Gift) (string, models.Pars
 		return b.adminGiftNotificationText(gift, telegramCaptionLimit), ""
 	}
 
-	return b.adminGiftNotificationHTMLText(gift, telegramCaptionLimit, true), models.ParseModeHTML
+	miniappLink, ok := b.adminGiftMiniappTelegramLink()
+	if !ok {
+		return b.adminGiftNotificationText(gift, telegramCaptionLimit), ""
+	}
+
+	return b.adminGiftNotificationHTMLText(gift, telegramCaptionLimit, miniappLink), models.ParseModeHTML
+}
+
+func (b *Bot) adminGiftMiniappTelegramLink() (string, bool) {
+	if b == nil || strings.TrimSpace(b.miniappURL) == "" {
+		return "", false
+	}
+
+	username := strings.TrimPrefix(strings.TrimSpace(b.botUsername), "@")
+	if username == "" {
+		log.Printf("WARN Admin gift miniapp Telegram link unavailable: reason=missing_bot_username")
+		return "", false
+	}
+
+	return fmt.Sprintf("https://t.me/%s?startapp", username), true
 }
 
 func giftPhotoFileIDs(gift *entity.Gift) []string {
@@ -630,15 +649,15 @@ func (b *Bot) adminGiftNotificationText(gift *entity.Gift, limit int) string {
 	return prefix + description + suffix
 }
 
-func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, includeMiniappLink bool) string {
+func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, miniappLink string) string {
 	if limit <= 0 {
 		limit = telegramTextLimit
 	}
 
 	if gift == nil {
 		text := "Новый приз\n\nДанные приза недоступны."
-		if includeMiniappLink {
-			text += b.adminGiftMiniappHTMLSuffix()
+		if miniappLink != "" {
+			text += b.adminGiftMiniappHTMLSuffix(miniappLink)
 		}
 		return truncateTelegramText(text, limit)
 	}
@@ -657,8 +676,8 @@ func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, includ
 		html.EscapeString(adminGiftGenderLabel(gift.GenderFilter)),
 		html.EscapeString(adminGiftBikeTypeLabel(gift.BikeTypeFilter)),
 	)
-	if includeMiniappLink {
-		suffix += b.adminGiftMiniappHTMLSuffix()
+	if miniappLink != "" {
+		suffix += b.adminGiftMiniappHTMLSuffix(miniappLink)
 	}
 
 	descriptionLimit := limit - runeLen(prefix) - runeLen(suffix)
@@ -670,14 +689,14 @@ func (b *Bot) adminGiftNotificationHTMLText(gift *entity.Gift, limit int, includ
 	return prefix + description + suffix
 }
 
-func (b *Bot) adminGiftMiniappHTMLSuffix() string {
-	if b == nil || strings.TrimSpace(b.miniappURL) == "" {
+func (b *Bot) adminGiftMiniappHTMLSuffix(miniappLink string) string {
+	if strings.TrimSpace(miniappLink) == "" {
 		return ""
 	}
 
 	return fmt.Sprintf(
 		"\n\n<a href=\"%s\">%s</a>",
-		html.EscapeString(b.miniappURL),
+		html.EscapeString(miniappLink),
 		adminGiftMiniappLabel,
 	)
 }
