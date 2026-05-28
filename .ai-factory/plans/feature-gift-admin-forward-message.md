@@ -157,7 +157,7 @@ It must not show internal technical data such as gift ID, event ID, review statu
 For a gift with one photo, admins receive one photo message with a caption similar to:
 
 ```text
-Новый подарок на проверку
+Новый приз
 
 От: Alex Rider (@alex)
 Описание: Лабуба за 1 и 10 место
@@ -165,7 +165,9 @@ For a gift with one photo, admins receive one photo message with a caption simil
 Велосипед: 🚴 Шоссе
 ```
 
-For a gift with multiple photos, admins receive a media group containing all usable photos, with the same caption on the first photo and no separate text summary after the album.
+When `MINIAPP_URL` is configured, one-photo and text-only notifications include a WebApp button named `призовой фонд`.
+
+For a gift with multiple photos, admins receive a media group containing all usable photos, with the same caption on the first photo and no separate text summary after the album. When `MINIAPP_URL` is configured, the first caption includes a hidden HTML link under the text `призовой фонд`.
 
 For a gift without usable photos, admins receive the same content as one text message.
 
