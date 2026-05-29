@@ -10,6 +10,7 @@ import (
 
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/infrastructure/http/middleware"
 	"gravel_bot/internal/infrastructure/http/response"
 	"gravel_bot/internal/pkg/jwt"
 )
@@ -141,8 +142,9 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 // Me возвращает информацию о текущем пользователе
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	// Получаем claims из контекста (установлены Auth middleware)
-	claims, ok := r.Context().Value("user").(*jwt.Claims)
+	claims, ok := middleware.GetUserFromContext(r.Context())
 	if !ok {
+		log.Printf("Auth user claims missing from request context: path=%s", r.URL.Path)
 		response.Unauthorized(w, "User not found in context")
 		return
 	}
