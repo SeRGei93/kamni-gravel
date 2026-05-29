@@ -272,7 +272,8 @@ func prizeDistributionE2EAssertAssignmentInvariants(
 			t.Fatalf("participant %d is missing from fixture", row.ParticipantID)
 		}
 
-		var rowPriority *giftMatchPriority
+		var rowBestPriority *giftMatchPriority
+		rowPriorities := make(map[uint]giftMatchPriority)
 		for _, assignment := range row.MatchedGiftAssignments {
 			if assignment.ParticipantID != row.ParticipantID {
 				t.Fatalf("assignment participant_id = %d, row participant_id = %d", assignment.ParticipantID, row.ParticipantID)
@@ -305,14 +306,23 @@ func prizeDistributionE2EAssertAssignmentInvariants(
 			if !ok {
 				t.Fatalf("gift %d could not be classified", gift.ID)
 			}
-			if rowPriority == nil {
-				rowPriority = &priority
-			} else if *rowPriority != priority {
-				t.Fatalf("participant %d received mixed-priority assignments", row.ParticipantID)
+			rowPriorities[gift.ID] = priority
+			if rowBestPriority == nil || priority < *rowBestPriority {
+				priorityCopy := priority
+				rowBestPriority = &priorityCopy
 			}
 
 			assignmentsByGift[gift.ID]++
 			assignmentsByVariant[variant]++
+		}
+		for _, assignment := range row.MatchedGiftAssignments {
+			gift := assignment.Gift
+			if giftPlaceRuleForDistribution(gift).HasPlaceConstraint() {
+				continue
+			}
+			if rowBestPriority != nil && rowPriorities[gift.ID] != *rowBestPriority {
+				t.Fatalf("participant %d received lower-priority no-place gift %d", row.ParticipantID, gift.ID)
+			}
 		}
 	}
 

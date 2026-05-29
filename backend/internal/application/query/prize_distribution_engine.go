@@ -110,7 +110,7 @@ func (h *GetPrizeDistributionHandler) distributePrizeSlots(
 
 			giftParticipantUsed := make(map[uint]bool)
 			for _, slot := range prizeRuleSlots(rule, len(eligible)) {
-				assignment, unassigned := assignPrizeRuleSlot(gift, slot, eligible, blockedByHigherPriority, giftParticipantUsed)
+				assignment, unassigned := assignPrizeRuleSlot(gift, slot, eligible, giftParticipantUsed)
 				if unassigned != nil {
 					unassignedSlots = append(unassignedSlots, unassigned)
 					continue
@@ -367,19 +367,18 @@ func assignPrizeRuleSlot(
 	gift *entity.Gift,
 	slot prizeRuleSlot,
 	eligible []*prizeEligibleContext,
-	blockedByHigherPriority map[uint]bool,
 	giftParticipantUsed map[uint]bool,
 ) (*PrizeGiftAssignment, *UnassignedPrizeSlot) {
 	if slot.direct {
 		candidate := eligibleByRank(eligible, slot.targetRank)
-		if candidate != nil && prizeCandidateAvailable(candidate, blockedByHigherPriority, giftParticipantUsed) {
+		if candidate != nil && prizeSlotCandidateAvailable(candidate, giftParticipantUsed) {
 			return newPrizeGiftAssignment(gift, slot, candidate, false, ""), nil
 		}
 		return nil, newUnassignedPrizeSlot(gift, slot, "target_unavailable")
 	}
 
 	candidate := eligibleByRank(eligible, slot.targetRank)
-	if candidate != nil && prizeCandidateAvailable(candidate, blockedByHigherPriority, giftParticipantUsed) {
+	if candidate != nil && prizeSlotCandidateAvailable(candidate, giftParticipantUsed) {
 		return newPrizeGiftAssignment(gift, slot, candidate, false, ""), nil
 	}
 
@@ -387,7 +386,7 @@ func assignPrizeRuleSlot(
 	if candidate == nil {
 		fallbackReason = "target_out_of_range"
 	}
-	fallbackCandidate := nearestFallbackPrizeCandidate(eligible, slot.targetRank, blockedByHigherPriority, giftParticipantUsed)
+	fallbackCandidate := nearestFallbackPrizeCandidate(eligible, slot.targetRank, giftParticipantUsed)
 	if fallbackCandidate == nil {
 		return nil, newUnassignedPrizeSlot(gift, slot, fallbackReason)
 	}
@@ -411,20 +410,27 @@ func prizeCandidateAvailable(
 	return !blockedByHigherPriority[participantID] && !giftParticipantUsed[participantID]
 }
 
+func prizeSlotCandidateAvailable(
+	candidate *prizeEligibleContext,
+	giftParticipantUsed map[uint]bool,
+) bool {
+	participantID := candidate.participant.ID
+	return !giftParticipantUsed[participantID]
+}
+
 func nearestFallbackPrizeCandidate(
 	eligible []*prizeEligibleContext,
 	targetRank int,
-	blockedByHigherPriority map[uint]bool,
 	giftParticipantUsed map[uint]bool,
 ) *prizeEligibleContext {
 	for distance := 1; distance <= len(eligible)+targetRank; distance++ {
 		higherRank := targetRank + distance
-		if candidate := eligibleByRank(eligible, higherRank); candidate != nil && prizeCandidateAvailable(candidate, blockedByHigherPriority, giftParticipantUsed) {
+		if candidate := eligibleByRank(eligible, higherRank); candidate != nil && prizeSlotCandidateAvailable(candidate, giftParticipantUsed) {
 			return candidate
 		}
 
 		lowerRank := targetRank - distance
-		if candidate := eligibleByRank(eligible, lowerRank); candidate != nil && prizeCandidateAvailable(candidate, blockedByHigherPriority, giftParticipantUsed) {
+		if candidate := eligibleByRank(eligible, lowerRank); candidate != nil && prizeSlotCandidateAvailable(candidate, giftParticipantUsed) {
 			return candidate
 		}
 	}

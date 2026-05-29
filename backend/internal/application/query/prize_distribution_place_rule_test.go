@@ -325,6 +325,143 @@ func TestPrizeDistributionRequiresAllGiftCriteria(t *testing.T) {
 	})
 }
 
+func TestPrizeDistributionKeepsPlaceSlotsWhenResultHasCriteriaGift(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(2)
+	setPrizeResultCriteria(results, 1, 1)
+	criteriaGift := prizeDistributionApprovedGift(10)
+	criteriaGift.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	placeGift := prizeDistributionApprovedGift(20)
+	placeGift.PlaceRule = mustGiftPlaceRulePlaces(t, []int{1})
+	genericGift := prizeDistributionApprovedGift(30)
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{criteriaGift, placeGift, genericGift}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		1: {
+			{giftID: 10, ruleType: "none", assignedRank: 1},
+			{giftID: 20, ruleType: "places", targetRank: 1, assignedRank: 1},
+		},
+		2: {{giftID: 30, ruleType: "none", assignedRank: 2}},
+	})
+}
+
+func TestPrizeDistributionKeepsMultiplePlaceSlotsWhenTargetsHaveCriteriaGifts(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(4)
+	setPrizeResultCriteria(results, 1, 1)
+	setPrizeResultCriteria(results, 2, 2)
+	criteriaGift1 := prizeDistributionApprovedGift(10)
+	criteriaGift1.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	criteriaGift2 := prizeDistributionApprovedGift(20)
+	criteriaGift2.Criteria = []*entity.Criteria{prizeDistributionCriteria(2)}
+	placeGift := prizeDistributionApprovedGift(30)
+	placeGift.PlaceRule = mustGiftPlaceRulePlaces(t, []int{1, 2, 3})
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{criteriaGift1, criteriaGift2, placeGift}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		1: {
+			{giftID: 10, ruleType: "none", assignedRank: 1},
+			{giftID: 30, ruleType: "places", targetRank: 1, assignedRank: 1},
+		},
+		2: {
+			{giftID: 20, ruleType: "none", assignedRank: 1},
+			{giftID: 30, ruleType: "places", targetRank: 2, assignedRank: 2},
+		},
+		3: {{giftID: 30, ruleType: "places", targetRank: 3, assignedRank: 3}},
+	})
+}
+
+func TestPrizeDistributionKeepsLegacyPlaceWhenResultHasCriteriaGift(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(2)
+	setPrizeResultCriteria(results, 1, 1)
+	criteriaGift := prizeDistributionApprovedGift(10)
+	criteriaGift.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	legacyPlace := 1
+	placeGift := prizeDistributionApprovedGift(20)
+	placeGift.Place = &legacyPlace
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{criteriaGift, placeGift}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		1: {
+			{giftID: 10, ruleType: "none", assignedRank: 1},
+			{giftID: 20, ruleType: "places", targetRank: 1, assignedRank: 1},
+		},
+	})
+}
+
+func TestPrizeDistributionKeepsLastNSlotsWhenTargetsHaveCriteriaGifts(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(4)
+	setPrizeResultCriteria(results, 3, 1)
+	setPrizeResultCriteria(results, 4, 2)
+	criteriaGift1 := prizeDistributionApprovedGift(10)
+	criteriaGift1.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	criteriaGift2 := prizeDistributionApprovedGift(20)
+	criteriaGift2.Criteria = []*entity.Criteria{prizeDistributionCriteria(2)}
+	lastNGift := prizeDistributionApprovedGift(30)
+	lastNGift.PlaceRule = mustGiftPlaceRuleLastN(t, 2)
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{criteriaGift1, criteriaGift2, lastNGift}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		3: {
+			{giftID: 10, ruleType: "none", assignedRank: 1},
+			{giftID: 30, ruleType: "last_n", targetRank: 3, assignedRank: 3},
+		},
+		4: {
+			{giftID: 20, ruleType: "none", assignedRank: 1},
+			{giftID: 30, ruleType: "last_n", targetRank: 4, assignedRank: 4},
+		},
+	})
+}
+
+func TestPrizeDistributionPlaceFallbackCanAssignParticipantWithCriteriaGift(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(3)
+	setPrizeResultCriteria(results, 3, 1)
+	criteriaGift := prizeDistributionApprovedGift(10)
+	criteriaGift.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	placeGift := prizeDistributionApprovedGift(20)
+	placeGift.PlaceRule = mustGiftPlaceRulePlaces(t, []int{5})
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{criteriaGift, placeGift}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		3: {
+			{giftID: 10, ruleType: "none", assignedRank: 1},
+			{giftID: 20, ruleType: "places", targetRank: 5, assignedRank: 3, fallback: true},
+		},
+	})
+}
+
+func TestPrizeDistributionNoPlaceGiftsStillSkipHigherPriorityParticipants(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(3)
+	setPrizeResultCriteria(results, 1, 1)
+	setPrizeResultCriteria(results, 2, 2)
+	criteriaGift1 := prizeDistributionApprovedGift(10)
+	criteriaGift1.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	criteriaGift2 := prizeDistributionApprovedGift(20)
+	criteriaGift2.Criteria = []*entity.Criteria{prizeDistributionCriteria(2)}
+	genericGift1 := prizeDistributionApprovedGift(30)
+	genericGift2 := prizeDistributionApprovedGift(40)
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{criteriaGift1, criteriaGift2, genericGift1, genericGift2}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		1: {{giftID: 10, ruleType: "none", assignedRank: 1}},
+		2: {{giftID: 20, ruleType: "none", assignedRank: 1}},
+		3: {
+			{giftID: 30, ruleType: "none", assignedRank: 3},
+			{giftID: 40, ruleType: "none", assignedRank: 3},
+		},
+	})
+}
+
 func TestPrizeDistributionLastNLargerThanGroupAssignsAllEligible(t *testing.T) {
 	h := &GetPrizeDistributionHandler{}
 	results, participants := prizeDistributionRankedScenario(2)
@@ -339,7 +476,7 @@ func TestPrizeDistributionLastNLargerThanGroupAssignsAllEligible(t *testing.T) {
 	})
 }
 
-func TestPrizeDistributionFallbackTiePrefersWorseRank(t *testing.T) {
+func TestPrizeDistributionPlaceSlotKeepsTargetWhenParticipantHasCriteriaGift(t *testing.T) {
 	h := &GetPrizeDistributionHandler{}
 	results, participants := prizeDistributionRankedScenario(5)
 	setPrizeResultCriteria(results, 3, 1)
@@ -351,8 +488,10 @@ func TestPrizeDistributionFallbackTiePrefersWorseRank(t *testing.T) {
 	output := h.distributePrizeSlots(results, []*entity.Gift{placeGift, criteriaGift}, participants)
 
 	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
-		3: {{giftID: 10, ruleType: "none", assignedRank: 1}},
-		4: {{giftID: 20, ruleType: "places", targetRank: 3, assignedRank: 4, fallback: true}},
+		3: {
+			{giftID: 10, ruleType: "none", assignedRank: 1},
+			{giftID: 20, ruleType: "places", targetRank: 3, assignedRank: 3},
+		},
 	})
 }
 
