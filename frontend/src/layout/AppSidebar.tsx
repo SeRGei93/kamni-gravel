@@ -41,11 +41,6 @@ const navItems: NavItem[] = [
     path: "/participants",
   },
   {
-    icon: <LockIcon />,
-    name: "Blacklist",
-    path: "/user-blacklist",
-  },
-  {
     icon: <BoxIcon />,
     name: "Призы",
     path: "/gifts",
@@ -56,14 +51,24 @@ const navItems: NavItem[] = [
     path: "/prize-distribution",
   },
   {
+    icon: <TaskIcon />,
+    name: "Критерии",
+    path: "/criteria",
+  },
+  {
+    icon: <LockIcon />,
+    name: "Blacklist",
+    path: "/user-blacklist",
+  },
+  {
     icon: <CalenderIcon />,
     name: "События",
     path: "/events",
   },
   {
-    icon: <TaskIcon />,
-    name: "Критерии",
-    path: "/criteria",
+    icon: <PageIcon />,
+    name: "Гайд распределения",
+    path: "/prize-distribution-guide",
   },
 ];
 
