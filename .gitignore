@@ -79,6 +79,9 @@ data/
 *.log
 nginx/certbot/
 
+.playwright-mcp
+.playwright
+
 # IDEs and Editors
 # VSCode
 .vscode/
