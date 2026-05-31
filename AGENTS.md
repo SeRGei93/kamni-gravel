@@ -12,7 +12,7 @@ Use these project architecture and workflow boundaries:
 
 - Domain imports nothing from application or infrastructure.
 - Application imports domain only.
-- Infrastructure owns adapters for PostgreSQL, HTTP, Telegram, and migrations.
+- Infrastructure owns adapters for PostgreSQL, HTTP, Telegram, security, and migrations.
 - Use native SQL, not an ORM.
 - Keep handlers thin and put business logic in commands/queries.
 - Inject dependencies through constructors.
@@ -42,7 +42,7 @@ Use these project architecture and workflow boundaries:
 │       ├── application/             # commands, queries, DTOs
 │       ├── config/                  # environment-backed config
 │       ├── domain/                  # entities, value objects, repository interfaces
-│       ├── infrastructure/          # HTTP, Telegram, Postgres, migrations
+│       ├── infrastructure/          # HTTP, Telegram, Postgres, security, migrations
 │       └── pkg/                     # internal shared packages
 ├── frontend/                        # Next.js admin dashboard
 │   ├── public/                      # static assets
@@ -71,6 +71,7 @@ Use these project architecture and workflow boundaries:
 | `backend/cmd/migrate/main.go` | Runs database migrations. |
 | `backend/internal/config/main.go` | Loads and validates environment configuration. |
 | `backend/internal/infrastructure/http/server.go` | Builds the HTTP server. |
+| `backend/internal/infrastructure/security/password_hasher.go` | Provides bcrypt password hashing for application admin commands. |
 | `backend/internal/infrastructure/telegram/bot.go` | Builds the Telegram bot adapter. |
 | `frontend/src/app/layout.tsx` | Root Next.js layout. |
 | `frontend/src/app/(dashboard)/layout.tsx` | Dashboard layout. |

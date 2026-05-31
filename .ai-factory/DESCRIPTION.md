@@ -33,6 +33,7 @@ Gravel Bot is a Telegram bot and web admin panel for organizing cycling races an
 - Domain entities must remain pure and must not carry `json` or `db` tags.
 - Application logic belongs in commands and queries; HTTP and Telegram handlers stay thin.
 - Repository interfaces live in the domain layer; concrete PostgreSQL repositories live in infrastructure.
+- Infrastructure security adapters live under `backend/internal/infrastructure/security`.
 - Dependencies are passed through constructors.
 - `context.Context` is the first parameter for operations that perform IO or request-scoped work.
 - Value objects validate their invariants in constructors.

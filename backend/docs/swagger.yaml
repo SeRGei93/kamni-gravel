@@ -43,6 +43,8 @@ servers:
 tags:
   - name: Auth
     description: Аутентификация и авторизация
+  - name: Admin Users
+    description: Управление администраторами панели
   - name: Events
     description: Управление событиями (гонками)
   - name: Participants
@@ -153,6 +155,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminUser'
+
+  /auth/me/password:
+    put:
+      tags: [Auth]
+      summary: Сменить пароль текущего администратора
+      description: Проверяет текущий пароль и обновляет пароль администратора из JWT claims.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeAdminPasswordRequest'
+      responses:
+        '204':
+          description: Пароль изменён
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== ADMIN USERS ====================
+  /admin-users:
+    get:
+      tags: [Admin Users]
+      summary: Список администраторов
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Список администраторов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Admin Users]
+      summary: Создать администратора
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAdminRequest'
+      responses:
+        '201':
+          description: Администратор создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   # ==================== USER BLACKLIST ====================
   /user-blacklist:
@@ -1297,6 +1364,16 @@ components:
               error:
                 type: string
 
+    Conflict:
+      description: Конфликт состояния ресурса
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
   schemas:
     AdminUser:
       type: object
@@ -1314,6 +1391,41 @@ components:
         last_login:
           type: string
           format: date-time
+          nullable: true
+
+    AdminUserListResponse:
+      type: object
+      properties:
+        admins:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUser'
+        total:
+          type: integer
+
+    CreateAdminRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: new-admin
+        password:
+          type: string
+          format: password
+          minLength: 8
+
+    ChangeAdminPasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+          minLength: 8
 
     UserBlacklistEntry:
       type: object

@@ -10,7 +10,7 @@ The original Cursor rule file, `.cursor/rules/rules.mdc`, is the canonical archi
 backend/internal/
 ├── domain/            # entities, value objects, repository interfaces
 ├── application/       # use cases: commands, queries, dto
-└── infrastructure/    # adapters: persistence, HTTP, Telegram, migrations
+└── infrastructure/    # adapters: persistence, HTTP, Telegram, security, migrations
 ```
 
 Dependency direction:
@@ -53,6 +53,7 @@ Infrastructure owns external systems:
 - `backend/internal/infrastructure/persistence/postgres` owns SQL and database mapping.
 - `backend/internal/infrastructure/http` owns API transport, middleware, and responses.
 - `backend/internal/infrastructure/telegram` owns Telegram bot adapters, handlers, keyboards, and sessions.
+- `backend/internal/infrastructure/security` owns password hashing and other security adapters used by application interfaces.
 - `backend/internal/infrastructure/migrations` owns database schema migration files.
 
 ## Frontend
@@ -81,6 +82,8 @@ Current main routes:
 - `/criteria`
 - `/nominations`
 - `/prize-distribution`
+- `/admin-users`
+- `/account/password`
 
 Frontend rules:
 
