@@ -1,7 +1,9 @@
 package telegram
 
 import (
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/go-telegram/bot/models"
@@ -16,6 +18,12 @@ type callbackMessageRef struct {
 }
 
 type giftMessageReply int
+
+const (
+	proxyStartUserChatCommand = "start_user_chat"
+	proxyEndUserChatCommand   = "end_user_chat"
+	proxyCloseCallbackData    = "end_user_chat"
+)
 
 const (
 	giftMessageReplyNone giftMessageReply = iota
@@ -73,6 +81,54 @@ func messageCommand(msg *models.Message) string {
 	return ""
 }
 
+func parseStartUserChatTarget(msg *models.Message) (int64, string, bool) {
+	if messageCommand(msg) != proxyStartUserChatCommand {
+		return 0, "not_proxy_start_command", false
+	}
+
+	tail, ok := messageCommandTail(msg)
+	if !ok {
+		return 0, "missing_target", false
+	}
+
+	parts := strings.Fields(tail)
+	if len(parts) != 1 {
+		return 0, "invalid_target", false
+	}
+
+	targetUserID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, "invalid_target", false
+	}
+	if targetUserID <= 0 {
+		return 0, "non_positive_target", false
+	}
+
+	return targetUserID, "", true
+}
+
+func messageCommandTail(msg *models.Message) (string, bool) {
+	if msg == nil || msg.Text == "" {
+		return "", false
+	}
+
+	for _, entity := range msg.Entities {
+		if entity.Type != models.MessageEntityTypeBotCommand || entity.Offset != 0 {
+			continue
+		}
+
+		end := entity.Offset + entity.Length
+		if entity.Offset < 0 || end > len(msg.Text) || entity.Length <= 1 {
+			return "", false
+		}
+
+		tail := strings.TrimSpace(msg.Text[end:])
+		return tail, tail != ""
+	}
+
+	return "", false
+}
+
 func messageSender(msg *models.Message) (*models.User, bool) {
 	if msg == nil || msg.From == nil {
 		log.Printf("Telegram message ignored: missing sender")
@@ -80,6 +136,45 @@ func messageSender(msg *models.Message) (*models.User, bool) {
 	}
 
 	return msg.From, true
+}
+
+func proxyUserHeader(user *models.User) string {
+	if user == nil {
+		return "ID: -\nНик: -\nИмя: -"
+	}
+
+	username := strings.TrimPrefix(strings.TrimSpace(user.Username), "@")
+	usernameLabel := "-"
+	if username != "" {
+		usernameLabel = "@" + username
+	}
+
+	nameParts := make([]string, 0, 2)
+	if firstName := strings.TrimSpace(user.FirstName); firstName != "" {
+		nameParts = append(nameParts, firstName)
+	}
+	if lastName := strings.TrimSpace(user.LastName); lastName != "" {
+		nameParts = append(nameParts, lastName)
+	}
+	displayName := strings.Join(nameParts, " ")
+	if displayName == "" {
+		displayName = "-"
+	}
+
+	return fmt.Sprintf("ID: %d\nНик: %s\nИмя: %s", user.ID, usernameLabel, displayName)
+}
+
+func proxyCloseKeyboard() models.InlineKeyboardMarkup {
+	return models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{
+					Text:         "Закрыть чат",
+					CallbackData: proxyCloseCallbackData,
+				},
+			},
+		},
+	}
 }
 
 func telegramUpdateSender(update *models.Update) (int64, string, bool) {

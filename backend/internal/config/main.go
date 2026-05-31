@@ -31,12 +31,13 @@ type DBConfig struct {
 
 // BotConfig представляет конфигурацию Telegram бота
 type BotConfig struct {
-	Token          string
-	AdminChat      int64
-	PublicChat     int64
-	Debug          bool
-	MiniappURL     string
-	SessionTimeout time.Duration
+	Token           string
+	AdminChat       int64
+	PublicChat      int64
+	BotMessagesChat int64
+	Debug           bool
+	MiniappURL      string
+	SessionTimeout  time.Duration
 }
 
 // APIConfig представляет конфигурацию HTTP API сервера
@@ -70,12 +71,13 @@ func MustLoad(_ string) *Config {
 		},
 
 		Bot: BotConfig{
-			Token:          getEnvRequired("BOT_TOKEN"),
-			AdminChat:      getEnvInt64("ADMIN_CHAT_ID", 0),
-			PublicChat:     getEnvInt64("PUBLIC_CHAT_ID", 0),
-			Debug:          getEnvBool("BOT_DEBUG", false),
-			MiniappURL:     getEnv("MINIAPP_URL", ""),
-			SessionTimeout: getEnvDuration("BOT_SESSION_TIMEOUT", 30*time.Minute),
+			Token:           getEnvRequired("BOT_TOKEN"),
+			AdminChat:       getEnvInt64("ADMIN_CHAT_ID", 0),
+			PublicChat:      getEnvInt64("PUBLIC_CHAT_ID", 0),
+			BotMessagesChat: getEnvInt64("BOT_MESSAGES_CHAT_ID", 0),
+			Debug:           getEnvBool("BOT_DEBUG", false),
+			MiniappURL:      getEnv("MINIAPP_URL", ""),
+			SessionTimeout:  getEnvDuration("BOT_SESSION_TIMEOUT", 30*time.Minute),
 		},
 
 		API: APIConfig{

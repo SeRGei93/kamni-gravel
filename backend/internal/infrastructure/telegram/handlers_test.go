@@ -298,6 +298,362 @@ func TestBotHandleMessageIgnoresAdminChat(t *testing.T) {
 	}
 }
 
+func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChat(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		sessionManager:    session.NewManager(0),
+	}
+
+	b.handleMessage(context.Background(), &models.Message{
+		ID:   20,
+		From: &models.User{ID: 123, Username: "alex", FirstName: "Alex", LastName: "Rider"},
+		Chat: models.Chat{ID: 123, Type: models.ChatTypePrivate},
+		Text: "hello",
+	})
+
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("proxy metadata message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if got := chatIDFromAny(api.sentMessages[0].ChatID); got != int64(-300) {
+		t.Fatalf("proxy metadata chat mismatch: got %d", got)
+	}
+	for _, token := range []string{"ID: 123", "Ник: @alex", "Имя: Alex Rider"} {
+		if !strings.Contains(api.sentMessages[0].Text, token) {
+			t.Fatalf("proxy metadata missing %q in %q", token, api.sentMessages[0].Text)
+		}
+	}
+	if len(api.forwardMessages) != 1 {
+		t.Fatalf("forward count mismatch: got %d, want 1", len(api.forwardMessages))
+	}
+	forward := api.forwardMessages[0]
+	if got := chatIDFromAny(forward.ChatID); got != int64(-300) {
+		t.Fatalf("forward chat mismatch: got %d", got)
+	}
+	if got := chatIDFromAny(forward.FromChatID); got != int64(123) {
+		t.Fatalf("forward source chat mismatch: got %d", got)
+	}
+	if forward.MessageID != 20 {
+		t.Fatalf("forward message id mismatch: got %d", forward.MessageID)
+	}
+	if sentTextContains(api, "Используйте /start") {
+		t.Fatalf("idle private message should not receive /start hint when proxy is enabled")
+	}
+}
+
+func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChatWithHeaderFallback(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		sessionManager:    session.NewManager(0),
+	}
+
+	b.handleMessage(context.Background(), &models.Message{
+		ID:   20,
+		From: &models.User{ID: 456},
+		Chat: models.Chat{ID: 456, Type: models.ChatTypePrivate},
+		Text: "hello",
+	})
+
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("proxy metadata message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	for _, token := range []string{"ID: 456", "Ник: -", "Имя: -"} {
+		if !strings.Contains(api.sentMessages[0].Text, token) {
+			t.Fatalf("proxy metadata fallback missing %q in %q", token, api.sentMessages[0].Text)
+		}
+	}
+}
+
+func TestBotHandleMessageDisabledProxyPreservesStartHint(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:            api,
+		sessionManager: session.NewManager(0),
+	}
+
+	b.handleMessage(context.Background(), &models.Message{
+		ID:   20,
+		From: &models.User{ID: 123},
+		Chat: models.Chat{ID: 123, Type: models.ChatTypePrivate},
+		Text: "hello",
+	})
+
+	if len(api.forwardMessages) != 0 {
+		t.Fatalf("disabled proxy should not forward messages, got %d", len(api.forwardMessages))
+	}
+	if !sentTextContains(api, "Используйте /start") {
+		t.Fatalf("disabled proxy should preserve start hint, got %#v", api.sentMessages)
+	}
+}
+
+func TestBotHandleUpdateBlacklistedPrivateUserDoesNotRouteToProxy(t *testing.T) {
+	api := &telegramAPIFake{}
+	blacklistRepo := &telegramBlacklistRepoFake{blacklisted: map[int64]bool{123: true}}
+	b := &Bot{
+		api:                      api,
+		botMessagesChatID:        -300,
+		sessionManager:           session.NewManager(0),
+		isUserBlacklistedHandler: query.NewIsUserBlacklistedHandler(blacklistRepo),
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID: 1,
+		Message: &models.Message{
+			ID:   20,
+			From: &models.User{ID: 123},
+			Chat: models.Chat{ID: 123, Type: models.ChatTypePrivate},
+			Text: "hello",
+		},
+	})
+
+	if !reflect.DeepEqual(blacklistRepo.checkedTelegramUserIDs, []int64{123}) {
+		t.Fatalf("blacklist check mismatch: got %v", blacklistRepo.checkedTelegramUserIDs)
+	}
+	if len(api.sentMessages) != 0 || len(api.forwardMessages) != 0 {
+		t.Fatalf("blacklisted user should be silent, sent=%d forwarded=%d", len(api.sentMessages), len(api.forwardMessages))
+	}
+}
+
+func TestBotHandleUpdateProxyChatBypassesBlacklistGuard(t *testing.T) {
+	api := &telegramAPIFake{}
+	blacklistRepo := &telegramBlacklistRepoFake{blacklisted: map[int64]bool{999: true}}
+	b := &Bot{
+		api:                      api,
+		botMessagesChatID:        -300,
+		isUserBlacklistedHandler: query.NewIsUserBlacklistedHandler(blacklistRepo),
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID: 1,
+		Message: &models.Message{
+			ID:   20,
+			From: &models.User{ID: 999},
+			Chat: models.Chat{ID: -300, Type: models.ChatTypeSupergroup},
+			Text: "manager message",
+		},
+	})
+
+	if len(blacklistRepo.checkedTelegramUserIDs) != 0 {
+		t.Fatalf("proxy chat should bypass blacklist checks, got %v", blacklistRepo.checkedTelegramUserIDs)
+	}
+	if !sentTextContains(api, "Активный чат не открыт") {
+		t.Fatalf("proxy chat without active dialog should get instruction, got %#v", api.sentMessages)
+	}
+}
+
+func TestBotProxyStartUserChatOpensGlobalDialog(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessageWithLength("/start_user_chat 123", len("/start_user_chat"), 999, -300),
+	})
+
+	targetUserID, ok := b.activeProxyTarget()
+	if !ok || targetUserID != 123 {
+		t.Fatalf("active proxy target mismatch: got %d ok=%t", targetUserID, ok)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("open dialog response count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "user_id=123") {
+		t.Fatalf("open dialog response mismatch: %q", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("open dialog should include close keyboard, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{proxyCloseCallbackData}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("close callback mismatch: got %v, want %v", got, want)
+	}
+}
+
+func TestBotProxyStartUserChatRejectsActiveDialog(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+	b.startProxyDialog(111)
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessageWithLength("/start_user_chat 222", len("/start_user_chat"), 999, -300),
+	})
+
+	targetUserID, ok := b.activeProxyTarget()
+	if !ok || targetUserID != 111 {
+		t.Fatalf("active proxy target should stay unchanged: got %d ok=%t", targetUserID, ok)
+	}
+	if !sentTextContains(api, "уже открыт") {
+		t.Fatalf("active dialog rejection message missing, got %#v", api.sentMessages)
+	}
+}
+
+func TestBotProxyManagerMessageCopiesToActiveTarget(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+	b.startProxyDialog(123)
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID: 1,
+		Message: &models.Message{
+			ID:   44,
+			From: &models.User{ID: 999},
+			Chat: models.Chat{ID: -300, Type: models.ChatTypeSupergroup},
+			Text: "manager message",
+		},
+	})
+
+	if len(api.copyMessages) != 1 {
+		t.Fatalf("copy count mismatch: got %d, want 1", len(api.copyMessages))
+	}
+	copyParams := api.copyMessages[0]
+	if got := chatIDFromAny(copyParams.ChatID); got != int64(123) {
+		t.Fatalf("copy target mismatch: got %d", got)
+	}
+	if got := chatIDFromAny(copyParams.FromChatID); got != int64(-300) {
+		t.Fatalf("copy source mismatch: got %d", got)
+	}
+	if copyParams.MessageID != 44 {
+		t.Fatalf("copy message id mismatch: got %d", copyParams.MessageID)
+	}
+}
+
+func TestBotProxyEndUserChatCommandClosesDialog(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+	b.startProxyDialog(123)
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessage("/end_user_chat", 999, -300),
+	})
+
+	if targetUserID, ok := b.activeProxyTarget(); ok {
+		t.Fatalf("proxy target should be cleared, got %d", targetUserID)
+	}
+	if !sentTextContains(api, "закрыт") {
+		t.Fatalf("close response missing, got %#v", api.sentMessages)
+	}
+}
+
+func TestBotProxyCloseCallbackClosesDialogOnlyInProxyChat(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+	b.startProxyDialog(123)
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:            1,
+		CallbackQuery: callbackWithMessage(proxyCloseCallbackData, 999, -300, 44),
+	})
+
+	if targetUserID, ok := b.activeProxyTarget(); ok {
+		t.Fatalf("proxy target should be cleared, got %d", targetUserID)
+	}
+	if len(api.answerCallbacks) != 1 {
+		t.Fatalf("answer callback count mismatch: got %d, want 1", len(api.answerCallbacks))
+	}
+	if !sentTextContains(api, "закрыт") {
+		t.Fatalf("close callback response missing, got %#v", api.sentMessages)
+	}
+
+	b.startProxyDialog(123)
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:            2,
+		CallbackQuery: callbackWithMessage(proxyCloseCallbackData, 999, -400, 45),
+	})
+
+	if targetUserID, ok := b.activeProxyTarget(); !ok || targetUserID != 123 {
+		t.Fatalf("outside proxy callback should not mutate state: got %d ok=%t", targetUserID, ok)
+	}
+}
+
+func TestBotProxyCommandsOutsideProxyChatAreIgnored(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessageWithLength("/start_user_chat 123", len("/start_user_chat"), 999, -400),
+	})
+
+	if _, ok := b.activeProxyTarget(); ok {
+		t.Fatal("proxy command outside proxy chat should not open dialog")
+	}
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("proxy command outside proxy chat should be ignored, got %d messages", len(api.sentMessages))
+	}
+}
+
+func TestBotProxyCopyFailureSendsFallbackNotice(t *testing.T) {
+	api := &telegramAPIFake{copyErr: errors.New("copy failed")}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+	b.startProxyDialog(123)
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID: 1,
+		Message: &models.Message{
+			ID:   44,
+			From: &models.User{ID: 999},
+			Chat: models.Chat{ID: -300, Type: models.ChatTypeSupergroup},
+			Text: "manager message",
+		},
+	})
+
+	if len(api.copyMessages) != 1 {
+		t.Fatalf("copy count mismatch: got %d, want 1", len(api.copyMessages))
+	}
+	if !sentTextContains(api, "Не удалось отправить сообщение") {
+		t.Fatalf("copy fallback missing, got %#v", api.sentMessages)
+	}
+}
+
+func TestBotProxyForwardFailureSendsFallbackNotice(t *testing.T) {
+	api := &telegramAPIFake{forwardErr: errors.New("forward failed")}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		sessionManager:    session.NewManager(0),
+	}
+
+	b.handleMessage(context.Background(), &models.Message{
+		ID:   20,
+		From: &models.User{ID: 123, Username: "alex"},
+		Chat: models.Chat{ID: 123, Type: models.ChatTypePrivate},
+		Text: "hello",
+	})
+
+	if len(api.forwardMessages) != 1 {
+		t.Fatalf("forward count mismatch: got %d, want 1", len(api.forwardMessages))
+	}
+	if !sentTextContains(api, "Не удалось переслать сообщение") {
+		t.Fatalf("forward fallback missing, got %#v", api.sentMessages)
+	}
+}
+
 func TestBotHandleNewChatMembersIgnoresPublicWelcomeOutsidePrivateChat(t *testing.T) {
 	api := &telegramAPIFake{}
 	userRepo := newTelegramUserRepoFake()
@@ -1167,13 +1523,16 @@ func TestBotNotifyAdminAboutGiftSendsAllPhotosInValidMediaGroupChunks(t *testing
 }
 
 func TestBotChatLogMarkerRedactsConfiguredChats(t *testing.T) {
-	b := &Bot{adminChatID: 900, publicChatID: -100}
+	b := &Bot{adminChatID: 900, publicChatID: -100, botMessagesChatID: -300}
 
 	if got := b.chatLogMarker(900); got != "admin" {
 		t.Fatalf("admin marker mismatch: got %q", got)
 	}
 	if got := b.chatLogMarker(-100); got != "public" {
 		t.Fatalf("public marker mismatch: got %q", got)
+	}
+	if got := b.chatLogMarker(-300); got != "bot_messages" {
+		t.Fatalf("bot messages marker mismatch: got %q", got)
 	}
 	if got := b.chatLogMarker(123); got != "private_or_other" {
 		t.Fatalf("private marker mismatch: got %q", got)
@@ -1182,12 +1541,16 @@ func TestBotChatLogMarkerRedactsConfiguredChats(t *testing.T) {
 
 type telegramAPIFake struct {
 	sentMessages    []*telegrambot.SendMessageParams
+	forwardMessages []*telegrambot.ForwardMessageParams
+	copyMessages    []*telegrambot.CopyMessageParams
 	sentPhotos      []*telegrambot.SendPhotoParams
 	mediaGroups     []*telegrambot.SendMediaGroupParams
 	editMessages    []*telegrambot.EditMessageTextParams
 	answerCallbacks []*telegrambot.AnswerCallbackQueryParams
 	deleteMessages  []*telegrambot.DeleteMessageParams
 	sendErr         error
+	forwardErr      error
+	copyErr         error
 	sendPhotoErr    error
 	mediaGroupErr   error
 	editErr         error
@@ -1208,6 +1571,24 @@ func (a *telegramAPIFake) SendMessage(ctx context.Context, params *telegrambot.S
 	a.sentMessages = append(a.sentMessages, params)
 	a.nextMessageID++
 	return &models.Message{ID: a.nextMessageID, Chat: models.Chat{ID: chatIDFromAny(params.ChatID)}, Text: params.Text}, nil
+}
+
+func (a *telegramAPIFake) ForwardMessage(ctx context.Context, params *telegrambot.ForwardMessageParams) (*models.Message, error) {
+	a.forwardMessages = append(a.forwardMessages, params)
+	if a.forwardErr != nil {
+		return nil, a.forwardErr
+	}
+	a.nextMessageID++
+	return &models.Message{ID: a.nextMessageID, Chat: models.Chat{ID: chatIDFromAny(params.ChatID)}}, nil
+}
+
+func (a *telegramAPIFake) CopyMessage(ctx context.Context, params *telegrambot.CopyMessageParams) (*models.MessageID, error) {
+	a.copyMessages = append(a.copyMessages, params)
+	if a.copyErr != nil {
+		return nil, a.copyErr
+	}
+	a.nextMessageID++
+	return &models.MessageID{ID: a.nextMessageID}, nil
 }
 
 func (a *telegramAPIFake) SendPhoto(ctx context.Context, params *telegrambot.SendPhotoParams) (*models.Message, error) {
@@ -1285,13 +1666,17 @@ func callbackWithMessage(data string, userID int64, chatID int64, messageID int)
 }
 
 func commandMessage(text string, userID int64, chatID int64) *models.Message {
+	return commandMessageWithLength(text, len(text), userID, chatID)
+}
+
+func commandMessageWithLength(text string, commandLength int, userID int64, chatID int64) *models.Message {
 	return &models.Message{
 		ID:   10,
 		From: &models.User{ID: userID, FirstName: "Alex"},
 		Chat: chatWithID(chatID),
 		Text: text,
 		Entities: []models.MessageEntity{
-			{Type: models.MessageEntityTypeBotCommand, Offset: 0, Length: len(text)},
+			{Type: models.MessageEntityTypeBotCommand, Offset: 0, Length: commandLength},
 		},
 	}
 }

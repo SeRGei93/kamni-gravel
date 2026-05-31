@@ -30,14 +30,17 @@ const (
 
 // Bot представляет Telegram бота
 type Bot struct {
-	api              telegramAPI
-	debug            bool
-	botUsername      string
-	miniappURL       string
-	adminChatID      int64
-	publicChatID     int64
-	adminChatLogOnce sync.Once
-	sessionManager   *session.Manager
+	api               telegramAPI
+	debug             bool
+	botUsername       string
+	miniappURL        string
+	adminChatID       int64
+	publicChatID      int64
+	botMessagesChatID int64
+	proxyDialogMu     sync.Mutex
+	proxyTargetUserID int64
+	adminChatLogOnce  sync.Once
+	sessionManager    *session.Manager
 
 	// Repositories
 	userRepo            repository.UserRepository
@@ -69,6 +72,8 @@ type Bot struct {
 type telegramAPI interface {
 	Start(ctx context.Context)
 	SendMessage(ctx context.Context, params *telegrambot.SendMessageParams) (*models.Message, error)
+	ForwardMessage(ctx context.Context, params *telegrambot.ForwardMessageParams) (*models.Message, error)
+	CopyMessage(ctx context.Context, params *telegrambot.CopyMessageParams) (*models.MessageID, error)
 	SendPhoto(ctx context.Context, params *telegrambot.SendPhotoParams) (*models.Message, error)
 	SendMediaGroup(ctx context.Context, params *telegrambot.SendMediaGroupParams) ([]*models.Message, error)
 	EditMessageText(ctx context.Context, params *telegrambot.EditMessageTextParams) (*models.Message, error)
@@ -78,12 +83,13 @@ type telegramAPI interface {
 
 // Config представляет конфигурацию бота
 type Config struct {
-	Token          string
-	AdminChatID    int64
-	PublicChatID   int64
-	Debug          bool
-	MiniappURL     string
-	SessionTimeout time.Duration
+	Token             string
+	AdminChatID       int64
+	PublicChatID      int64
+	BotMessagesChatID int64
+	Debug             bool
+	MiniappURL        string
+	SessionTimeout    time.Duration
 }
 
 // NewBot создаёт новый экземпляр бота
@@ -152,6 +158,7 @@ func NewBot(
 		miniappURL:                 miniappURL,
 		adminChatID:                cfg.AdminChatID,
 		publicChatID:               cfg.PublicChatID,
+		botMessagesChatID:          cfg.BotMessagesChatID,
 		sessionManager:             sessionManager,
 		userRepo:                   userRepo,
 		eventRepo:                  eventRepo,
@@ -203,6 +210,7 @@ func NewBot(
 	telegramBot.api = api
 	telegramBot.logChatMode("public", cfg.PublicChatID)
 	telegramBot.logChatMode("admin", cfg.AdminChatID)
+	telegramBot.logChatMode("bot_messages", cfg.BotMessagesChatID)
 	log.Printf("Telegram bot initialized successfully: debug=%t", cfg.Debug)
 
 	return telegramBot, nil
@@ -274,6 +282,9 @@ func (b *Bot) Start(ctx context.Context) error {
 func (b *Bot) handleUpdate(ctx context.Context, _ *telegrambot.Bot, update *models.Update) {
 	if update == nil {
 		b.logDebug("Unsupported Telegram update: nil update")
+		return
+	}
+	if b.handleProxyUpdate(ctx, update) {
 		return
 	}
 	if b.shouldIgnoreNonPrivateUpdate(update) {
@@ -863,8 +874,62 @@ func (b *Bot) logDebug(format string, args ...any) {
 	log.Printf(format, args...)
 }
 
+func (b *Bot) isBotMessagesChat(chatID int64) bool {
+	return b != nil && b.botMessagesChatID != 0 && chatID == b.botMessagesChatID
+}
+
+func (b *Bot) startProxyDialog(targetUserID int64) (int64, bool) {
+	if b == nil {
+		return 0, false
+	}
+
+	b.proxyDialogMu.Lock()
+	defer b.proxyDialogMu.Unlock()
+
+	if b.proxyTargetUserID != 0 {
+		log.Printf("WARN Telegram proxy dialog open rejected: chat=bot_messages active_target_user_id=%d requested_target_user_id=%d", b.proxyTargetUserID, targetUserID)
+		return b.proxyTargetUserID, false
+	}
+
+	b.proxyTargetUserID = targetUserID
+	log.Printf("INFO Telegram proxy dialog opened: chat=bot_messages target_user_id=%d", targetUserID)
+	return targetUserID, true
+}
+
+func (b *Bot) endProxyDialog() (int64, bool) {
+	if b == nil {
+		return 0, false
+	}
+
+	b.proxyDialogMu.Lock()
+	defer b.proxyDialogMu.Unlock()
+
+	if b.proxyTargetUserID == 0 {
+		return 0, false
+	}
+
+	targetUserID := b.proxyTargetUserID
+	b.proxyTargetUserID = 0
+	log.Printf("INFO Telegram proxy dialog closed: chat=bot_messages target_user_id=%d", targetUserID)
+	return targetUserID, true
+}
+
+func (b *Bot) activeProxyTarget() (int64, bool) {
+	if b == nil {
+		return 0, false
+	}
+
+	b.proxyDialogMu.Lock()
+	defer b.proxyDialogMu.Unlock()
+
+	return b.proxyTargetUserID, b.proxyTargetUserID != 0
+}
+
 func (b *Bot) chatLogMarker(chatID int64) string {
 	if b != nil {
+		if b.botMessagesChatID != 0 && chatID == b.botMessagesChatID {
+			return "bot_messages"
+		}
 		if b.adminChatID != 0 && chatID == b.adminChatID {
 			return "admin"
 		}

@@ -51,6 +51,9 @@ docker-compose up -d
 ```bash
 # Telegram Bot
 BOT_TOKEN=your_telegram_bot_token_here
+ADMIN_CHAT_ID=0
+PUBLIC_CHAT_ID=0
+BOT_MESSAGES_CHAT_ID=0
 MINIAPP_URL=https://example.com/miniapp/gifts
 JWT_SECRET=your_jwt_secret_key_here
 
@@ -82,6 +85,8 @@ CERTBOT_EMAIL=admin@example.com
 ### Telegram Mini App
 
 `MINIAPP_URL` включает кнопку "Смотреть подарки" в Telegram-боте. Для реального Telegram Mini App URL должен быть публичным HTTPS-адресом frontend-маршрута `/miniapp/gifts`.
+
+`BOT_MESSAGES_CHAT_ID` включает служебный Telegram-чат для прокси-переписки с пользователями. Значение `0` отключает этот режим.
 
 В non-local окружениях `NEXT_PUBLIC_API_URL` тоже должен быть публичным HTTPS API URL, доступным из Telegram-клиента пользователя. В production рекомендуется один публичный origin:
 

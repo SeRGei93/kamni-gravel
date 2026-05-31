@@ -49,12 +49,13 @@ func main() {
 	// Создаём бота
 	bot, err := telegram.NewBot(
 		telegram.Config{
-			Token:          cfg.Bot.Token,
-			AdminChatID:    cfg.Bot.AdminChat,
-			PublicChatID:   cfg.Bot.PublicChat,
-			Debug:          cfg.Bot.Debug,
-			MiniappURL:     cfg.Bot.MiniappURL,
-			SessionTimeout: cfg.Bot.SessionTimeout,
+			Token:             cfg.Bot.Token,
+			AdminChatID:       cfg.Bot.AdminChat,
+			PublicChatID:      cfg.Bot.PublicChat,
+			BotMessagesChatID: cfg.Bot.BotMessagesChat,
+			Debug:             cfg.Bot.Debug,
+			MiniappURL:        cfg.Bot.MiniappURL,
+			SessionTimeout:    cfg.Bot.SessionTimeout,
 		},
 		userRepo,
 		eventRepo,

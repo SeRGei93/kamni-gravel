@@ -64,6 +64,69 @@ func TestMessageCommand(t *testing.T) {
 	}
 }
 
+func TestParseStartUserChatTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		text       string
+		commandLen int
+		wantID     int64
+		wantReason string
+		wantOK     bool
+	}{
+		{name: "plain command", text: "/start_user_chat 123", commandLen: len("/start_user_chat"), wantID: 123, wantOK: true},
+		{name: "bot username command", text: "/start_user_chat@GravelBot 456", commandLen: len("/start_user_chat@GravelBot"), wantID: 456, wantOK: true},
+		{name: "missing id", text: "/start_user_chat", commandLen: len("/start_user_chat"), wantReason: "missing_target"},
+		{name: "invalid id", text: "/start_user_chat abc", commandLen: len("/start_user_chat"), wantReason: "invalid_target"},
+		{name: "too many args", text: "/start_user_chat 123 extra", commandLen: len("/start_user_chat"), wantReason: "invalid_target"},
+		{name: "zero id", text: "/start_user_chat 0", commandLen: len("/start_user_chat"), wantReason: "non_positive_target"},
+		{name: "negative id", text: "/start_user_chat -1", commandLen: len("/start_user_chat"), wantReason: "non_positive_target"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotID, gotReason, gotOK := parseStartUserChatTarget(&models.Message{
+				Text: tt.text,
+				Entities: []models.MessageEntity{
+					{Type: models.MessageEntityTypeBotCommand, Offset: 0, Length: tt.commandLen},
+				},
+			})
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok mismatch: got %t, want %t", gotOK, tt.wantOK)
+			}
+			if gotID != tt.wantID {
+				t.Fatalf("target id mismatch: got %d, want %d", gotID, tt.wantID)
+			}
+			if gotReason != tt.wantReason {
+				t.Fatalf("reason mismatch: got %q, want %q", gotReason, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestProxyUserHeader(t *testing.T) {
+	got := proxyUserHeader(&models.User{
+		ID:        123,
+		Username:  "@alex",
+		FirstName: "Alex",
+		LastName:  "Rider",
+	})
+	if want := "ID: 123\nНик: @alex\nИмя: Alex Rider"; got != want {
+		t.Fatalf("header mismatch: got %q, want %q", got, want)
+	}
+
+	got = proxyUserHeader(&models.User{ID: 456})
+	if want := "ID: 456\nНик: -\nИмя: -"; got != want {
+		t.Fatalf("fallback header mismatch: got %q, want %q", got, want)
+	}
+}
+
+func TestProxyCloseKeyboardUsesEndUserChatCallback(t *testing.T) {
+	markup := proxyCloseKeyboard()
+	if got, want := callbackData(markup), []string{proxyCloseCallbackData}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("callback data mismatch: got %v, want %v", got, want)
+	}
+}
+
 func TestCallbackMessage(t *testing.T) {
 	t.Run("accessible message", func(t *testing.T) {
 		ref, ok := callbackMessage(&models.CallbackQuery{

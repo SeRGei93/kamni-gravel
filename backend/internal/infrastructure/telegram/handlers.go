@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	telegrambot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
 	"gravel_bot/internal/application/command"
@@ -18,6 +19,156 @@ import (
 	"gravel_bot/internal/infrastructure/telegram/keyboard"
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
+
+const proxyStartUserChatUsage = "Используйте /start_user_chat <telegram_user_id>"
+
+func (b *Bot) handleProxyUpdate(ctx context.Context, update *models.Update) bool {
+	if update == nil {
+		return false
+	}
+
+	if update.CallbackQuery != nil && update.CallbackQuery.Data == proxyCloseCallbackData {
+		b.handleProxyEndUserChatCallback(ctx, update.CallbackQuery)
+		return true
+	}
+
+	if update.Message == nil {
+		return false
+	}
+
+	command := messageCommand(update.Message)
+	if b.isBotMessagesChat(update.Message.Chat.ID) {
+		if command != "" {
+			if isProxyCommand(command) {
+				b.handleProxyCommand(ctx, update.Message, command)
+				return true
+			}
+			b.logDebug("Telegram proxy chat command ignored: command=%s chat=%s", command, b.chatLogMarker(update.Message.Chat.ID))
+			return true
+		}
+
+		b.handleProxyMessage(ctx, update.Message)
+		return true
+	}
+
+	if !isProxyCommand(command) {
+		return false
+	}
+
+	b.logDebug("Telegram proxy command ignored outside proxy chat: command=%s chat=%s", command, b.chatLogMarker(update.Message.Chat.ID))
+	return true
+}
+
+func isProxyCommand(command string) bool {
+	return command == proxyStartUserChatCommand || command == proxyEndUserChatCommand
+}
+
+func (b *Bot) handleProxyCommand(ctx context.Context, msg *models.Message, command string) {
+	if msg == nil {
+		log.Printf("Telegram proxy command ignored: nil message")
+		return
+	}
+
+	switch command {
+	case proxyStartUserChatCommand:
+		b.handleStartUserChatCommand(ctx, msg)
+	case proxyEndUserChatCommand:
+		b.handleEndUserChatCommand(ctx, msg.Chat.ID)
+	default:
+		b.logDebug("Unsupported Telegram proxy command: command=%s chat=%s", command, b.chatLogMarker(msg.Chat.ID))
+	}
+}
+
+func (b *Bot) handleStartUserChatCommand(ctx context.Context, msg *models.Message) {
+	targetUserID, reason, ok := parseStartUserChatTarget(msg)
+	if !ok {
+		log.Printf("INFO Telegram proxy command rejected: command=%s reason=%s chat=%s", proxyStartUserChatCommand, reason, b.chatLogMarker(msg.Chat.ID))
+		_, _ = b.SendMessage(ctx, msg.Chat.ID, proxyStartUserChatUsage)
+		return
+	}
+
+	activeTargetUserID, started := b.startProxyDialog(targetUserID)
+	if !started {
+		_, _ = b.SendMessageWithKeyboard(
+			ctx,
+			msg.Chat.ID,
+			fmt.Sprintf("Чат уже открыт с user_id=%d. Закройте текущий чат командой /end_user_chat или кнопкой.", activeTargetUserID),
+			proxyCloseKeyboard(),
+		)
+		return
+	}
+
+	log.Printf("INFO Telegram proxy command routed: command=%s chat=%s target_user_id=%d", proxyStartUserChatCommand, b.chatLogMarker(msg.Chat.ID), targetUserID)
+	_, _ = b.SendMessageWithKeyboard(
+		ctx,
+		msg.Chat.ID,
+		fmt.Sprintf("Чат открыт с user_id=%d.\nВсе обычные сообщения в этом чате будут отправлены пользователю.", targetUserID),
+		proxyCloseKeyboard(),
+	)
+}
+
+func (b *Bot) handleEndUserChatCommand(ctx context.Context, chatID int64) {
+	targetUserID, closed := b.endProxyDialog()
+	if !closed {
+		_, _ = b.SendMessage(ctx, chatID, "Активный чат не открыт.")
+		return
+	}
+
+	log.Printf("INFO Telegram proxy command routed: command=%s chat=%s target_user_id=%d", proxyEndUserChatCommand, b.chatLogMarker(chatID), targetUserID)
+	_, _ = b.SendMessage(ctx, chatID, fmt.Sprintf("Чат с user_id=%d закрыт.", targetUserID))
+}
+
+func (b *Bot) handleProxyEndUserChatCallback(ctx context.Context, callback *models.CallbackQuery) {
+	msgRef, ok := callbackMessage(callback)
+	if !ok {
+		_ = b.AnswerCallback(ctx, callback.ID, "Сообщение недоступно")
+		return
+	}
+
+	if !b.isBotMessagesChat(msgRef.ChatID) {
+		b.logDebug("Telegram proxy callback ignored outside proxy chat: data=%s chat=%s", callback.Data, b.chatLogMarker(msgRef.ChatID))
+		_ = b.AnswerCallback(ctx, callback.ID, "Недоступно")
+		return
+	}
+
+	targetUserID, closed := b.endProxyDialog()
+	if !closed {
+		_ = b.AnswerCallback(ctx, callback.ID, "Активный чат не открыт")
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, "Активный чат не открыт.")
+		return
+	}
+
+	log.Printf("INFO Telegram proxy callback routed: data=%s chat=%s target_user_id=%d", callback.Data, b.chatLogMarker(msgRef.ChatID), targetUserID)
+	_ = b.AnswerCallback(ctx, callback.ID, "Чат закрыт")
+	_, _ = b.SendMessage(ctx, msgRef.ChatID, fmt.Sprintf("Чат с user_id=%d закрыт.", targetUserID))
+}
+
+func (b *Bot) handleProxyMessage(ctx context.Context, msg *models.Message) {
+	if msg == nil {
+		log.Printf("Telegram proxy message ignored: nil message")
+		return
+	}
+
+	targetUserID, ok := b.activeProxyTarget()
+	if !ok {
+		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Активный чат не открыт. Используйте /start_user_chat <telegram_user_id>.")
+		return
+	}
+
+	updateKind := messageUpdateKind(msg)
+	log.Printf("INFO Telegram proxy message delivery started: chat=%s target_user_id=%d update_kind=%s", b.chatLogMarker(msg.Chat.ID), targetUserID, updateKind)
+	if _, err := b.api.CopyMessage(ctx, &telegrambot.CopyMessageParams{
+		ChatID:     targetUserID,
+		FromChatID: msg.Chat.ID,
+		MessageID:  msg.ID,
+	}); err != nil {
+		log.Printf("ERROR Telegram proxy message delivery failed: chat=%s target_user_id=%d update_kind=%s error=%v", b.chatLogMarker(msg.Chat.ID), targetUserID, updateKind, err)
+		_, _ = b.SendMessage(ctx, msg.Chat.ID, fmt.Sprintf("Не удалось отправить сообщение пользователю user_id=%d.", targetUserID))
+		return
+	}
+
+	log.Printf("INFO Telegram proxy message delivered: chat=%s target_user_id=%d update_kind=%s", b.chatLogMarker(msg.Chat.ID), targetUserID, updateKind)
+}
 
 // handleCommand обрабатывает команды бота
 func (b *Bot) handleCommand(ctx context.Context, msg *models.Message) {
@@ -617,11 +768,41 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 		_, _ = b.SendMessage(ctx, msg.Chat.ID, text)
 
 	default:
-		// Если нет активного состояния, предлагаем использовать /start
+		// Если нет активного состояния, передаём сообщение менеджерам или предлагаем /start.
+		if b.botMessagesChatID != 0 {
+			b.forwardUserMessageToProxy(ctx, msg, sender)
+			return
+		}
 		if b.publicChatID == 0 || msg.Chat.ID != b.publicChatID {
 			_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
 		}
 	}
+}
+
+func (b *Bot) forwardUserMessageToProxy(ctx context.Context, msg *models.Message, sender *models.User) {
+	if msg == nil || sender == nil {
+		log.Printf("WARN Telegram proxy user message skipped: reason=missing_message_or_sender")
+		return
+	}
+
+	updateKind := messageUpdateKind(msg)
+	log.Printf("INFO Telegram proxy user message routing started: telegram_user_id=%d update_kind=%s", sender.ID, updateKind)
+	if _, err := b.SendMessage(ctx, b.botMessagesChatID, proxyUserHeader(sender)); err != nil {
+		log.Printf("ERROR Telegram proxy user metadata delivery failed: telegram_user_id=%d update_kind=%s error=%v", sender.ID, updateKind, err)
+		return
+	}
+
+	if _, err := b.api.ForwardMessage(ctx, &telegrambot.ForwardMessageParams{
+		ChatID:     b.botMessagesChatID,
+		FromChatID: msg.Chat.ID,
+		MessageID:  msg.ID,
+	}); err != nil {
+		log.Printf("WARN Telegram proxy user message forward failed: telegram_user_id=%d update_kind=%s error=%v", sender.ID, updateKind, err)
+		_, _ = b.SendMessage(ctx, b.botMessagesChatID, fmt.Sprintf("Не удалось переслать сообщение от user_id=%d.", sender.ID))
+		return
+	}
+
+	log.Printf("INFO Telegram proxy user message routed: telegram_user_id=%d update_kind=%s", sender.ID, updateKind)
 }
 
 func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {
