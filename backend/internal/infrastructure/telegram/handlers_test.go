@@ -42,7 +42,7 @@ func TestBotHandleMenuCommandSendsParticipantAwareMenu(t *testing.T) {
 	if !ok {
 		t.Fatalf("reply markup type mismatch: got %T", api.sentMessages[0].ReplyMarkup)
 	}
-	if got, want := callbackData(markup), []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"}; !reflect.DeepEqual(got, want) {
+	if got, want := callbackData(markup), []string{"withdraw_participation", "add_gift", "event_conditions"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("menu callback data mismatch: got %v, want %v", got, want)
 	}
 }

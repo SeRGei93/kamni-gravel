@@ -99,9 +99,10 @@ func MainMenu(hasActiveEvent bool, isRegistered bool, miniappURL string, deepLin
 
 	builder.AddRow(Button("🎁 Добавить приз", "add_gift"))
 
-	if isRegistered {
-		builder.AddRow(Button("🏁 Я уже проехал", "submit_result"))
-	}
+	// TODO: вернуть кнопку отправки результата после готовности result-flow.
+	// if isRegistered {
+	// 	builder.AddRow(Button("🏁 Я уже проехал", "submit_result"))
+	// }
 
 	if deepLinks != nil && deepLinks.Conditions != "" {
 		builder.AddRow(ButtonURL("‼️ Условия участия", deepLinks.Conditions))
