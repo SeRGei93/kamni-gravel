@@ -14,6 +14,29 @@ export interface User {
   role: string;
 }
 
+export interface AdminUser {
+  id: number;
+  username: string;
+  role: string;
+  created_at: string;
+  last_login?: string | null;
+}
+
+export interface AdminUserListResponse {
+  admins: AdminUser[];
+  total: number;
+}
+
+export interface CreateAdminRequest {
+  username: string;
+  password: string;
+}
+
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;

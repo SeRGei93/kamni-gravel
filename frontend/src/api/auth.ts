@@ -1,5 +1,11 @@
-import { get, post } from './client';
-import type { LoginRequest, LoginResponse, User, TokenPair } from '@/types';
+import { get, post, put } from './client';
+import type {
+  ChangePasswordRequest,
+  LoginRequest,
+  LoginResponse,
+  User,
+  TokenPair,
+} from '@/types';
 
 const AUTH_PREFIX = '/api/auth';
 
@@ -16,5 +22,9 @@ export const authApi = {
 
   async me(): Promise<User> {
     return get<User>(`${AUTH_PREFIX}/me`);
+  },
+
+  async changePassword(data: ChangePasswordRequest): Promise<void> {
+    return put<void>(`${AUTH_PREFIX}/me/password`, data);
   },
 };

@@ -18,6 +18,7 @@ import {
   PlugInIcon,
   TableIcon,
   TaskIcon,
+  UserIcon,
   UserCircleIcon,
 } from "../icons/index";
 import SidebarWidget from "./SidebarWidget";
@@ -59,6 +60,11 @@ const navItems: NavItem[] = [
     icon: <LockIcon />,
     name: "Blacklist",
     path: "/user-blacklist",
+  },
+  {
+    icon: <UserIcon />,
+    name: "Администраторы",
+    path: "/admin-users",
   },
   {
     icon: <CalenderIcon />,
