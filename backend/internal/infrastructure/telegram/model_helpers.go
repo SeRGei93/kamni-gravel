@@ -22,6 +22,7 @@ type giftMessageReply int
 const (
 	proxyStartUserChatCommand = "start_user_chat"
 	proxyEndUserChatCommand   = "end_user_chat"
+	proxyBroadcastCommand     = "broadcast_participants"
 	proxyOpenCallbackPrefix   = "start_user_chat:"
 	proxyCloseCallbackData    = "end_user_chat"
 )
@@ -106,6 +107,19 @@ func parseStartUserChatTarget(msg *models.Message) (int64, string, bool) {
 	}
 
 	return targetUserID, "", true
+}
+
+func parseBroadcastParticipantsText(msg *models.Message) (string, string, bool) {
+	if messageCommand(msg) != proxyBroadcastCommand {
+		return "", "not_proxy_broadcast_command", false
+	}
+
+	text, ok := messageCommandTail(msg)
+	if !ok {
+		return "", "missing_text", false
+	}
+
+	return text, "", true
 }
 
 func proxyOpenUserChatCallbackData(targetUserID int64) string {

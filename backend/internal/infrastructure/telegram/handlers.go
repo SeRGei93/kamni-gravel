@@ -66,7 +66,7 @@ func (b *Bot) handleProxyUpdate(ctx context.Context, update *models.Update) bool
 }
 
 func isProxyCommand(command string) bool {
-	return command == proxyStartUserChatCommand || command == proxyEndUserChatCommand
+	return command == proxyStartUserChatCommand || command == proxyEndUserChatCommand || command == proxyBroadcastCommand
 }
 
 func (b *Bot) handleProxyCommand(ctx context.Context, msg *models.Message, command string) {
@@ -80,6 +80,8 @@ func (b *Bot) handleProxyCommand(ctx context.Context, msg *models.Message, comma
 		b.handleStartUserChatCommand(ctx, msg)
 	case proxyEndUserChatCommand:
 		b.handleEndUserChatCommand(ctx, msg.Chat.ID)
+	case proxyBroadcastCommand:
+		b.handleBroadcastParticipantsCommand(ctx, msg)
 	default:
 		b.logDebug("Unsupported Telegram proxy command: command=%s chat=%s", command, b.chatLogMarker(msg.Chat.ID))
 	}
@@ -126,6 +128,22 @@ func (b *Bot) handleEndUserChatCommand(ctx context.Context, chatID int64) {
 
 	log.Printf("INFO Telegram proxy command routed: command=%s chat=%s target_user_id=%d", proxyEndUserChatCommand, b.chatLogMarker(chatID), targetUserID)
 	_, _ = b.SendMessage(ctx, chatID, fmt.Sprintf("Чат с user_id=%d закрыт.", targetUserID))
+}
+
+func (b *Bot) handleBroadcastParticipantsCommand(ctx context.Context, msg *models.Message) {
+	if msg == nil {
+		log.Printf("Telegram proxy broadcast command ignored: nil message")
+		return
+	}
+
+	text, reason, ok := parseBroadcastParticipantsText(msg)
+	if !ok {
+		log.Printf("INFO Telegram proxy broadcast command rejected: reason=%s chat=%s", reason, b.chatLogMarker(msg.Chat.ID))
+		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /broadcast_participants <текст сообщения>")
+		return
+	}
+
+	b.handleProxyBroadcastText(ctx, msg.Chat.ID, text)
 }
 
 func (b *Bot) handleProxyEndUserChatCallback(ctx context.Context, callback *models.CallbackQuery) {
@@ -203,7 +221,7 @@ func (b *Bot) handleProxyMessage(ctx context.Context, msg *models.Message) {
 
 	targetUserID, ok := b.activeProxyTarget()
 	if !ok {
-		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Активный чат не открыт. Используйте /start_user_chat <telegram_user_id>.")
+		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Активный чат не открыт. Используйте /start_user_chat <telegram_user_id> или /broadcast_participants <текст сообщения>.")
 		return
 	}
 
@@ -220,6 +238,73 @@ func (b *Bot) handleProxyMessage(ctx context.Context, msg *models.Message) {
 	}
 
 	log.Printf("INFO Telegram proxy message delivered: chat=%s target_user_id=%d update_kind=%s", b.chatLogMarker(msg.Chat.ID), targetUserID, updateKind)
+}
+
+func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, text string) {
+	log.Printf("INFO Telegram proxy broadcast delivery started: chat=%s text_len=%d", b.chatLogMarker(proxyChatID), len(text))
+	recipients, err := b.proxyBroadcastRecipients(ctx)
+	if err != nil {
+		log.Printf("ERROR Telegram proxy broadcast recipient lookup failed: chat=%s text_len=%d error=%v", b.chatLogMarker(proxyChatID), len(text), err)
+		_, _ = b.SendMessage(ctx, proxyChatID, "Не удалось подготовить рассылку участникам.")
+		return
+	}
+	if len(recipients) == 0 {
+		log.Printf("INFO Telegram proxy broadcast skipped: chat=%s text_len=%d reason=no_recipients", b.chatLogMarker(proxyChatID), len(text))
+		_, _ = b.SendMessage(ctx, proxyChatID, "У активного события нет участников для рассылки.")
+		return
+	}
+
+	delivered := 0
+	failed := 0
+	for _, targetUserID := range recipients {
+		if _, err := b.SendMessage(ctx, targetUserID, text); err != nil {
+			failed++
+			log.Printf("WARN Telegram proxy broadcast delivery failed: chat=%s target_user_id=%d text_len=%d error=%v", b.chatLogMarker(proxyChatID), targetUserID, len(text), err)
+			continue
+		}
+		delivered++
+	}
+
+	log.Printf("INFO Telegram proxy broadcast delivered: chat=%s text_len=%d delivered=%d failed=%d recipient_count=%d", b.chatLogMarker(proxyChatID), len(text), delivered, failed, len(recipients))
+	_, _ = b.SendMessage(ctx, proxyChatID, fmt.Sprintf("Рассылка завершена. Доставлено: %d/%d. Ошибок: %d.", delivered, len(recipients), failed))
+}
+
+func (b *Bot) proxyBroadcastRecipients(ctx context.Context) ([]int64, error) {
+	if b == nil || b.eventRepo == nil || b.participantRepo == nil {
+		return nil, errors.New("missing event or participant repository")
+	}
+
+	event, err := b.eventRepo.FindActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("find active event: %w", err)
+	}
+	if event == nil {
+		return nil, nil
+	}
+
+	participants, err := b.participantRepo.FindByEvent(ctx, event.ID)
+	if err != nil {
+		return nil, fmt.Errorf("find event participants: %w", err)
+	}
+
+	return uniqueParticipantUserIDs(participants), nil
+}
+
+func uniqueParticipantUserIDs(participants []*entity.Participant) []int64 {
+	seen := make(map[int64]struct{}, len(participants))
+	recipients := make([]int64, 0, len(participants))
+	for _, participant := range participants {
+		if participant == nil || participant.UserID <= 0 {
+			continue
+		}
+		if _, ok := seen[participant.UserID]; ok {
+			continue
+		}
+		seen[participant.UserID] = struct{}{}
+		recipients = append(recipients, participant.UserID)
+	}
+
+	return recipients
 }
 
 // handleCommand обрабатывает команды бота

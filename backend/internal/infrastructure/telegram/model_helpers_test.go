@@ -103,6 +103,43 @@ func TestParseStartUserChatTarget(t *testing.T) {
 	}
 }
 
+func TestParseBroadcastParticipantsText(t *testing.T) {
+	tests := []struct {
+		name       string
+		text       string
+		commandLen int
+		wantText   string
+		wantReason string
+		wantOK     bool
+	}{
+		{name: "plain command", text: "/broadcast_participants Hello riders", commandLen: len("/broadcast_participants"), wantText: "Hello riders", wantOK: true},
+		{name: "bot username command", text: "/broadcast_participants@GravelBot Hello riders", commandLen: len("/broadcast_participants@GravelBot"), wantText: "Hello riders", wantOK: true},
+		{name: "trims surrounding spaces", text: "/broadcast_participants   Hello riders   ", commandLen: len("/broadcast_participants"), wantText: "Hello riders", wantOK: true},
+		{name: "missing text", text: "/broadcast_participants", commandLen: len("/broadcast_participants"), wantReason: "missing_text"},
+		{name: "wrong command", text: "/start_user_chat 123", commandLen: len("/start_user_chat"), wantReason: "not_proxy_broadcast_command"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotText, gotReason, gotOK := parseBroadcastParticipantsText(&models.Message{
+				Text: tt.text,
+				Entities: []models.MessageEntity{
+					{Type: models.MessageEntityTypeBotCommand, Offset: 0, Length: tt.commandLen},
+				},
+			})
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok mismatch: got %t, want %t", gotOK, tt.wantOK)
+			}
+			if gotText != tt.wantText {
+				t.Fatalf("text mismatch: got %q, want %q", gotText, tt.wantText)
+			}
+			if gotReason != tt.wantReason {
+				t.Fatalf("reason mismatch: got %q, want %q", gotReason, tt.wantReason)
+			}
+		})
+	}
+}
+
 func TestParseProxyOpenUserChatCallback(t *testing.T) {
 	tests := []struct {
 		name       string

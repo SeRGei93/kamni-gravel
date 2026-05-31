@@ -71,6 +71,7 @@ type Bot struct {
 
 type telegramAPI interface {
 	Start(ctx context.Context)
+	SetMyCommands(ctx context.Context, params *telegrambot.SetMyCommandsParams) (bool, error)
 	SendMessage(ctx context.Context, params *telegrambot.SendMessageParams) (*models.Message, error)
 	ForwardMessage(ctx context.Context, params *telegrambot.ForwardMessageParams) (*models.Message, error)
 	CopyMessage(ctx context.Context, params *telegrambot.CopyMessageParams) (*models.MessageID, error)
@@ -267,6 +268,7 @@ func validateMiniappURL(rawURL string) string {
 
 // Start запускает бота
 func (b *Bot) Start(ctx context.Context) error {
+	b.configureProxyChatCommands(ctx)
 	log.Println("Telegram bot started, waiting for updates...")
 	b.api.Start(ctx)
 	log.Println("Telegram bot stopped")
@@ -276,6 +278,32 @@ func (b *Bot) Start(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (b *Bot) configureProxyChatCommands(ctx context.Context) {
+	if b == nil || b.botMessagesChatID == 0 {
+		return
+	}
+
+	ok, err := b.api.SetMyCommands(ctx, &telegrambot.SetMyCommandsParams{
+		Commands: []models.BotCommand{
+			{
+				Command:     proxyBroadcastCommand,
+				Description: "Рассылка участникам активного события",
+			},
+		},
+		Scope: &models.BotCommandScopeChat{ChatID: b.botMessagesChatID},
+	})
+	if err != nil {
+		log.Printf("WARN Telegram proxy commands setup failed: chat=bot_messages error=%v", err)
+		return
+	}
+	if !ok {
+		log.Printf("WARN Telegram proxy commands setup failed: chat=bot_messages result=false")
+		return
+	}
+
+	log.Printf("INFO Telegram proxy commands configured: chat=bot_messages")
 }
 
 // handleUpdate обрабатывает входящее обновление

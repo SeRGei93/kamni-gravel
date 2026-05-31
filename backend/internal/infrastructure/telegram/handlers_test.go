@@ -548,6 +548,127 @@ func TestBotProxyOpenUserChatCallbackOpensGlobalDialogOnlyInProxyChat(t *testing
 	}
 }
 
+func TestBotProxyBroadcastCommandSendsTextToActiveEventParticipants(t *testing.T) {
+	api := &telegramAPIFake{}
+	participantRepo := &telegramParticipantRepoFake{
+		participants: []*entity.Participant{
+			{ID: 1, UserID: 123, EventID: 77},
+			{ID: 2, UserID: 456, EventID: 77},
+			{ID: 3, UserID: 123, EventID: 77},
+			{ID: 4, UserID: 0, EventID: 77},
+			nil,
+		},
+	}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		eventRepo:         &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}},
+		participantRepo:   participantRepo,
+	}
+	b.startProxyDialog(999)
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessageWithLength("/broadcast_participants Hello riders", len("/broadcast_participants"), 999, -300),
+	})
+
+	if targetUserID, ok := b.activeProxyTarget(); !ok || targetUserID != 999 {
+		t.Fatalf("broadcast command should not change active dialog: got %d ok=%t", targetUserID, ok)
+	}
+	if !reflect.DeepEqual(participantRepo.findByEventEventIDs, []uint{77}) {
+		t.Fatalf("find by event ids mismatch: got %v", participantRepo.findByEventEventIDs)
+	}
+	if len(api.copyMessages) != 0 {
+		t.Fatalf("broadcast command should send text, not copy command message, got %d copies", len(api.copyMessages))
+	}
+	if len(api.sentMessages) != 3 {
+		t.Fatalf("sent message count mismatch: got %d, want 3", len(api.sentMessages))
+	}
+	for i, wantUserID := range []int64{123, 456} {
+		msg := api.sentMessages[i]
+		if got := chatIDFromAny(msg.ChatID); got != wantUserID {
+			t.Fatalf("broadcast target[%d] mismatch: got %d, want %d", i, got, wantUserID)
+		}
+		if msg.Text != "Hello riders" {
+			t.Fatalf("broadcast text[%d] mismatch: got %q", i, msg.Text)
+		}
+	}
+	if got := chatIDFromAny(api.sentMessages[2].ChatID); got != int64(-300) {
+		t.Fatalf("broadcast summary chat mismatch: got %d", got)
+	}
+	if !strings.Contains(api.sentMessages[2].Text, "Доставлено: 2/2") {
+		t.Fatalf("broadcast summary mismatch, got %q", api.sentMessages[2].Text)
+	}
+}
+
+func TestBotProxyBroadcastCommandRequiresText(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		eventRepo:         &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}},
+		participantRepo:   &telegramParticipantRepoFake{},
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessageWithLength("/broadcast_participants", len("/broadcast_participants"), 999, -300),
+	})
+
+	if len(api.copyMessages) != 0 {
+		t.Fatalf("broadcast command without text should not copy, got %d", len(api.copyMessages))
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("usage message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "/broadcast_participants <текст сообщения>") {
+		t.Fatalf("usage response mismatch, got %q", api.sentMessages[0].Text)
+	}
+}
+
+func TestBotProxyBroadcastCommandOutsideProxyChatIsIgnored(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		eventRepo:         &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}},
+		participantRepo: &telegramParticipantRepoFake{
+			participants: []*entity.Participant{{ID: 1, UserID: 123, EventID: 77}},
+		},
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessageWithLength("/broadcast_participants Hello riders", len("/broadcast_participants"), 999, -400),
+	})
+
+	if len(api.sentMessages) != 0 || len(api.copyMessages) != 0 {
+		t.Fatalf("broadcast command outside proxy chat should be ignored, sent=%d copied=%d", len(api.sentMessages), len(api.copyMessages))
+	}
+}
+
+func TestBotProxyBroadcastCommandHandlesMissingActiveEvent(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		eventRepo:         &telegramEventRepoFake{},
+		participantRepo:   &telegramParticipantRepoFake{},
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: commandMessageWithLength("/broadcast_participants Hello riders", len("/broadcast_participants"), 999, -300),
+	})
+
+	if len(api.copyMessages) != 0 {
+		t.Fatalf("missing active event should not copy messages, got %d", len(api.copyMessages))
+	}
+	if !sentTextContains(api, "нет участников") {
+		t.Fatalf("missing active event response mismatch, got %#v", api.sentMessages)
+	}
+}
+
 func TestBotProxyManagerMessageCopiesToActiveTarget(t *testing.T) {
 	api := &telegramAPIFake{}
 	b := &Bot{
@@ -1590,6 +1711,31 @@ func TestBotChatLogMarkerRedactsConfiguredChats(t *testing.T) {
 	}
 }
 
+func TestBotConfigureProxyChatCommandsUsesProxyChatScope(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+
+	b.configureProxyChatCommands(context.Background())
+
+	if len(api.setCommands) != 1 {
+		t.Fatalf("set commands count mismatch: got %d, want 1", len(api.setCommands))
+	}
+	params := api.setCommands[0]
+	if got, want := params.Commands, []models.BotCommand{{Command: proxyBroadcastCommand, Description: "Рассылка участникам активного события"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands mismatch: got %#v, want %#v", got, want)
+	}
+	scope, ok := params.Scope.(*models.BotCommandScopeChat)
+	if !ok {
+		t.Fatalf("command scope mismatch: got %T", params.Scope)
+	}
+	if got := chatIDFromAny(scope.ChatID); got != int64(-300) {
+		t.Fatalf("command scope chat mismatch: got %d", got)
+	}
+}
+
 type telegramAPIFake struct {
 	sentMessages    []*telegrambot.SendMessageParams
 	forwardMessages []*telegrambot.ForwardMessageParams
@@ -1599,6 +1745,7 @@ type telegramAPIFake struct {
 	editMessages    []*telegrambot.EditMessageTextParams
 	answerCallbacks []*telegrambot.AnswerCallbackQueryParams
 	deleteMessages  []*telegrambot.DeleteMessageParams
+	setCommands     []*telegrambot.SetMyCommandsParams
 	sendErr         error
 	forwardErr      error
 	copyErr         error
@@ -1607,10 +1754,19 @@ type telegramAPIFake struct {
 	editErr         error
 	answerErr       error
 	deleteErr       error
+	setCommandsErr  error
 	nextMessageID   int
 }
 
 func (a *telegramAPIFake) Start(ctx context.Context) {}
+
+func (a *telegramAPIFake) SetMyCommands(ctx context.Context, params *telegrambot.SetMyCommandsParams) (bool, error) {
+	a.setCommands = append(a.setCommands, params)
+	if a.setCommandsErr != nil {
+		return false, a.setCommandsErr
+	}
+	return true, nil
+}
 
 func (a *telegramAPIFake) SendMessage(ctx context.Context, params *telegrambot.SendMessageParams) (*models.Message, error) {
 	if strings.TrimSpace(params.Text) == "" {
@@ -1912,6 +2068,9 @@ func (r *telegramEventRepoFake) Delete(ctx context.Context, id uint) error { ret
 
 type telegramParticipantRepoFake struct {
 	participant          *entity.Participant
+	participants         []*entity.Participant
+	findByEventErr       error
+	findByEventEventIDs  []uint
 	deletedParticipantID uint
 }
 
@@ -1938,7 +2097,11 @@ func (r *telegramParticipantRepoFake) FindByUserAndEvent(ctx context.Context, us
 	return nil, repository.ErrParticipantNotFound
 }
 func (r *telegramParticipantRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
-	return nil, nil
+	r.findByEventEventIDs = append(r.findByEventEventIDs, eventID)
+	if r.findByEventErr != nil {
+		return nil, r.findByEventErr
+	}
+	return r.participants, nil
 }
 func (r *telegramParticipantRepoFake) UpdateNotes(ctx context.Context, id uint, notes string) error {
 	return nil
