@@ -103,20 +103,43 @@ func TestParseStartUserChatTarget(t *testing.T) {
 	}
 }
 
-func TestProxyUserHeader(t *testing.T) {
-	got := proxyUserHeader(&models.User{
-		ID:        123,
-		Username:  "@alex",
-		FirstName: "Alex",
-		LastName:  "Rider",
-	})
-	if want := "ID: 123\nНик: @alex\nИмя: Alex Rider"; got != want {
-		t.Fatalf("header mismatch: got %q, want %q", got, want)
+func TestParseProxyOpenUserChatCallback(t *testing.T) {
+	tests := []struct {
+		name       string
+		data       string
+		wantID     int64
+		wantReason string
+		wantOK     bool
+	}{
+		{name: "valid", data: proxyOpenUserChatCallbackData(123), wantID: 123, wantOK: true},
+		{name: "wrong prefix", data: "register", wantReason: "not_proxy_open_callback"},
+		{name: "missing id", data: proxyOpenCallbackPrefix, wantReason: "invalid_target"},
+		{name: "invalid id", data: proxyOpenCallbackPrefix + "abc", wantReason: "invalid_target"},
+		{name: "spaced id", data: proxyOpenCallbackPrefix + " 123", wantReason: "invalid_target"},
+		{name: "zero id", data: proxyOpenCallbackPrefix + "0", wantReason: "non_positive_target"},
+		{name: "negative id", data: proxyOpenCallbackPrefix + "-1", wantReason: "non_positive_target"},
 	}
 
-	got = proxyUserHeader(&models.User{ID: 456})
-	if want := "ID: 456\nНик: -\nИмя: -"; got != want {
-		t.Fatalf("fallback header mismatch: got %q, want %q", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotID, gotReason, gotOK := parseProxyOpenUserChatCallback(tt.data)
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok mismatch: got %t, want %t", gotOK, tt.wantOK)
+			}
+			if gotID != tt.wantID {
+				t.Fatalf("target id mismatch: got %d, want %d", gotID, tt.wantID)
+			}
+			if gotReason != tt.wantReason {
+				t.Fatalf("reason mismatch: got %q, want %q", gotReason, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestProxyOpenUserChatKeyboardUsesTargetCallback(t *testing.T) {
+	markup := proxyOpenUserChatKeyboard(123)
+	if got, want := callbackData(markup), []string{proxyOpenUserChatCallbackData(123)}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("callback data mismatch: got %v, want %v", got, want)
 	}
 }
 

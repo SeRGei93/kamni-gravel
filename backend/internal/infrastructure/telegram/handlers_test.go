@@ -313,36 +313,38 @@ func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChat(t *testing.T) {
 		Text: "hello",
 	})
 
-	if len(api.sentMessages) != 1 {
-		t.Fatalf("proxy metadata message count mismatch: got %d, want 1", len(api.sentMessages))
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("proxy metadata message should not be sent, got %d", len(api.sentMessages))
 	}
-	if got := chatIDFromAny(api.sentMessages[0].ChatID); got != int64(-300) {
-		t.Fatalf("proxy metadata chat mismatch: got %d", got)
+	if len(api.forwardMessages) != 0 {
+		t.Fatalf("proxy user message should be copied with a keyboard, got %d forwards", len(api.forwardMessages))
 	}
-	for _, token := range []string{"ID: 123", "Ник: @alex", "Имя: Alex Rider"} {
-		if !strings.Contains(api.sentMessages[0].Text, token) {
-			t.Fatalf("proxy metadata missing %q in %q", token, api.sentMessages[0].Text)
-		}
+	if len(api.copyMessages) != 1 {
+		t.Fatalf("copy count mismatch: got %d, want 1", len(api.copyMessages))
 	}
-	if len(api.forwardMessages) != 1 {
-		t.Fatalf("forward count mismatch: got %d, want 1", len(api.forwardMessages))
+	copyParams := api.copyMessages[0]
+	if got := chatIDFromAny(copyParams.ChatID); got != int64(-300) {
+		t.Fatalf("copy chat mismatch: got %d", got)
 	}
-	forward := api.forwardMessages[0]
-	if got := chatIDFromAny(forward.ChatID); got != int64(-300) {
-		t.Fatalf("forward chat mismatch: got %d", got)
+	if got := chatIDFromAny(copyParams.FromChatID); got != int64(123) {
+		t.Fatalf("copy source chat mismatch: got %d", got)
 	}
-	if got := chatIDFromAny(forward.FromChatID); got != int64(123) {
-		t.Fatalf("forward source chat mismatch: got %d", got)
+	if copyParams.MessageID != 20 {
+		t.Fatalf("copy message id mismatch: got %d", copyParams.MessageID)
 	}
-	if forward.MessageID != 20 {
-		t.Fatalf("forward message id mismatch: got %d", forward.MessageID)
+	markup, ok := copyParams.ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("copy should include open chat keyboard, got %T", copyParams.ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{proxyOpenUserChatCallbackData(123)}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("open callback mismatch: got %v, want %v", got, want)
 	}
 	if sentTextContains(api, "Используйте /start") {
 		t.Fatalf("idle private message should not receive /start hint when proxy is enabled")
 	}
 }
 
-func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChatWithHeaderFallback(t *testing.T) {
+func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChatWithoutUsername(t *testing.T) {
 	api := &telegramAPIFake{}
 	b := &Bot{
 		api:               api,
@@ -357,13 +359,18 @@ func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChatWithHeaderFallback(t
 		Text: "hello",
 	})
 
-	if len(api.sentMessages) != 1 {
-		t.Fatalf("proxy metadata message count mismatch: got %d, want 1", len(api.sentMessages))
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("proxy metadata message should not be sent, got %d", len(api.sentMessages))
 	}
-	for _, token := range []string{"ID: 456", "Ник: -", "Имя: -"} {
-		if !strings.Contains(api.sentMessages[0].Text, token) {
-			t.Fatalf("proxy metadata fallback missing %q in %q", token, api.sentMessages[0].Text)
-		}
+	if len(api.copyMessages) != 1 {
+		t.Fatalf("copy count mismatch: got %d, want 1", len(api.copyMessages))
+	}
+	markup, ok := api.copyMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("copy should include open chat keyboard, got %T", api.copyMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{proxyOpenUserChatCallbackData(456)}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("open callback mismatch: got %v, want %v", got, want)
 	}
 }
 
@@ -381,8 +388,8 @@ func TestBotHandleMessageDisabledProxyPreservesStartHint(t *testing.T) {
 		Text: "hello",
 	})
 
-	if len(api.forwardMessages) != 0 {
-		t.Fatalf("disabled proxy should not forward messages, got %d", len(api.forwardMessages))
+	if len(api.forwardMessages) != 0 || len(api.copyMessages) != 0 {
+		t.Fatalf("disabled proxy should not proxy messages, copied=%d forwarded=%d", len(api.copyMessages), len(api.forwardMessages))
 	}
 	if !sentTextContains(api, "Используйте /start") {
 		t.Fatalf("disabled proxy should preserve start hint, got %#v", api.sentMessages)
@@ -412,8 +419,8 @@ func TestBotHandleUpdateBlacklistedPrivateUserDoesNotRouteToProxy(t *testing.T) 
 	if !reflect.DeepEqual(blacklistRepo.checkedTelegramUserIDs, []int64{123}) {
 		t.Fatalf("blacklist check mismatch: got %v", blacklistRepo.checkedTelegramUserIDs)
 	}
-	if len(api.sentMessages) != 0 || len(api.forwardMessages) != 0 {
-		t.Fatalf("blacklisted user should be silent, sent=%d forwarded=%d", len(api.sentMessages), len(api.forwardMessages))
+	if len(api.sentMessages) != 0 || len(api.forwardMessages) != 0 || len(api.copyMessages) != 0 {
+		t.Fatalf("blacklisted user should be silent, sent=%d copied=%d forwarded=%d", len(api.sentMessages), len(api.copyMessages), len(api.forwardMessages))
 	}
 }
 
@@ -494,6 +501,50 @@ func TestBotProxyStartUserChatRejectsActiveDialog(t *testing.T) {
 	}
 	if !sentTextContains(api, "уже открыт") {
 		t.Fatalf("active dialog rejection message missing, got %#v", api.sentMessages)
+	}
+}
+
+func TestBotProxyOpenUserChatCallbackOpensGlobalDialogOnlyInProxyChat(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:            1,
+		CallbackQuery: callbackWithMessage(proxyOpenUserChatCallbackData(123), 999, -300, 44),
+	})
+
+	targetUserID, ok := b.activeProxyTarget()
+	if !ok || targetUserID != 123 {
+		t.Fatalf("active proxy target mismatch: got %d ok=%t", targetUserID, ok)
+	}
+	if len(api.answerCallbacks) != 1 {
+		t.Fatalf("answer callback count mismatch: got %d, want 1", len(api.answerCallbacks))
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("open dialog response count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "user_id=123") {
+		t.Fatalf("open dialog response mismatch: %q", api.sentMessages[0].Text)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("open dialog should include close keyboard, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{proxyCloseCallbackData}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("close callback mismatch: got %v, want %v", got, want)
+	}
+
+	b.endProxyDialog()
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:            2,
+		CallbackQuery: callbackWithMessage(proxyOpenUserChatCallbackData(456), 999, -400, 45),
+	})
+
+	if targetUserID, ok := b.activeProxyTarget(); ok {
+		t.Fatalf("outside proxy callback should not open dialog, got %d", targetUserID)
 	}
 }
 
@@ -631,8 +682,8 @@ func TestBotProxyCopyFailureSendsFallbackNotice(t *testing.T) {
 	}
 }
 
-func TestBotProxyForwardFailureSendsFallbackNotice(t *testing.T) {
-	api := &telegramAPIFake{forwardErr: errors.New("forward failed")}
+func TestBotProxyUserMessageCopyFailureSendsFallbackNotice(t *testing.T) {
+	api := &telegramAPIFake{copyErr: errors.New("copy failed")}
 	b := &Bot{
 		api:               api,
 		botMessagesChatID: -300,
@@ -646,11 +697,11 @@ func TestBotProxyForwardFailureSendsFallbackNotice(t *testing.T) {
 		Text: "hello",
 	})
 
-	if len(api.forwardMessages) != 1 {
-		t.Fatalf("forward count mismatch: got %d, want 1", len(api.forwardMessages))
+	if len(api.copyMessages) != 1 {
+		t.Fatalf("copy count mismatch: got %d, want 1", len(api.copyMessages))
 	}
-	if !sentTextContains(api, "Не удалось переслать сообщение") {
-		t.Fatalf("forward fallback missing, got %#v", api.sentMessages)
+	if !sentTextContains(api, "Не удалось скопировать сообщение") {
+		t.Fatalf("copy fallback missing, got %#v", api.sentMessages)
 	}
 }
 

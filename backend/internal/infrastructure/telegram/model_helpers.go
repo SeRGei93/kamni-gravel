@@ -22,6 +22,7 @@ type giftMessageReply int
 const (
 	proxyStartUserChatCommand = "start_user_chat"
 	proxyEndUserChatCommand   = "end_user_chat"
+	proxyOpenCallbackPrefix   = "start_user_chat:"
 	proxyCloseCallbackData    = "end_user_chat"
 )
 
@@ -107,6 +108,30 @@ func parseStartUserChatTarget(msg *models.Message) (int64, string, bool) {
 	return targetUserID, "", true
 }
 
+func proxyOpenUserChatCallbackData(targetUserID int64) string {
+	return fmt.Sprintf("%s%d", proxyOpenCallbackPrefix, targetUserID)
+}
+
+func parseProxyOpenUserChatCallback(data string) (int64, string, bool) {
+	tail, ok := strings.CutPrefix(data, proxyOpenCallbackPrefix)
+	if !ok {
+		return 0, "not_proxy_open_callback", false
+	}
+	if strings.TrimSpace(tail) != tail || tail == "" {
+		return 0, "invalid_target", false
+	}
+
+	targetUserID, err := strconv.ParseInt(tail, 10, 64)
+	if err != nil {
+		return 0, "invalid_target", false
+	}
+	if targetUserID <= 0 {
+		return 0, "non_positive_target", false
+	}
+
+	return targetUserID, "", true
+}
+
 func messageCommandTail(msg *models.Message) (string, bool) {
 	if msg == nil || msg.Text == "" {
 		return "", false
@@ -138,30 +163,17 @@ func messageSender(msg *models.Message) (*models.User, bool) {
 	return msg.From, true
 }
 
-func proxyUserHeader(user *models.User) string {
-	if user == nil {
-		return "ID: -\nНик: -\nИмя: -"
+func proxyOpenUserChatKeyboard(targetUserID int64) models.InlineKeyboardMarkup {
+	return models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{
+					Text:         "Открыть чат",
+					CallbackData: proxyOpenUserChatCallbackData(targetUserID),
+				},
+			},
+		},
 	}
-
-	username := strings.TrimPrefix(strings.TrimSpace(user.Username), "@")
-	usernameLabel := "-"
-	if username != "" {
-		usernameLabel = "@" + username
-	}
-
-	nameParts := make([]string, 0, 2)
-	if firstName := strings.TrimSpace(user.FirstName); firstName != "" {
-		nameParts = append(nameParts, firstName)
-	}
-	if lastName := strings.TrimSpace(user.LastName); lastName != "" {
-		nameParts = append(nameParts, lastName)
-	}
-	displayName := strings.Join(nameParts, " ")
-	if displayName == "" {
-		displayName = "-"
-	}
-
-	return fmt.Sprintf("ID: %d\nНик: %s\nИмя: %s", user.ID, usernameLabel, displayName)
 }
 
 func proxyCloseKeyboard() models.InlineKeyboardMarkup {
