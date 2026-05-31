@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -56,6 +57,49 @@ func TestAuthHandlerMeUsesAuthenticatedUserFromMiddleware(t *testing.T) {
 	}
 }
 
+func TestAuthMiddlewareChainPassesClaimsToPasswordChange(t *testing.T) {
+	adminRepo := &adminUsersRepoFake{
+		findByIDAdmin: &entity.Admin{
+			ID:           1,
+			Username:     "admin",
+			PasswordHash: "stored-hash",
+			Role:         entity.AdminRoleAdmin,
+		},
+	}
+	adminUsersHandler := newTestAdminUsersHandler(
+		adminRepo,
+		&adminUsersPasswordServiceFake{hashResult: "new-hash"},
+	)
+	jwtManager := jwt.NewManager("test-secret", time.Minute, time.Hour)
+	tokenPair, err := jwtManager.GenerateTokenPair(1, "admin", string(entity.AdminRoleAdmin))
+	if err != nil {
+		t.Fatalf("GenerateTokenPair error: %v", err)
+	}
+
+	protectedHandler := middleware.Auth(jwtManager)(
+		middleware.RequireRole(jwtManager, string(entity.AdminRoleAdmin))(
+			http.HandlerFunc(adminUsersHandler.ChangeOwnPassword),
+		),
+	)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/auth/me/password",
+		bytes.NewBufferString(`{"current_password":"current-password","new_password":"new-password"}`),
+	)
+	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
+	rr := httptest.NewRecorder()
+
+	protectedHandler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status mismatch: got %d want %d body=%s", rr.Code, http.StatusNoContent, rr.Body.String())
+	}
+	if adminRepo.updatedPasswordID != 1 || adminRepo.updatedPasswordHash != "new-hash" {
+		t.Fatalf("password update mismatch: id=%d hash=%q", adminRepo.updatedPasswordID, adminRepo.updatedPasswordHash)
+	}
+}
+
 type authAdminRepoFake struct {
 	admin    *entity.Admin
 	findByID uint
@@ -63,6 +107,10 @@ type authAdminRepoFake struct {
 
 func (r *authAdminRepoFake) Create(ctx context.Context, admin *entity.Admin) error {
 	return nil
+}
+
+func (r *authAdminRepoFake) List(ctx context.Context) ([]*entity.Admin, error) {
+	return nil, nil
 }
 
 func (r *authAdminRepoFake) FindByUsername(ctx context.Context, username string) (*entity.Admin, error) {
@@ -75,6 +123,10 @@ func (r *authAdminRepoFake) FindByID(ctx context.Context, id uint) (*entity.Admi
 }
 
 func (r *authAdminRepoFake) UpdateLastLogin(ctx context.Context, id uint) error {
+	return nil
+}
+
+func (r *authAdminRepoFake) UpdatePassword(ctx context.Context, id uint, passwordHash string) error {
 	return nil
 }
 

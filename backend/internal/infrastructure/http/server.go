@@ -14,6 +14,7 @@ import (
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/http/handler"
 	"gravel_bot/internal/infrastructure/http/middleware"
+	"gravel_bot/internal/infrastructure/security"
 	"gravel_bot/internal/infrastructure/storage"
 	"gravel_bot/internal/pkg/jwt"
 )
@@ -43,6 +44,8 @@ type Server struct {
 	updateUserBlacklistReasonHandler *command.UpdateUserBlacklistReasonHandler
 	removeUserBlacklistHandler       *command.RemoveUserBlacklistHandler
 	deleteParticipantHandler         *command.DeleteParticipantHandler
+	createAdminHandler               *command.CreateAdminHandler
+	changeAdminPasswordHandler       *command.ChangeAdminPasswordHandler
 
 	// Query handlers
 	getParticipantsHandler        *query.GetParticipantsHandler
@@ -56,6 +59,7 @@ type Server struct {
 	getStatsHandler               *query.GetStatsHandler
 	listUserBlacklistHandler      *query.ListUserBlacklistHandler
 	isUserBlacklistedHandler      *query.IsUserBlacklistedHandler
+	listAdminUsersHandler         *query.ListAdminUsersHandler
 
 	// HTTP handlers
 	authHandler              *handler.AuthHandler
@@ -70,6 +74,7 @@ type Server struct {
 	telegramHandler          *handler.TelegramHandler
 	miniappHandler           *handler.MiniappHandler
 	userBlacklistHandler     *handler.UserBlacklistHandler
+	adminUsersHandler        *handler.AdminUsersHandler
 
 	// JWT Manager
 	jwtManager         *jwt.Manager
@@ -161,6 +166,12 @@ func NewServer(
 	updateUserBlacklistReasonHandler := command.NewUpdateUserBlacklistReasonHandler(userBlacklistRepo)
 	removeUserBlacklistHandler := command.NewRemoveUserBlacklistHandler(userBlacklistRepo)
 
+	// Создаём command/query handlers для администраторов
+	passwordHasher := security.NewBcryptPasswordHasher()
+	listAdminUsersHandler := query.NewListAdminUsersHandler(adminRepo)
+	createAdminHandler := command.NewCreateAdminHandler(adminRepo, passwordHasher)
+	changeAdminPasswordHandler := command.NewChangeAdminPasswordHandler(adminRepo, passwordHasher)
+
 	// Создаём query handlers для criteria
 	getCriteriaHandler := query.NewGetCriteriaHandler(criteriaRepo)
 	getCriteriaByIDHandler := query.NewGetCriteriaByIDHandler(criteriaRepo)
@@ -237,6 +248,11 @@ func NewServer(
 		updateUserBlacklistReasonHandler,
 		removeUserBlacklistHandler,
 	)
+	adminUsersHandler := handler.NewAdminUsersHandler(
+		listAdminUsersHandler,
+		createAdminHandler,
+		changeAdminPasswordHandler,
+	)
 
 	// Создаём query handlers для распределения призов
 	getPrizeDistributionHandler := query.NewGetPrizeDistributionHandler(
@@ -270,6 +286,8 @@ func NewServer(
 		updateUserBlacklistReasonHandler: updateUserBlacklistReasonHandler,
 		removeUserBlacklistHandler:       removeUserBlacklistHandler,
 		deleteParticipantHandler:         deleteParticipantHandler,
+		createAdminHandler:               createAdminHandler,
+		changeAdminPasswordHandler:       changeAdminPasswordHandler,
 		getParticipantsHandler:           getParticipantsHandler,
 		getParticipantByIDHandler:        getParticipantByIDHandler,
 		getGiftsHandler:                  getGiftsHandler,
@@ -281,6 +299,7 @@ func NewServer(
 		getStatsHandler:                  getStatsHandler,
 		listUserBlacklistHandler:         listUserBlacklistHandler,
 		isUserBlacklistedHandler:         isUserBlacklistedHandler,
+		listAdminUsersHandler:            listAdminUsersHandler,
 		authHandler:                      authHandler,
 		eventsHandler:                    eventsHandler,
 		participantsHandler:              participantsHandler,
@@ -293,6 +312,7 @@ func NewServer(
 		telegramHandler:                  telegramHandler,
 		miniappHandler:                   miniappHandler,
 		userBlacklistHandler:             userBlacklistHandler,
+		adminUsersHandler:                adminUsersHandler,
 		jwtManager:                       jwtManager,
 		telegramWebAppAuth:               middleware.TelegramWebAppAuth(cfg.BotToken),
 	}
@@ -424,6 +444,11 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Post("/user-blacklist", s.userBlacklistHandler.Create)
 			r.Put("/user-blacklist/{telegramUserId}", s.userBlacklistHandler.Update)
 			r.Delete("/user-blacklist/{telegramUserId}", s.userBlacklistHandler.Delete)
+
+			// Admin users routes
+			r.Get("/admin-users", s.adminUsersHandler.GetAll)
+			r.Post("/admin-users", s.adminUsersHandler.Create)
+			r.Put("/auth/me/password", s.adminUsersHandler.ChangeOwnPassword)
 
 			// Criteria admin routes
 			r.Post("/criteria", s.criteriaHandler.Create)

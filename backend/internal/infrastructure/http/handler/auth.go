@@ -1,14 +1,12 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
 
-	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/http/middleware"
 	"gravel_bot/internal/infrastructure/http/response"
@@ -164,26 +162,4 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, userInfo)
-}
-
-// HashPassword хэширует пароль (вспомогательная функция)
-func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
-}
-
-// CreateAdmin создаёт нового админа (для внутреннего использования)
-func (h *AuthHandler) CreateAdmin(ctx context.Context, username, password, role string) error {
-	hashedPassword, err := HashPassword(password)
-	if err != nil {
-		return err
-	}
-
-	admin := &entity.Admin{
-		Username:     username,
-		PasswordHash: hashedPassword,
-		Role:         entity.AdminRole(role),
-	}
-
-	return h.adminRepo.Create(ctx, admin)
 }
