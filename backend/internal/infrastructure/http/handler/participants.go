@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -96,6 +97,13 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	giftUserIDs, err := h.getGiftUserIDsByEvent(r.Context(), uint(eventID))
+	if err != nil {
+		log.Printf("Error getting participant gift flags: event_id=%d error=%v", eventID, err)
+		response.InternalServerError(w, "Failed to get participant gift flags")
+		return
+	}
+
 	// Получаем результаты с местами
 	resultsWithPlaces, err := h.resultRepo.FindByEventWithPlaces(r.Context(), uint(eventID))
 	if err != nil {
@@ -105,6 +113,7 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		for _, pwp := range participantsWithPlace {
 			participantDTO := dto.FromParticipant(pwp.Participant)
 			participantDTO.Place = pwp.Place
+			_, participantDTO.HasGift = giftUserIDs[pwp.Participant.UserID]
 			participantDTOs = append(participantDTOs, participantDTO)
 		}
 		response.Success(w, dto.ParticipantListResponse{
@@ -125,6 +134,7 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	for _, pwp := range participantsWithPlace {
 		participantDTO := dto.FromParticipant(pwp.Participant)
 		participantDTO.Place = pwp.Place
+		_, participantDTO.HasGift = giftUserIDs[pwp.Participant.UserID]
 
 		// Добавляем места из результатов
 		if rwp, ok := resultMap[pwp.Participant.ID]; ok {
@@ -141,6 +151,20 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		Participants: participantDTOs,
 		Total:        len(participantDTOs),
 	})
+}
+
+func (h *ParticipantsHandler) getGiftUserIDsByEvent(ctx context.Context, eventID uint) (map[int64]struct{}, error) {
+	gifts, err := h.giftRepo.FindByEvent(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+
+	userIDs := make(map[int64]struct{}, len(gifts))
+	for _, gift := range gifts {
+		userIDs[gift.UserID] = struct{}{}
+	}
+
+	return userIDs, nil
 }
 
 // GetByID обрабатывает GET /api/participants/:id - детали участника
