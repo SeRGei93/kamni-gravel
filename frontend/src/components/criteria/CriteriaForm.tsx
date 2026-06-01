@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Input from '../form/input/InputField';
 import Label from '../form/Label';
 import TextArea from '../form/input/TextArea';
 import Button from '../ui/button/Button';
 import Select from '../form/Select';
+import { CRITERIA_TYPE_OPTIONS } from '@/constants/options';
 import type {
   Criteria,
   CreateCriteriaRequest,
@@ -20,13 +21,6 @@ interface CriteriaFormProps {
   isLoading?: boolean;
 }
 
-const criteriaTypeOptions = [
-  { value: 'speed', label: 'Скорость' },
-  { value: 'photo', label: 'Фото' },
-  { value: 'beer', label: 'Пиво' },
-  { value: 'custom', label: 'Кастомный' },
-];
-
 export default function CriteriaForm({
   criteria,
   onSubmit,
@@ -38,19 +32,6 @@ export default function CriteriaForm({
   const [criteriaType, setCriteriaType] = useState<CriteriaType>(
     criteria?.criteria_type || 'custom'
   );
-
-  // Обновляем состояние при изменении criteria
-  useEffect(() => {
-    if (criteria) {
-      setName(criteria.name);
-      setDescription(criteria.description);
-      setCriteriaType(criteria.criteria_type);
-    } else {
-      setName('');
-      setDescription('');
-      setCriteriaType('custom');
-    }
-  }, [criteria]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,7 +91,7 @@ export default function CriteriaForm({
         <div className="relative">
           <Select
             key={`type-${criteriaType}`}
-            options={criteriaTypeOptions}
+            options={CRITERIA_TYPE_OPTIONS}
             placeholder="Выберите тип"
             defaultValue={criteriaType}
             onChange={(value) => setCriteriaType(value as CriteriaType)}

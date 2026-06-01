@@ -1915,10 +1915,12 @@ components:
         - speed
         - photo
         - beer
+        - random
         - custom
       description: |
         Тип критерия:
         * `speed` - Скоростной критерий
         * `photo` - Фото-критерий
         * `beer` - Пивной критерий
+        * `random` - Рандомный критерий
         * `custom` - Кастомный критерий

@@ -49,5 +49,10 @@ export const CRITERIA_TYPE_OPTIONS = [
   { value: 'speed', label: 'Скорость' },
   { value: 'photo', label: 'Фото' },
   { value: 'beer', label: 'Пиво' },
+  {
+    value: 'random',
+    label: 'Рандом',
+    className: 'font-medium text-brand-600 dark:text-brand-400',
+  },
   { value: 'custom', label: 'Кастомный' },
 ];

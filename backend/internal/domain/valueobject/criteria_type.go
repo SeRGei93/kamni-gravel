@@ -9,6 +9,7 @@ const (
 	CriteriaTypeSpeed  CriteriaType = "speed"
 	CriteriaTypePhoto  CriteriaType = "photo"
 	CriteriaTypeBeer   CriteriaType = "beer"
+	CriteriaTypeRandom CriteriaType = "random"
 	CriteriaTypeCustom CriteriaType = "custom"
 )
 
@@ -19,9 +20,9 @@ var (
 // NewCriteriaType создаёт и валидирует тип критерия
 func NewCriteriaType(value string) (CriteriaType, error) {
 	ct := CriteriaType(value)
-	
+
 	switch ct {
-	case CriteriaTypeSpeed, CriteriaTypePhoto, CriteriaTypeBeer, CriteriaTypeCustom:
+	case CriteriaTypeSpeed, CriteriaTypePhoto, CriteriaTypeBeer, CriteriaTypeRandom, CriteriaTypeCustom:
 		return ct, nil
 	default:
 		return "", ErrInvalidCriteriaType
@@ -36,7 +37,7 @@ func (ct CriteriaType) String() string {
 // IsValid проверяет валидность типа критерия
 func (ct CriteriaType) IsValid() bool {
 	switch ct {
-	case CriteriaTypeSpeed, CriteriaTypePhoto, CriteriaTypeBeer, CriteriaTypeCustom:
+	case CriteriaTypeSpeed, CriteriaTypePhoto, CriteriaTypeBeer, CriteriaTypeRandom, CriteriaTypeCustom:
 		return true
 	default:
 		return false

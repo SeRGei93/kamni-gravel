@@ -3,7 +3,7 @@ CREATE TABLE criteria (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     description TEXT,
-    criteria_type VARCHAR(50) NOT NULL CHECK(criteria_type IN ('speed', 'photo', 'beer', 'custom')),
+    criteria_type VARCHAR(50) NOT NULL CHECK(criteria_type IN ('speed', 'photo', 'beer', 'random', 'custom')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

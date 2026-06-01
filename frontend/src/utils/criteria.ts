@@ -10,6 +10,8 @@ export const getCriteriaTypeLabel = (type: CriteriaType): string => {
       return 'Фото';
     case 'beer':
       return 'Пиво';
+    case 'random':
+      return 'Рандом';
     case 'custom':
       return 'Кастомный';
     default:
@@ -25,6 +27,8 @@ export const getCriteriaColor = (type: CriteriaType): BadgeColor => {
       return 'info';
     case 'beer':
       return 'warning';
+    case 'random':
+      return 'primary';
     case 'custom':
       return 'light';
     default:

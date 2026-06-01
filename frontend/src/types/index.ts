@@ -5,7 +5,7 @@ export type Gender = 'male' | 'female';
 export type GenderFilter = 'all' | 'male' | 'female';
 export type BikeTypeFilter = 'all' | 'gravel' | 'mtb' | 'road' | 'single_speed' | 'tandem';
 export type FileType = 'photo' | 'document';
-export type CriteriaType = 'speed' | 'photo' | 'beer' | 'custom';
+export type CriteriaType = 'speed' | 'photo' | 'beer' | 'random' | 'custom';
 export type GiftReviewStatus = 'pending_review' | 'approved';
 
 export interface User {
