@@ -940,16 +940,19 @@ func (b *Bot) forwardUserMessageToProxy(ctx context.Context, msg *models.Message
 
 func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {
 	if msg == nil {
+		log.Printf("WARN Public chat welcome skipped: reason=nil_message")
 		return
 	}
-	if !isPrivateTelegramChat(msg.Chat) {
-		b.logDebug("Telegram new chat members ignored outside private chat: chat=%s", b.chatLogMarker(msg.Chat.ID))
+	if !b.isPublicChat(msg.Chat.ID) {
+		b.logDebug("Telegram new chat members ignored outside configured public chat: chat=%s", b.chatLogMarker(msg.Chat.ID))
+		return
+	}
+	if len(msg.NewChatMembers) == 0 {
+		log.Printf("WARN Public chat welcome skipped: chat=public reason=no_new_members")
 		return
 	}
 
-	if b.publicChatID == 0 || msg.Chat.ID != b.publicChatID {
-		return
-	}
+	log.Printf("INFO Public chat welcome batch accepted: chat=public member_count=%d", len(msg.NewChatMembers))
 
 	event, err := b.eventRepo.FindActive(ctx)
 	if err != nil {
@@ -961,8 +964,15 @@ func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {
 		return
 	}
 
+	prizeFundLink, registerLink, conditionsLink := b.publicWelcomeLinks()
+
 	for _, member := range msg.NewChatMembers {
-		if member.IsBot || member.ID == 0 {
+		if member.IsBot {
+			b.logDebug("Public chat welcome member skipped: chat=public reason=bot")
+			continue
+		}
+		if member.ID == 0 {
+			log.Printf("WARN Public chat welcome member skipped: chat=public reason=missing_telegram_user_id")
 			continue
 		}
 
@@ -976,17 +986,9 @@ func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {
 			continue
 		}
 
-		user := &entity.User{
-			ID:        member.ID,
-			Username:  member.Username,
-			FirstName: member.FirstName,
-			LastName:  member.LastName,
-		}
-		if _, err := b.userRepo.FindByID(ctx, user.ID); err != nil {
-			if createErr := b.userRepo.Create(ctx, user); createErr != nil {
-				log.Printf("WARN Public chat welcome skipped: telegram_user_id=%d chat=public reason=user_create_failed error=%v", member.ID, createErr)
-				continue
-			}
+		if err := b.ensureTelegramUser(ctx, member); err != nil {
+			log.Printf("WARN Public chat welcome skipped: telegram_user_id=%d chat=public operation=user_upsert error=%v", member.ID, err)
+			continue
 		}
 
 		firstName := strings.TrimSpace(member.FirstName)
@@ -996,18 +998,48 @@ func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {
 
 		text := fmt.Sprintf("👋 Привет, %s! Добро пожаловать в %s 🚴", firstName, event.Name)
 		markup := keyboard.PublicMenu(
-			b.miniappURL,
-			b.deepLink("register"),
-			b.deepLink("conditions"),
+			prizeFundLink,
+			registerLink,
+			conditionsLink,
 		)
 
-		if _, err := b.SendMessageWithKeyboard(ctx, msg.Chat.ID, text, markup); err != nil {
-			log.Printf("WARN Public chat welcome failed: telegram_user_id=%d chat=public event_id=%d error=%v", member.ID, event.ID, err)
+		var sendErr error
+		if len(markup.InlineKeyboard) == 0 {
+			_, sendErr = b.SendMessage(ctx, msg.Chat.ID, text)
+		} else {
+			_, sendErr = b.SendMessageWithKeyboard(ctx, msg.Chat.ID, text, markup)
+		}
+		if sendErr != nil {
+			log.Printf("WARN Public chat welcome failed: telegram_user_id=%d chat=public event_id=%d error=%v", member.ID, event.ID, sendErr)
 			continue
 		}
 
 		log.Printf("INFO Public chat welcome sent: telegram_user_id=%d event_id=%d chat=public", member.ID, event.ID)
 	}
+}
+
+func (b *Bot) publicWelcomeLinks() (prizeFundLink string, registerLink string, conditionsLink string) {
+	registerLink = b.deepLink("register")
+	if registerLink == "" {
+		log.Printf("WARN Public chat welcome button skipped: chat=public button=register reason=missing_bot_username")
+	}
+
+	conditionsLink = b.deepLink("conditions")
+	if conditionsLink == "" {
+		log.Printf("WARN Public chat welcome button skipped: chat=public button=conditions reason=missing_bot_username")
+	}
+
+	if strings.TrimSpace(b.miniappURL) == "" {
+		return "", registerLink, conditionsLink
+	}
+
+	link, ok := b.miniappTelegramLink()
+	if !ok {
+		log.Printf("WARN Public chat welcome button skipped: chat=public button=prize_fund reason=missing_bot_username")
+		return "", registerLink, conditionsLink
+	}
+
+	return link, registerLink, conditionsLink
 }
 
 func (b *Bot) handleWithdrawParticipationCallback(ctx context.Context, callback *models.CallbackQuery) {

@@ -161,7 +161,7 @@ func TestMainMenuUsesDeepLinks(t *testing.T) {
 
 func TestPublicMenuBuildsDeepLinks(t *testing.T) {
 	menu := PublicMenu(
-		"https://example.com/miniapp/gifts",
+		"https://t.me/gravel_bot?startapp",
 		"https://t.me/gravel_bot?start=register",
 		"https://t.me/gravel_bot?start=conditions",
 	)
@@ -180,7 +180,7 @@ func TestPublicMenuBuildsDeepLinks(t *testing.T) {
 			case "✅ Принять участие":
 				registerFound = button.URL == "https://t.me/gravel_bot?start=register"
 			case "🏆 Призовой фонд":
-				miniappFound = button.WebApp != nil && button.WebApp.URL == "https://example.com/miniapp/gifts"
+				miniappFound = button.URL == "https://t.me/gravel_bot?startapp"
 			case "‼️ Условия участия":
 				conditionsFound = button.URL == "https://t.me/gravel_bot?start=conditions"
 			}
@@ -195,6 +195,24 @@ func TestPublicMenuBuildsDeepLinks(t *testing.T) {
 	}
 	if !conditionsFound {
 		t.Fatal("conditions deep link not found in public menu")
+	}
+}
+
+func TestPublicMenuOmitsMissingLinks(t *testing.T) {
+	menu := PublicMenu("", "https://t.me/gravel_bot?start=register", "")
+
+	if got := callbackData(menu); len(got) != 0 {
+		t.Fatalf("callback data mismatch: got %v", got)
+	}
+	if got := len(menu.InlineKeyboard); got != 1 {
+		t.Fatalf("row count mismatch: got %d, want 1", got)
+	}
+	button := menu.InlineKeyboard[0][0]
+	if button.Text != "✅ Принять участие" || button.URL != "https://t.me/gravel_bot?start=register" {
+		t.Fatalf("register button mismatch: %#v", button)
+	}
+	if button.WebApp != nil {
+		t.Fatalf("public menu should not use web app buttons, got %#v", button.WebApp)
 	}
 }
 

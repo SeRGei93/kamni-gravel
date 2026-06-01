@@ -315,6 +315,10 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *telegrambot.Bot, update *mode
 	if b.handleProxyUpdate(ctx, update) {
 		return
 	}
+	if update.Message != nil && len(update.Message.NewChatMembers) > 0 && b.isPublicChat(update.Message.Chat.ID) {
+		b.handleNewChatMembers(ctx, update.Message)
+		return
+	}
 	if b.shouldIgnoreNonPrivateUpdate(update) {
 		return
 	}
@@ -603,13 +607,25 @@ func (b *Bot) adminGiftMediaGroupCaption(gift *entity.Gift) (string, models.Pars
 }
 
 func (b *Bot) adminGiftMiniappTelegramLink() (string, bool) {
+	link, ok := b.miniappTelegramLink()
+	if !ok {
+		if b == nil || strings.TrimSpace(b.miniappURL) == "" {
+			return "", false
+		}
+		log.Printf("WARN Admin gift miniapp Telegram link unavailable: reason=missing_bot_username")
+		return "", false
+	}
+
+	return link, true
+}
+
+func (b *Bot) miniappTelegramLink() (string, bool) {
 	if b == nil || strings.TrimSpace(b.miniappURL) == "" {
 		return "", false
 	}
 
-	username := strings.TrimPrefix(strings.TrimSpace(b.botUsername), "@")
+	username := b.botUsernameAlias()
 	if username == "" {
-		log.Printf("WARN Admin gift miniapp Telegram link unavailable: reason=missing_bot_username")
 		return "", false
 	}
 

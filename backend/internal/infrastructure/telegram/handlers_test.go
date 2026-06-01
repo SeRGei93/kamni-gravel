@@ -826,7 +826,7 @@ func TestBotProxyUserMessageCopyFailureSendsFallbackNotice(t *testing.T) {
 	}
 }
 
-func TestBotHandleNewChatMembersIgnoresPublicWelcomeOutsidePrivateChat(t *testing.T) {
+func TestBotHandleNewChatMembersSendsPublicWelcomeForConfiguredChat(t *testing.T) {
 	api := &telegramAPIFake{}
 	userRepo := newTelegramUserRepoFake()
 	blacklistRepo := &telegramBlacklistRepoFake{}
@@ -851,17 +851,79 @@ func TestBotHandleNewChatMembersIgnoresPublicWelcomeOutsidePrivateChat(t *testin
 		},
 	})
 
-	if len(api.sentMessages) != 0 {
-		t.Fatalf("public welcome should be ignored outside private chat, got %d messages", len(api.sentMessages))
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("public welcome message count mismatch: got %d, want 1", len(api.sentMessages))
 	}
-	if len(userRepo.users) != 0 {
-		t.Fatalf("joined user should not be created outside private chat, got users %#v", userRepo.users)
+	msg := api.sentMessages[0]
+	if got := chatIDFromAny(msg.ChatID); got != int64(-100) {
+		t.Fatalf("public welcome chat mismatch: got %d, want -100", got)
 	}
-	if len(blacklistRepo.checkedTelegramUserIDs) != 0 {
-		t.Fatalf("blacklist should not be checked outside private chat, got %v", blacklistRepo.checkedTelegramUserIDs)
+	if !strings.Contains(msg.Text, "Привет, Alex") || !strings.Contains(msg.Text, "Spring Gravel") {
+		t.Fatalf("public welcome text mismatch: %q", msg.Text)
 	}
-	if eventRepo.findActiveCalls != 0 {
-		t.Fatalf("active event should not be loaded outside private chat: got %d calls", eventRepo.findActiveCalls)
+	markup, ok := msg.ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("public welcome should include markup, got %T", msg.ReplyMarkup)
+	}
+	if got := callbackData(markup); len(got) != 0 {
+		t.Fatalf("public welcome should not include callbacks, got %v", got)
+	}
+	if !publicMenuHasURL(markup, "✅ Принять участие", "https://t.me/GravelBot?start=register") {
+		t.Fatalf("register deep link missing: %#v", markup)
+	}
+	if !publicMenuHasURL(markup, "‼️ Условия участия", "https://t.me/GravelBot?start=conditions") {
+		t.Fatalf("conditions deep link missing: %#v", markup)
+	}
+	if !publicMenuHasURL(markup, "🏆 Призовой фонд", "https://t.me/GravelBot?startapp") {
+		t.Fatalf("prize fund deep link missing: %#v", markup)
+	}
+	if _, ok := userRepo.users[123]; !ok {
+		t.Fatalf("joined user should be upserted, got users %#v", userRepo.users)
+	}
+	if _, ok := userRepo.users[456]; ok {
+		t.Fatalf("bot member should not be upserted, got users %#v", userRepo.users)
+	}
+	if !reflect.DeepEqual(blacklistRepo.checkedTelegramUserIDs, []int64{123}) {
+		t.Fatalf("blacklist check mismatch: got %v", blacklistRepo.checkedTelegramUserIDs)
+	}
+	if eventRepo.findActiveCalls != 1 {
+		t.Fatalf("active event call mismatch: got %d, want 1", eventRepo.findActiveCalls)
+	}
+}
+
+func TestBotHandleUpdateRoutesConfiguredPublicNewChatMembers(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	blacklistRepo := &telegramBlacklistRepoFake{blacklisted: map[int64]bool{999: true}}
+	b := &Bot{
+		api:                      api,
+		publicChatID:             -100,
+		botUsername:              "GravelBot",
+		userRepo:                 userRepo,
+		eventRepo:                &telegramEventRepoFake{event: &entity.Event{ID: 77, Name: "Spring Gravel"}},
+		isUserBlacklistedHandler: query.NewIsUserBlacklistedHandler(blacklistRepo),
+	}
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID: 1,
+		Message: &models.Message{
+			ID:   10,
+			From: &models.User{ID: 999, FirstName: "Blocked inviter"},
+			Chat: models.Chat{ID: -100},
+			NewChatMembers: []models.User{
+				{ID: 123, FirstName: "Alex"},
+			},
+		},
+	})
+
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("public welcome message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if _, ok := userRepo.users[123]; !ok {
+		t.Fatalf("joined user should be upserted, got users %#v", userRepo.users)
+	}
+	if !reflect.DeepEqual(blacklistRepo.checkedTelegramUserIDs, []int64{123}) {
+		t.Fatalf("blacklist should check joined user only, got %v", blacklistRepo.checkedTelegramUserIDs)
 	}
 }
 
@@ -890,7 +952,31 @@ func TestBotHandleNewChatMembersIgnoresUnrelatedPublicChat(t *testing.T) {
 	}
 }
 
-func TestBotHandleNewChatMembersDoesNotCheckBlacklistOutsidePrivateChat(t *testing.T) {
+func TestBotHandleNewChatMembersDisabledWhenPublicChatIDZero(t *testing.T) {
+	api := &telegramAPIFake{}
+	eventRepo := &telegramEventRepoFake{event: &entity.Event{ID: 77, Name: "Spring Gravel"}}
+	b := &Bot{
+		api:       api,
+		eventRepo: eventRepo,
+	}
+
+	b.handleNewChatMembers(context.Background(), &models.Message{
+		ID:   10,
+		Chat: models.Chat{ID: -100},
+		NewChatMembers: []models.User{
+			{ID: 123, FirstName: "Alex"},
+		},
+	})
+
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("disabled public welcome should send no messages, got %d", len(api.sentMessages))
+	}
+	if eventRepo.findActiveCalls != 0 {
+		t.Fatalf("active event should not be loaded when public chat is disabled: got %d calls", eventRepo.findActiveCalls)
+	}
+}
+
+func TestBotHandleNewChatMembersSkipsBlacklistedJoinedUser(t *testing.T) {
 	api := &telegramAPIFake{}
 	userRepo := newTelegramUserRepoFake()
 	blacklistRepo := &telegramBlacklistRepoFake{blacklisted: map[int64]bool{123: true}}
@@ -918,21 +1004,74 @@ func TestBotHandleNewChatMembersDoesNotCheckBlacklistOutsidePrivateChat(t *testi
 	if len(userRepo.users) != 0 {
 		t.Fatalf("blacklisted joined user should not be created, got users %#v", userRepo.users)
 	}
-	if len(blacklistRepo.checkedTelegramUserIDs) != 0 {
-		t.Fatalf("blacklist should not be checked outside private chat, got %v", blacklistRepo.checkedTelegramUserIDs)
+	if !reflect.DeepEqual(blacklistRepo.checkedTelegramUserIDs, []int64{123}) {
+		t.Fatalf("blacklist check mismatch: got %v", blacklistRepo.checkedTelegramUserIDs)
 	}
 }
 
-func TestBotHandleUpdateIgnoresNewChatMembersOutsidePrivateChat(t *testing.T) {
+func TestBotHandleNewChatMembersSkipsWithoutActiveEvent(t *testing.T) {
 	api := &telegramAPIFake{}
 	userRepo := newTelegramUserRepoFake()
-	blacklistRepo := &telegramBlacklistRepoFake{blacklisted: map[int64]bool{999: true}}
+	blacklistRepo := &telegramBlacklistRepoFake{}
+
+	tests := []struct {
+		name      string
+		eventRepo *telegramEventRepoFake
+	}{
+		{
+			name:      "no active event",
+			eventRepo: &telegramEventRepoFake{},
+		},
+		{
+			name:      "repo error",
+			eventRepo: &telegramEventRepoFake{findActiveErr: errors.New("db failed")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api.sentMessages = nil
+			userRepo.users = make(map[int64]*entity.User)
+			blacklistRepo.checkedTelegramUserIDs = nil
+			b := &Bot{
+				api:                      api,
+				publicChatID:             -100,
+				botUsername:              "GravelBot",
+				userRepo:                 userRepo,
+				eventRepo:                tt.eventRepo,
+				isUserBlacklistedHandler: query.NewIsUserBlacklistedHandler(blacklistRepo),
+			}
+
+			b.handleNewChatMembers(context.Background(), &models.Message{
+				ID:   10,
+				Chat: models.Chat{ID: -100},
+				NewChatMembers: []models.User{
+					{ID: 123, FirstName: "Alex"},
+				},
+			})
+
+			if len(api.sentMessages) != 0 {
+				t.Fatalf("public welcome should not be sent without active event, got %d", len(api.sentMessages))
+			}
+			if len(userRepo.users) != 0 {
+				t.Fatalf("joined user should not be upserted without active event, got users %#v", userRepo.users)
+			}
+			if len(blacklistRepo.checkedTelegramUserIDs) != 0 {
+				t.Fatalf("blacklist should not be checked without active event, got %v", blacklistRepo.checkedTelegramUserIDs)
+			}
+			if tt.eventRepo.findActiveCalls != 1 {
+				t.Fatalf("active event call mismatch: got %d, want 1", tt.eventRepo.findActiveCalls)
+			}
+		})
+	}
+}
+
+func TestBotHandleUpdateIgnoresPublicOrdinaryMessageAndCallback(t *testing.T) {
+	api := &telegramAPIFake{}
+	blacklistRepo := &telegramBlacklistRepoFake{}
 	b := &Bot{
 		api:                      api,
 		publicChatID:             -100,
-		botUsername:              "GravelBot",
-		userRepo:                 userRepo,
-		eventRepo:                &telegramEventRepoFake{event: &entity.Event{ID: 77, Name: "Spring Gravel"}},
 		isUserBlacklistedHandler: query.NewIsUserBlacklistedHandler(blacklistRepo),
 	}
 
@@ -940,22 +1079,21 @@ func TestBotHandleUpdateIgnoresNewChatMembersOutsidePrivateChat(t *testing.T) {
 		ID: 1,
 		Message: &models.Message{
 			ID:   10,
-			From: &models.User{ID: 999, FirstName: "Blocked inviter"},
+			From: &models.User{ID: 123, FirstName: "Alex"},
 			Chat: models.Chat{ID: -100},
-			NewChatMembers: []models.User{
-				{ID: 123, FirstName: "Alex"},
-			},
+			Text: "hello",
 		},
+	})
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID:            2,
+		CallbackQuery: callbackWithMessage("register", 123, -100, 10),
 	})
 
 	if len(api.sentMessages) != 0 {
-		t.Fatalf("new chat members outside private chat should be ignored, got %d messages", len(api.sentMessages))
-	}
-	if len(userRepo.users) != 0 {
-		t.Fatalf("joined user should not be created, got users %#v", userRepo.users)
+		t.Fatalf("public ordinary message/callback should be ignored, got %d messages", len(api.sentMessages))
 	}
 	if len(blacklistRepo.checkedTelegramUserIDs) != 0 {
-		t.Fatalf("blacklist should not be checked, got %v", blacklistRepo.checkedTelegramUserIDs)
+		t.Fatalf("public ordinary message/callback should be ignored before blacklist check, got %v", blacklistRepo.checkedTelegramUserIDs)
 	}
 }
 

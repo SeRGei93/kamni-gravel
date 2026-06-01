@@ -117,24 +117,20 @@ func MainMenu(hasActiveEvent bool, isRegistered bool, miniappURL string, deepLin
 	return builder.Build()
 }
 
-// PublicMenu создаёт меню для публичного чата.
-func PublicMenu(miniappURL, registerLink, conditionsLink string) models.InlineKeyboardMarkup {
+// PublicMenu создаёт меню со ссылками для публичного чата.
+func PublicMenu(prizeFundLink, registerLink, conditionsLink string) models.InlineKeyboardMarkup {
 	builder := NewBuilder()
 
 	if registerLink != "" {
 		builder.AddRow(ButtonURL("✅ Принять участие", registerLink))
-	} else {
-		builder.AddRow(Button("✅ Принять участие", "register"))
 	}
 
-	if miniappURL != "" {
-		builder.AddRow(ButtonWebApp("🏆 Призовой фонд", miniappURL))
+	if prizeFundLink != "" {
+		builder.AddRow(ButtonURL("🏆 Призовой фонд", prizeFundLink))
 	}
 
 	if conditionsLink != "" {
 		builder.AddRow(ButtonURL("‼️ Условия участия", conditionsLink))
-	} else {
-		builder.AddRow(Button("‼️ Условия участия", "event_conditions"))
 	}
 
 	return builder.Build()
