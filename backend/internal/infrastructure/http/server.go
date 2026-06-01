@@ -16,6 +16,7 @@ import (
 	"gravel_bot/internal/infrastructure/http/middleware"
 	"gravel_bot/internal/infrastructure/security"
 	"gravel_bot/internal/infrastructure/storage"
+	telegraminfra "gravel_bot/internal/infrastructure/telegram"
 	"gravel_bot/internal/pkg/jwt"
 )
 
@@ -90,6 +91,8 @@ type Config struct {
 	JWTAccessTTL    time.Duration
 	JWTRefreshTTL   time.Duration
 	BotToken        string // Токен Telegram бота для получения файлов
+	PublicChatID    int64
+	MiniappURL      string
 	FileStoragePath string
 }
 
@@ -215,11 +218,30 @@ func NewServer(
 		updateParticipantHandler,
 		deleteParticipantHandler,
 	)
+	var publicGiftNotifier *telegraminfra.GiftNotifier
+	if cfg.PublicChatID != 0 {
+		notifier, err := telegraminfra.NewGiftNotifierFromToken(cfg.BotToken, telegraminfra.GiftNotifierConfig{
+			ChatID:     cfg.PublicChatID,
+			ChatName:   "public",
+			MiniappURL: cfg.MiniappURL,
+		})
+		if err != nil {
+			log.Printf("WARN Public gift notifier disabled: chat=public error=%v", err)
+		} else {
+			publicGiftNotifier = notifier
+		}
+	}
+
+	var giftPublicationNotifiers []handler.GiftPublicationNotifier
+	if publicGiftNotifier != nil {
+		giftPublicationNotifiers = append(giftPublicationNotifiers, publicGiftNotifier)
+	}
 	giftsHandler := handler.NewGiftsHandler(
 		giftRepo,
 		getGiftsHandler,
 		getGiftByIDHandler,
 		updateGiftHandler,
+		giftPublicationNotifiers...,
 	)
 	criteriaHandler := handler.NewCriteriaHandler(
 		criteriaRepo,

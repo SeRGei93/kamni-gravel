@@ -2,11 +2,13 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -25,6 +27,12 @@ type GiftsHandler struct {
 	getGiftsHandler    *query.GetGiftsHandler
 	getGiftByIDHandler *query.GetGiftByIDHandler
 	updateGiftHandler  *command.UpdateGiftHandler
+	publicGiftNotifier GiftPublicationNotifier
+}
+
+// GiftPublicationNotifier отправляет опубликованный приз в Telegram-чат.
+type GiftPublicationNotifier interface {
+	NotifyWithRetry(ctx context.Context, gift *entity.Gift) error
 }
 
 // NewGiftsHandler создаёт новый handler
@@ -33,12 +41,19 @@ func NewGiftsHandler(
 	getGiftsHandler *query.GetGiftsHandler,
 	getGiftByIDHandler *query.GetGiftByIDHandler,
 	updateGiftHandler *command.UpdateGiftHandler,
+	publicGiftNotifier ...GiftPublicationNotifier,
 ) *GiftsHandler {
+	var notifier GiftPublicationNotifier
+	if len(publicGiftNotifier) > 0 {
+		notifier = publicGiftNotifier[0]
+	}
+
 	return &GiftsHandler{
 		giftRepo:           giftRepo,
 		getGiftsHandler:    getGiftsHandler,
 		getGiftByIDHandler: getGiftByIDHandler,
 		updateGiftHandler:  updateGiftHandler,
+		publicGiftNotifier: notifier,
 	}
 }
 
@@ -158,7 +173,7 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.updateGiftHandler.Handle(r.Context(), command.UpdateGiftCommand{
+	updateResult, err := h.updateGiftHandler.Handle(r.Context(), command.UpdateGiftCommand{
 		GiftID:         uint(id),
 		Description:    req.Description,
 		GenderFilter:   req.GenderFilter,
@@ -200,7 +215,24 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if updateResult != nil && updateResult.BecameApproved {
+		h.notifyPublicGiftApproved(r.Context(), updatedGift)
+	}
+
 	response.Success(w, dto.FromGift(updatedGift))
+}
+
+func (h *GiftsHandler) notifyPublicGiftApproved(ctx context.Context, gift *entity.Gift) {
+	if h.publicGiftNotifier == nil || gift == nil {
+		return
+	}
+
+	notifyCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
+	defer cancel()
+
+	if err := h.publicGiftNotifier.NotifyWithRetry(notifyCtx, gift); err != nil {
+		log.Printf("WARN Public gift notification failed after approval: gift_id=%d event_id=%d user_id=%d chat=public error=%v", gift.ID, gift.EventID, gift.UserID, err)
+	}
 }
 
 func decodeUpdateGiftRequest(r *http.Request) (UpdateGiftRequest, error) {

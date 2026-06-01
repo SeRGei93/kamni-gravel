@@ -56,6 +56,8 @@ func main() {
 			JWTRefreshTTL:   cfg.API.JWTRefreshTTL,
 			AllowedOrigins:  cfg.API.AllowedOrigins,
 			BotToken:        cfg.Bot.Token,
+			PublicChatID:    cfg.Bot.PublicChat,
+			MiniappURL:      cfg.Bot.MiniappURL,
 			FileStoragePath: cfg.Files.Path,
 		},
 		userRepo,

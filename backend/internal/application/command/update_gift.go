@@ -36,6 +36,12 @@ type UpdateGiftCommand struct {
 	CriteriaIDsSet bool
 }
 
+// UpdateGiftResult представляет результат административного обновления подарка.
+type UpdateGiftResult struct {
+	Gift           *entity.Gift
+	BecameApproved bool
+}
+
 // UpdateGiftHandler обрабатывает административное обновление подарка.
 type UpdateGiftHandler struct {
 	giftRepo repository.GiftRepository
@@ -47,11 +53,12 @@ func NewUpdateGiftHandler(giftRepo repository.GiftRepository) *UpdateGiftHandler
 }
 
 // Handle выполняет команду обновления подарка.
-func (h *UpdateGiftHandler) Handle(ctx context.Context, cmd UpdateGiftCommand) (*entity.Gift, error) {
+func (h *UpdateGiftHandler) Handle(ctx context.Context, cmd UpdateGiftCommand) (*UpdateGiftResult, error) {
 	gift, err := h.giftRepo.FindByID(ctx, cmd.GiftID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrGiftNotFound, err)
 	}
+	previousReviewStatus := gift.ReviewStatus
 
 	if cmd.Description != nil {
 		description := strings.TrimSpace(*cmd.Description)
@@ -115,7 +122,10 @@ func (h *UpdateGiftHandler) Handle(ctx context.Context, cmd UpdateGiftCommand) (
 			log.Printf("ERROR gift update failed: gift_id=%d stage=update_with_criteria error=%v", cmd.GiftID, err)
 			return nil, fmt.Errorf("failed to update gift %d with criteria: %w", cmd.GiftID, err)
 		}
-		return gift, nil
+		return &UpdateGiftResult{
+			Gift:           gift,
+			BecameApproved: previousReviewStatus != entity.GiftReviewStatusApproved && gift.ReviewStatus == entity.GiftReviewStatusApproved,
+		}, nil
 	}
 
 	if err := h.giftRepo.Update(ctx, gift); err != nil {
@@ -123,5 +133,8 @@ func (h *UpdateGiftHandler) Handle(ctx context.Context, cmd UpdateGiftCommand) (
 		return nil, fmt.Errorf("failed to update gift %d fields: %w", cmd.GiftID, err)
 	}
 
-	return gift, nil
+	return &UpdateGiftResult{
+		Gift:           gift,
+		BecameApproved: previousReviewStatus != entity.GiftReviewStatusApproved && gift.ReviewStatus == entity.GiftReviewStatusApproved,
+	}, nil
 }

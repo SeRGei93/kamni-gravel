@@ -162,13 +162,17 @@ func TestUpdateGiftHandlerApprovesWithCriteriaAtomically(t *testing.T) {
 	}
 
 	criteriaIDs := []uint{10, 20}
-	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+	result, err := h.Handle(context.Background(), UpdateGiftCommand{
 		GiftID:         1,
 		ReviewStatus:   &status,
 		CriteriaIDs:    criteriaIDs,
 		CriteriaIDsSet: true,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("approve update error: %v", err)
+	}
+	if result == nil || !result.BecameApproved {
+		t.Fatalf("approve transition flag mismatch: %#v", result)
 	}
 	if !repo.updateWithCriteriaCalled {
 		t.Fatal("UpdateWithCriteria was not called")
@@ -178,6 +182,30 @@ func TestUpdateGiftHandlerApprovesWithCriteriaAtomically(t *testing.T) {
 	}
 	if len(repo.criteriaIDs) != len(criteriaIDs) {
 		t.Fatalf("criteria count mismatch: got %d, want %d", len(repo.criteriaIDs), len(criteriaIDs))
+	}
+}
+
+func TestUpdateGiftHandlerDoesNotRepublishAlreadyApprovedGift(t *testing.T) {
+	gift := baseUpdateGift()
+	gift.ReviewStatus = entity.GiftReviewStatusApproved
+	repo := &updateGiftRepoFake{gift: gift}
+	h := NewUpdateGiftHandler(repo)
+	status := entity.GiftReviewStatusApproved.String()
+
+	result, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:         1,
+		ReviewStatus:   &status,
+		CriteriaIDs:    []uint{},
+		CriteriaIDsSet: true,
+	})
+	if err != nil {
+		t.Fatalf("approved update error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil")
+	}
+	if result.BecameApproved {
+		t.Fatalf("already approved gift should not be marked for publication: %#v", result)
 	}
 }
 

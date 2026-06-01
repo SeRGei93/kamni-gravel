@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/valueobject"
 )
 
@@ -29,6 +32,46 @@ func TestDecodeUpdateGiftRequestPlacePresence(t *testing.T) {
 	if req.PlaceSet {
 		t.Fatal("omitted place should not be marked as present")
 	}
+}
+
+func TestGiftsHandlerNotifyPublicGiftApprovedUsesRetryNotifier(t *testing.T) {
+	notifier := &giftPublicationNotifierFake{}
+	h := &GiftsHandler{publicGiftNotifier: notifier}
+	gift := &entity.Gift{ID: 10, EventID: 77, UserID: 123}
+
+	h.notifyPublicGiftApproved(context.Background(), gift)
+
+	if notifier.calls != 1 {
+		t.Fatalf("notifier calls mismatch: got %d, want 1", notifier.calls)
+	}
+	if notifier.giftID != gift.ID {
+		t.Fatalf("notified gift mismatch: got %d, want %d", notifier.giftID, gift.ID)
+	}
+}
+
+func TestGiftsHandlerNotifyPublicGiftApprovedDoesNotReturnNotifierError(t *testing.T) {
+	notifier := &giftPublicationNotifierFake{err: errors.New("telegram unavailable")}
+	h := &GiftsHandler{publicGiftNotifier: notifier}
+
+	h.notifyPublicGiftApproved(context.Background(), &entity.Gift{ID: 10, EventID: 77, UserID: 123})
+
+	if notifier.calls != 1 {
+		t.Fatalf("notifier calls mismatch: got %d, want 1", notifier.calls)
+	}
+}
+
+type giftPublicationNotifierFake struct {
+	calls  int
+	giftID uint
+	err    error
+}
+
+func (n *giftPublicationNotifierFake) NotifyWithRetry(ctx context.Context, gift *entity.Gift) error {
+	n.calls++
+	if gift != nil {
+		n.giftID = gift.ID
+	}
+	return n.err
 }
 
 func TestDecodeUpdateGiftRequestPlaceRulePresence(t *testing.T) {
