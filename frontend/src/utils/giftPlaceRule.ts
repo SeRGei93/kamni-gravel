@@ -2,6 +2,11 @@ import type { Gift, GiftPlaceRule, PrizeGiftAssignment } from '@/types';
 
 export type GiftPlaceRuleMode = 'none' | 'places' | 'last_n';
 
+export interface GiftPlaceRange {
+  start: number;
+  end: number;
+}
+
 export interface GiftPlaceRuleFormState {
   mode: GiftPlaceRuleMode;
   placesInput: string;
@@ -132,13 +137,92 @@ export function formatPrizeAssignment(assignment: PrizeGiftAssignment): string {
   return assignment.target_rank ? target : assigned;
 }
 
+export function buildMissingGiftPlaceRanges(
+  gifts: Gift[],
+  targetPlace: number
+): GiftPlaceRange[] {
+  if (!Number.isSafeInteger(targetPlace) || targetPlace <= 0) {
+    return [];
+  }
+
+  const occupiedPlaces = collectFixedGiftPlaces(gifts, targetPlace);
+  const missingPlaces: number[] = [];
+  for (let place = 1; place <= targetPlace; place += 1) {
+    if (!occupiedPlaces.has(place)) {
+      missingPlaces.push(place);
+    }
+  }
+
+  return compactPlacesToRanges(missingPlaces);
+}
+
+export function getGiftFirstFixedPlace(gift: Gift): number | undefined {
+  const places = getGiftFixedPlaces(gift);
+  if (places.length === 0) {
+    return undefined;
+  }
+
+  return Math.min(...places);
+}
+
 export function formatPlaceList(places: number[]): string {
   if (places.length === 0) {
     return '';
   }
 
+  return compactPlacesToRanges(places)
+    .map(formatPlaceRange)
+    .join(', ');
+}
+
+export function formatPlaceRange(range: GiftPlaceRange): string {
+  return range.start === range.end ? String(range.start) : `${range.start}-${range.end}`;
+}
+
+function collectFixedGiftPlaces(
+  gifts: Gift[],
+  targetPlace: number
+): Set<number> {
+  const occupiedPlaces = new Set<number>();
+
+  for (const gift of gifts) {
+    if (!isFixedPlaceGift(gift)) {
+      continue;
+    }
+
+    for (const place of getGiftFixedPlaces(gift)) {
+      if (place >= 1 && place <= targetPlace) {
+        occupiedPlaces.add(place);
+      }
+    }
+  }
+
+  return occupiedPlaces;
+}
+
+function isFixedPlaceGift(gift: Gift): boolean {
+  return gift.review_status === 'approved' && getGiftFixedPlaces(gift).length > 0;
+}
+
+function getGiftFixedPlaces(gift: Gift): number[] {
+  if (gift.place_rule?.type === 'places') {
+    return gift.place_rule.places ?? [];
+  }
+
+  if (gift.place) {
+    return [gift.place];
+  }
+
+  return [];
+}
+
+function compactPlacesToRanges(places: number[]): GiftPlaceRange[] {
   const normalized = Array.from(new Set(places)).sort((left, right) => left - right);
-  const ranges: string[] = [];
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  const ranges: GiftPlaceRange[] = [];
   let start = normalized[0];
   let previous = normalized[0];
 
@@ -149,12 +233,12 @@ export function formatPlaceList(places: number[]): string {
       continue;
     }
 
-    ranges.push(start === previous ? String(start) : `${start}-${previous}`);
+    ranges.push({ start, end: previous });
     start = current;
     previous = current;
   }
 
-  return ranges.join(', ');
+  return ranges;
 }
 
 function parsePositivePlace(value: string): number {

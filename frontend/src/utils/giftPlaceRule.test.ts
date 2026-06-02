@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   buildGiftPlaceRuleFromForm,
   formatGiftPlaceRule,
+  formatPlaceRange,
   formatPlaceList,
   formatPrizeAssignment,
+  getGiftFirstFixedPlace,
   getGiftPlaceRuleFormState,
+  buildMissingGiftPlaceRanges,
   parseGiftPlaceRulePlaces,
 } from './giftPlaceRule';
 import type { Gift } from '@/types';
@@ -102,6 +105,49 @@ describe('buildGiftPlaceRuleFromForm', () => {
 describe('formatPlaceList', () => {
   it('compacts adjacent places into ranges', () => {
     expect(formatPlaceList([5, 1, 2, 3, 8, 9])).toBe('1-3, 5, 8-9');
+  });
+});
+
+describe('buildMissingGiftPlaceRanges', () => {
+  const baseGift: Gift = {
+    id: 1,
+    user_id: 10,
+    event_id: 20,
+    description: 'Prize',
+    gender_filter: 'all',
+    bike_type_filter: 'all',
+    review_status: 'approved',
+    created_at: '2026-05-28T00:00:00Z',
+  };
+
+  it('builds missing ranges between displayed fixed-place gifts', () => {
+    const gifts: Gift[] = [
+      { ...baseGift, id: 1, place_rule: { type: 'places', places: [1, 2, 3, 4, 5] } },
+      { ...baseGift, id: 2, place_rule: { type: 'places', places: [10] } },
+    ];
+
+    expect(buildMissingGiftPlaceRanges(gifts, 12).map(formatPlaceRange)).toEqual([
+      '6-9',
+      '11-12',
+    ]);
+  });
+
+  it('uses displayed fixed-place gifts and ignores pending, last-n and unplaced gifts', () => {
+    const gifts: Gift[] = [
+      { ...baseGift, id: 1, place_rule: { type: 'places', places: [1] } },
+      { ...baseGift, id: 2, review_status: 'pending_review', place_rule: { type: 'places', places: [2] } },
+      { ...baseGift, id: 3, place_rule: { type: 'places', places: [3] } },
+      { ...baseGift, id: 4 },
+      { ...baseGift, id: 5, place_rule: { type: 'last_n', last_count: 2 } },
+    ];
+
+    expect(buildMissingGiftPlaceRanges(gifts, 5).map(formatPlaceRange)).toEqual(['2', '4-5']);
+  });
+
+  it('returns the first fixed place for table ordering', () => {
+    expect(getGiftFirstFixedPlace({ ...baseGift, place_rule: { type: 'places', places: [10, 11] } })).toBe(10);
+    expect(getGiftFirstFixedPlace({ ...baseGift, place: 3 })).toBe(3);
+    expect(getGiftFirstFixedPlace({ ...baseGift, place_rule: { type: 'last_n', last_count: 2 } })).toBeUndefined();
   });
 });
 

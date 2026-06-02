@@ -5,13 +5,25 @@ import { useRouter } from "next/navigation";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
 import type { BikeTypeFilter, GenderFilter, Gift } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
-import { formatGiftPlaceRule } from "@/utils/giftPlaceRule";
+import {
+  buildMissingGiftPlaceRanges,
+  formatGiftPlaceRule,
+  formatPlaceRange,
+  getGiftFirstFixedPlace,
+  type GiftPlaceRange,
+} from "@/utils/giftPlaceRule";
 import GiftImage from "./GiftImage";
 
 interface GiftCatalogTableProps {
   gifts: Gift[];
   isLoading?: boolean;
+  participantCount?: number;
+  showPlaceGaps?: boolean;
 }
+
+type GiftCatalogRow =
+  | { type: "gift"; gift: Gift }
+  | { type: "gap"; range: GiftPlaceRange };
 
 const genderText: Record<GenderFilter, string> = {
   all: "абсолют",
@@ -24,7 +36,14 @@ const bikeText = BIKE_TYPE_OPTIONS.reduce<Record<string, string>>((acc, option) 
   return acc;
 }, {});
 
-export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableProps) {
+export default function GiftCatalogTable({
+  gifts,
+  isLoading,
+  participantCount,
+  showPlaceGaps = false,
+}: GiftCatalogTableProps) {
+  const rows = buildGiftCatalogRows(gifts, participantCount, showPlaceGaps);
+
   return (
     <section
       className={`tg-card overflow-hidden rounded-xl border ${
@@ -52,13 +71,52 @@ export default function GiftCatalogTable({ gifts, isLoading }: GiftCatalogTableP
           </tr>
         </thead>
         <tbody className="tg-table-body">
-          {gifts.map((gift) => (
-            <GiftTableRow key={gift.id} gift={gift} />
+          {rows.map((row) => (
+            row.type === "gift" ? (
+              <GiftTableRow key={`gift-${row.gift.id}`} gift={row.gift} />
+            ) : (
+              <GiftGapRow key={`gap-${row.range.start}-${row.range.end}`} range={row.range} />
+            )
           ))}
         </tbody>
       </table>
     </section>
   );
+}
+
+function buildGiftCatalogRows(
+  gifts: Gift[],
+  participantCount?: number,
+  showPlaceGaps = false
+): GiftCatalogRow[] {
+  if (!showPlaceGaps || !participantCount || participantCount <= 0) {
+    return gifts.map((gift) => ({ type: "gift", gift }));
+  }
+
+  const gapRanges = buildMissingGiftPlaceRanges(gifts, participantCount);
+  if (gapRanges.length === 0) {
+    return gifts.map((gift) => ({ type: "gift", gift }));
+  }
+
+  const rows: GiftCatalogRow[] = [];
+  let gapIndex = 0;
+
+  for (const gift of gifts) {
+    const giftPlace = getGiftFirstFixedPlace(gift) ?? Number.POSITIVE_INFINITY;
+    while (gapIndex < gapRanges.length && gapRanges[gapIndex].start < giftPlace) {
+      rows.push({ type: "gap", range: gapRanges[gapIndex] });
+      gapIndex += 1;
+    }
+
+    rows.push({ type: "gift", gift });
+  }
+
+  while (gapIndex < gapRanges.length) {
+    rows.push({ type: "gap", range: gapRanges[gapIndex] });
+    gapIndex += 1;
+  }
+
+  return rows;
 }
 
 function GiftTableRow({ gift }: { gift: Gift }) {
@@ -105,6 +163,18 @@ function GiftTableRow({ gift }: { gift: Gift }) {
       </td>
       <td className="px-1.5 py-1.5">
         <GiftCompactConditions gift={gift} />
+      </td>
+    </tr>
+  );
+}
+
+function GiftGapRow({ range }: { range: GiftPlaceRange }) {
+  return (
+    <tr className="align-top">
+      <td colSpan={3} className="px-2 py-1.5">
+        <div className="tg-soft-accent rounded-lg border px-3 py-2 text-center text-xs font-semibold leading-4">
+          {formatPlaceRange(range)} {range.start === range.end ? "еще нет приза" : "еще нет призов"}
+        </div>
       </td>
     </tr>
   );

@@ -200,6 +200,7 @@ export interface Gift {
 export interface GiftListResponse {
   gifts: Gift[];
   total: number;
+  participant_count?: number;
 }
 
 export interface MiniappTelegramUser {

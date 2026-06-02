@@ -16,12 +16,14 @@ import {
   isTelegramWebAppAvailable,
   readyTelegramWebApp,
 } from "@/utils/telegramWebApp";
+import { getGiftFirstFixedPlace } from "@/utils/giftPlaceRule";
 
 const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["male", "female"];
 
 export default function MiniappGiftsPage() {
   const [session, setSession] = useState<MiniappSessionResponse | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
+  const [participantCount, setParticipantCount] = useState<number | undefined>(undefined);
   const [gender, setGender] = useState<MiniappGenderFilter>("all_genders");
   const [bikeType, setBikeType] = useState<BikeTypeFilter>("all");
   const [isSessionLoading, setIsSessionLoading] = useState(true);
@@ -92,6 +94,9 @@ export default function MiniappGiftsPage() {
 
         if (!ignore) {
           setGifts(mergeUniqueGifts(catalogResponses.flatMap((response) => response.gifts)));
+          setParticipantCount(
+            gender === "all_genders" ? undefined : catalogResponses[0]?.participant_count
+          );
         }
       } catch (loadError) {
         console.warn("[miniapp] Gift catalog load failed", {
@@ -137,19 +142,28 @@ export default function MiniappGiftsPage() {
 
   return (
     <main className="tg-screen min-h-screen">
-      <GiftFilters
-        gender={gender}
-        bikeType={bikeType}
-        isLoading={isCatalogLoading}
-        onGenderChange={setGender}
-        onBikeTypeChange={setBikeType}
-      />
+      <section className="tg-topbar sticky top-0 z-10 border-b px-3 py-2 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-md flex-col gap-2">
+          <GiftFilters
+            gender={gender}
+            bikeType={bikeType}
+            isLoading={isCatalogLoading}
+            onGenderChange={setGender}
+            onBikeTypeChange={setBikeType}
+          />
+        </div>
+      </section>
 
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
         {isCatalogLoading && gifts.length === 0 ? (
           <MiniappCatalogLoading />
         ) : gifts.length > 0 ? (
-          <GiftCatalogTable gifts={gifts} isLoading={isCatalogLoading} />
+          <GiftCatalogTable
+            gifts={gifts}
+            isLoading={isCatalogLoading}
+            participantCount={participantCount}
+            showPlaceGaps={gender !== "all_genders"}
+          />
         ) : (
           <GiftEmptyState />
         )}
@@ -201,17 +215,20 @@ function mergeUniqueGifts(gifts: Gift[]): Gift[] {
 
 function sortGiftsByPlace(gifts: Gift[]): Gift[] {
   return [...gifts].sort((left, right) => {
-    if (left.place === undefined && right.place === undefined) {
+    const leftPlace = getGiftFirstFixedPlace(left);
+    const rightPlace = getGiftFirstFixedPlace(right);
+
+    if (leftPlace === undefined && rightPlace === undefined) {
       return 0;
     }
-    if (left.place === undefined) {
+    if (leftPlace === undefined) {
       return 1;
     }
-    if (right.place === undefined) {
+    if (rightPlace === undefined) {
       return -1;
     }
 
-    return left.place - right.place;
+    return leftPlace - rightPlace;
   });
 }
 

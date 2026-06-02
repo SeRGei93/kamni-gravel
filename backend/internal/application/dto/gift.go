@@ -108,6 +108,7 @@ func FromGiftPlaceRule(rule valueobject.GiftPlaceRule) *GiftPlaceRuleDTO {
 
 // GiftListResponse представляет ответ со списком подарков
 type GiftListResponse struct {
-	Gifts []*GiftDTO `json:"gifts"`
-	Total int        `json:"total"`
+	Gifts            []*GiftDTO `json:"gifts"`
+	Total            int        `json:"total"`
+	ParticipantCount *int       `json:"participant_count,omitempty"`
 }

@@ -135,6 +135,7 @@ func NewServer(
 	getGiftsHandler := query.NewGetGiftsHandler(giftRepo, criteriaRepo)
 	getGiftByIDHandler := query.NewGetGiftByIDHandler(giftRepo, criteriaRepo)
 	getMiniappGiftsHandler := query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo)
+	getMiniappParticipantCountHandler := query.NewGetMiniappParticipantCountHandler(participantRepo)
 	getEventsHandler := query.NewGetEventsHandler(eventRepo)
 	getEventByIDHandler := query.NewGetEventByIDHandler(eventRepo)
 	getPrizeAssignmentsHandler := query.NewGetPrizeAssignmentsHandler(prizeAssignmentRepo)
@@ -262,6 +263,7 @@ func NewServer(
 	miniappHandler := handler.NewMiniappHandler(
 		eventRepo,
 		getMiniappGiftsHandler,
+		getMiniappParticipantCountHandler,
 		cfg.BotToken,
 	)
 	userBlacklistHandler := handler.NewUserBlacklistHandler(

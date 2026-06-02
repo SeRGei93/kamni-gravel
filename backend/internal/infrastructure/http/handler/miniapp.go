@@ -21,9 +21,10 @@ import (
 
 // MiniappHandler обрабатывает защищённые запросы Telegram Mini App.
 type MiniappHandler struct {
-	eventRepo              repository.EventRepository
-	getMiniappGiftsHandler *query.GetMiniappGiftsHandler
-	fileFetcher            miniappFileFetcher
+	eventRepo                         repository.EventRepository
+	getMiniappGiftsHandler            *query.GetMiniappGiftsHandler
+	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler
+	fileFetcher                       miniappFileFetcher
 }
 
 type miniappFileFetcher interface {
@@ -43,11 +44,13 @@ type httpDoer interface {
 func NewMiniappHandler(
 	eventRepo repository.EventRepository,
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
+	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	botToken string,
 ) *MiniappHandler {
 	return newMiniappHandlerWithFileFetcher(
 		eventRepo,
 		getMiniappGiftsHandler,
+		getMiniappParticipantCountHandler,
 		&telegramFileFetcher{
 			botToken:   botToken,
 			httpClient: http.DefaultClient,
@@ -58,12 +61,14 @@ func NewMiniappHandler(
 func newMiniappHandlerWithFileFetcher(
 	eventRepo repository.EventRepository,
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
+	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	fileFetcher miniappFileFetcher,
 ) *MiniappHandler {
 	return &MiniappHandler{
-		eventRepo:              eventRepo,
-		getMiniappGiftsHandler: getMiniappGiftsHandler,
-		fileFetcher:            fileFetcher,
+		eventRepo:                         eventRepo,
+		getMiniappGiftsHandler:            getMiniappGiftsHandler,
+		getMiniappParticipantCountHandler: getMiniappParticipantCountHandler,
+		fileFetcher:                       fileFetcher,
 	}
 }
 
@@ -125,6 +130,24 @@ func (h *MiniappHandler) Gifts(w http.ResponseWriter, r *http.Request) {
 
 	gender := r.URL.Query().Get("gender")
 	bikeType := r.URL.Query().Get("bike_type")
+	participantCount, err := h.getMiniappParticipantCountHandler.Handle(r.Context(), query.GetMiniappParticipantCountQuery{
+		EventID:  event.ID,
+		Gender:   gender,
+		BikeType: bikeType,
+	})
+	if err != nil {
+		if errors.Is(err, query.ErrInvalidMiniappGiftGenderFilter) ||
+			errors.Is(err, query.ErrInvalidMiniappGiftBikeTypeFilter) {
+			log.Printf("WARN Miniapp gifts rejected invalid participant filters: telegram_user_id=%d event_id=%d gender=%q bike_type=%q error=%v", user.ID, event.ID, gender, bikeType, err)
+			response.BadRequest(w, err.Error())
+			return
+		}
+
+		log.Printf("ERROR Miniapp participant count failed: telegram_user_id=%d event_id=%d gender=%q bike_type=%q error=%v", user.ID, event.ID, gender, bikeType, err)
+		response.InternalServerError(w, "Failed to get participant count")
+		return
+	}
+
 	gifts, err := h.getMiniappGiftsHandler.Handle(r.Context(), query.GetMiniappGiftsQuery{
 		EventID:  event.ID,
 		Gender:   gender,
@@ -148,10 +171,11 @@ func (h *MiniappHandler) Gifts(w http.ResponseWriter, r *http.Request) {
 		giftDTOs = append(giftDTOs, dto.FromGift(gift))
 	}
 
-	log.Printf("INFO Miniapp gifts requested: telegram_user_id=%d event_id=%d gender=%q bike_type=%q result_count=%d", user.ID, event.ID, gender, bikeType, len(giftDTOs))
+	log.Printf("INFO Miniapp gifts requested: telegram_user_id=%d event_id=%d gender=%q bike_type=%q result_count=%d participant_count=%d", user.ID, event.ID, gender, bikeType, len(giftDTOs), participantCount)
 	response.Success(w, dto.GiftListResponse{
-		Gifts: giftDTOs,
-		Total: len(giftDTOs),
+		Gifts:            giftDTOs,
+		Total:            len(giftDTOs),
+		ParticipantCount: &participantCount,
 	})
 }
 

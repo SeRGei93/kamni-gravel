@@ -29,7 +29,7 @@ func TestMiniappSessionReturnsTelegramUserAndActiveEvent(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	h := newMiniappTestHandler(&miniappEventRepoFake{
 		activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Description: "Race gifts", Active: true},
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	rr := miniappRequest(t, token, now, h.Session, "/api/miniapp/session")
 
@@ -52,7 +52,7 @@ func TestMiniappSessionReturnsTelegramUserAndActiveEvent(t *testing.T) {
 func TestMiniappSessionReturnsNotFoundWhenNoActiveEvent(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()
-	h := newMiniappTestHandler(&miniappEventRepoFake{}, nil, nil)
+	h := newMiniappTestHandler(&miniappEventRepoFake{}, nil, nil, nil)
 
 	rr := miniappRequest(t, token, now, h.Session, "/api/miniapp/session")
 
@@ -100,6 +100,13 @@ func TestMiniappGiftsUsesActiveEventAndApprovedCatalog(t *testing.T) {
 		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
 		giftRepo,
 		criteriaRepo,
+		&miniappHandlerParticipantRepoFake{
+			participants: []*entity.Participant{
+				{ID: 1, EventID: 77, Gender: valueobject.GenderMale, BikeType: valueobject.BikeTypeGravel},
+				{ID: 2, EventID: 77, Gender: valueobject.GenderMale, BikeType: valueobject.BikeTypeMTB},
+				{ID: 3, EventID: 77, Gender: valueobject.GenderFemale, BikeType: valueobject.BikeTypeGravel},
+			},
+		},
 	)
 
 	rr := miniappRequest(t, token, now, h.Gifts, "/api/miniapp/gifts?gender=male&bike_type=gravel")
@@ -125,13 +132,17 @@ func TestMiniappGiftsUsesActiveEventAndApprovedCatalog(t *testing.T) {
 				ID uint `json:"id"`
 			} `json:"criteria"`
 		} `json:"gifts"`
-		Total int `json:"total"`
+		Total            int `json:"total"`
+		ParticipantCount int `json:"participant_count"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if got.Total != 1 || len(got.Gifts) != 1 || got.Gifts[0].ID != 1 {
 		t.Fatalf("gift list mismatch: %#v", got)
+	}
+	if got.ParticipantCount != 1 {
+		t.Fatalf("participant count mismatch: got %d, want 1", got.ParticipantCount)
 	}
 	if len(got.Gifts[0].Attachments) != 1 || got.Gifts[0].Attachments[0].TelegramFileID != "file-1" {
 		t.Fatalf("attachments mismatch: %#v", got.Gifts[0].Attachments)
@@ -149,6 +160,7 @@ func TestMiniappGiftsRejectsInvalidFilters(t *testing.T) {
 		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
 		giftRepo,
 		&miniappHandlerCriteriaRepoFake{},
+		nil,
 	)
 
 	rr := miniappRequest(t, token, now, h.Gifts, "/api/miniapp/gifts?gender=everyone&bike_type=gravel")
@@ -166,6 +178,7 @@ func TestMiniappTelegramFileStreamsContent(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	h := newMiniappTestHandler(
 		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
+		nil,
 		nil,
 		nil,
 	)
@@ -211,6 +224,7 @@ func newMiniappTestHandler(
 	eventRepo *miniappEventRepoFake,
 	giftRepo *miniappHandlerGiftRepoFake,
 	criteriaRepo *miniappHandlerCriteriaRepoFake,
+	participantRepo *miniappHandlerParticipantRepoFake,
 ) *MiniappHandler {
 	if giftRepo == nil {
 		giftRepo = &miniappHandlerGiftRepoFake{}
@@ -218,10 +232,14 @@ func newMiniappTestHandler(
 	if criteriaRepo == nil {
 		criteriaRepo = &miniappHandlerCriteriaRepoFake{}
 	}
+	if participantRepo == nil {
+		participantRepo = &miniappHandlerParticipantRepoFake{}
+	}
 
 	return newMiniappHandlerWithFileFetcher(
 		eventRepo,
 		query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo),
+		query.NewGetMiniappParticipantCountHandler(participantRepo),
 		miniappFileFetcherFunc(func(ctx context.Context, fileID string) (*http.Response, error) {
 			return nil, fmt.Errorf("unexpected file fetch: %s", fileID)
 		}),
@@ -344,6 +362,40 @@ func (r *miniappHandlerCriteriaRepoFake) FindByGift(ctx context.Context, giftID 
 	return r.criteriaByGift[giftID], nil
 }
 func (r *miniappHandlerCriteriaRepoFake) FindByResult(ctx context.Context, resultID uint) ([]*entity.Criteria, error) {
+	return nil, nil
+}
+
+type miniappHandlerParticipantRepoFake struct {
+	participants []*entity.Participant
+	eventID      uint
+}
+
+func (r *miniappHandlerParticipantRepoFake) Create(ctx context.Context, participant *entity.Participant) error {
+	return nil
+}
+func (r *miniappHandlerParticipantRepoFake) Update(ctx context.Context, participant *entity.Participant) error {
+	return nil
+}
+func (r *miniappHandlerParticipantRepoFake) FindByID(ctx context.Context, id uint) (*entity.Participant, error) {
+	return nil, nil
+}
+func (r *miniappHandlerParticipantRepoFake) FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) (*entity.Participant, error) {
+	return nil, nil
+}
+func (r *miniappHandlerParticipantRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
+	r.eventID = eventID
+	return r.participants, nil
+}
+func (r *miniappHandlerParticipantRepoFake) UpdateNotes(ctx context.Context, id uint, notes string) error {
+	return nil
+}
+func (r *miniappHandlerParticipantRepoFake) Delete(ctx context.Context, id uint) error {
+	return nil
+}
+func (r *miniappHandlerParticipantRepoFake) DeleteWithResultCriteria(ctx context.Context, id uint) error {
+	return nil
+}
+func (r *miniappHandlerParticipantRepoFake) GetFinishedByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
 	return nil, nil
 }
 
