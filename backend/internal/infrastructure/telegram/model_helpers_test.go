@@ -180,6 +180,38 @@ func TestProxyOpenUserChatKeyboardUsesTargetCallback(t *testing.T) {
 	}
 }
 
+func TestProxyUserMetadataText(t *testing.T) {
+	tests := []struct {
+		name string
+		user *models.User
+		want string
+	}{
+		{
+			name: "full profile",
+			user: &models.User{ID: 123, Username: "alex", FirstName: "Alex", LastName: "Rider"},
+			want: "ID: 123\nНик: @alex\nИмя: Alex Rider",
+		},
+		{
+			name: "missing optional profile",
+			user: &models.User{ID: 456},
+			want: "ID: 456\nНик: -\nИмя: -",
+		},
+		{
+			name: "username already prefixed",
+			user: &models.User{ID: 789, Username: "@mila", FirstName: "Mila"},
+			want: "ID: 789\nНик: @mila\nИмя: Mila",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := proxyUserMetadataText(tt.user); got != tt.want {
+				t.Fatalf("metadata mismatch: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProxyCloseKeyboardUsesEndUserChatCallback(t *testing.T) {
 	markup := proxyCloseKeyboard()
 	if got, want := callbackData(markup), []string{proxyCloseCallbackData}; !reflect.DeepEqual(got, want) {

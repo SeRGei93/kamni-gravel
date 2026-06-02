@@ -26,6 +26,9 @@ const (
 	telegramTextLimit       = 4096
 	telegramMediaGroupLimit = 10
 	adminGiftMiniappLabel   = "призовой фонд"
+	proxyDialogIdleTimeout  = 2 * time.Minute
+	proxyBroadcastInterval  = 100 * time.Millisecond
+	proxyBroadcastRetryWait = time.Second
 )
 
 // Bot представляет Telegram бота
@@ -37,8 +40,14 @@ type Bot struct {
 	adminChatID       int64
 	publicChatID      int64
 	botMessagesChatID int64
+	proxyUsersMu      sync.RWMutex
+	proxyUsers        map[int64]entity.User
 	proxyDialogMu     sync.Mutex
 	proxyTargetUserID int64
+	proxyLastActiveAt time.Time
+	proxyIdleTimeout  time.Duration
+	proxyCloseTimer   *time.Timer
+	proxySendInterval time.Duration
 	adminChatLogOnce  sync.Once
 	sessionManager    *session.Manager
 
@@ -160,6 +169,8 @@ func NewBot(
 		adminChatID:                cfg.AdminChatID,
 		publicChatID:               cfg.PublicChatID,
 		botMessagesChatID:          cfg.BotMessagesChatID,
+		proxyIdleTimeout:           proxyDialogIdleTimeout,
+		proxySendInterval:          proxyBroadcastInterval,
 		sessionManager:             sessionManager,
 		userRepo:                   userRepo,
 		eventRepo:                  eventRepo,
@@ -927,6 +938,9 @@ func (b *Bot) startProxyDialog(targetUserID int64) (int64, bool) {
 		return 0, false
 	}
 
+	now := time.Now()
+	b.expireProxyDialog(now)
+
 	b.proxyDialogMu.Lock()
 	defer b.proxyDialogMu.Unlock()
 
@@ -936,6 +950,8 @@ func (b *Bot) startProxyDialog(targetUserID int64) (int64, bool) {
 	}
 
 	b.proxyTargetUserID = targetUserID
+	b.proxyLastActiveAt = now
+	b.resetProxyDialogTimerLocked(targetUserID, now, b.proxyIdleTimeout)
 	log.Printf("INFO Telegram proxy dialog opened: chat=bot_messages target_user_id=%d", targetUserID)
 	return targetUserID, true
 }
@@ -954,6 +970,8 @@ func (b *Bot) endProxyDialog() (int64, bool) {
 
 	targetUserID := b.proxyTargetUserID
 	b.proxyTargetUserID = 0
+	b.proxyLastActiveAt = time.Time{}
+	b.stopProxyDialogTimerLocked()
 	log.Printf("INFO Telegram proxy dialog closed: chat=bot_messages target_user_id=%d", targetUserID)
 	return targetUserID, true
 }
@@ -963,10 +981,117 @@ func (b *Bot) activeProxyTarget() (int64, bool) {
 		return 0, false
 	}
 
+	b.expireProxyDialog(time.Now())
+
 	b.proxyDialogMu.Lock()
 	defer b.proxyDialogMu.Unlock()
 
 	return b.proxyTargetUserID, b.proxyTargetUserID != 0
+}
+
+func (b *Bot) touchProxyDialog(targetUserID int64) (int64, bool) {
+	if b == nil {
+		return 0, false
+	}
+
+	now := time.Now()
+	if expiredTargetUserID, expired := b.expireProxyDialog(now); expired {
+		return expiredTargetUserID, true
+	}
+
+	b.proxyDialogMu.Lock()
+	defer b.proxyDialogMu.Unlock()
+
+	if b.proxyTargetUserID != targetUserID {
+		return 0, false
+	}
+
+	b.proxyLastActiveAt = now
+	b.resetProxyDialogTimerLocked(targetUserID, now, b.proxyIdleTimeout)
+	return 0, false
+}
+
+func (b *Bot) expireProxyDialog(now time.Time) (int64, bool) {
+	if b == nil {
+		return 0, false
+	}
+
+	b.proxyDialogMu.Lock()
+	defer b.proxyDialogMu.Unlock()
+
+	if b.proxyTargetUserID == 0 || b.proxyLastActiveAt.IsZero() {
+		return 0, false
+	}
+	timeout := b.proxyDialogTimeout()
+	if !now.After(b.proxyLastActiveAt) || now.Sub(b.proxyLastActiveAt) <= timeout {
+		return 0, false
+	}
+
+	targetUserID := b.proxyTargetUserID
+	b.proxyTargetUserID = 0
+	b.proxyLastActiveAt = time.Time{}
+	b.stopProxyDialogTimerLocked()
+	log.Printf("INFO Telegram proxy dialog auto-closed: chat=bot_messages target_user_id=%d idle_timeout=%s", targetUserID, timeout)
+	return targetUserID, true
+}
+
+func (b *Bot) resetProxyDialogTimerLocked(targetUserID int64, lastActiveAt time.Time, timeout time.Duration) {
+	b.stopProxyDialogTimerLocked()
+	if timeout <= 0 || b.botMessagesChatID == 0 {
+		return
+	}
+
+	b.proxyCloseTimer = time.AfterFunc(timeout, func() {
+		b.autoCloseProxyDialog(targetUserID, lastActiveAt)
+	})
+}
+
+func (b *Bot) stopProxyDialogTimerLocked() {
+	if b.proxyCloseTimer == nil {
+		return
+	}
+
+	b.proxyCloseTimer.Stop()
+	b.proxyCloseTimer = nil
+}
+
+func (b *Bot) autoCloseProxyDialog(expectedTargetUserID int64, expectedLastActiveAt time.Time) {
+	if b == nil {
+		return
+	}
+
+	timeout := b.proxyDialogTimeout()
+
+	now := time.Now()
+	b.proxyDialogMu.Lock()
+	if b.proxyTargetUserID != expectedTargetUserID || !b.proxyLastActiveAt.Equal(expectedLastActiveAt) {
+		b.proxyDialogMu.Unlock()
+		return
+	}
+	if idleFor := now.Sub(b.proxyLastActiveAt); idleFor < timeout {
+		b.resetProxyDialogTimerLocked(expectedTargetUserID, b.proxyLastActiveAt, timeout-idleFor)
+		b.proxyDialogMu.Unlock()
+		return
+	}
+
+	targetUserID := b.proxyTargetUserID
+	b.proxyTargetUserID = 0
+	b.proxyLastActiveAt = time.Time{}
+	b.proxyCloseTimer = nil
+	b.proxyDialogMu.Unlock()
+
+	log.Printf("INFO Telegram proxy dialog auto-closed: chat=bot_messages target_user_id=%d idle_timeout=%s", targetUserID, timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, _ = b.SendMessage(ctx, b.botMessagesChatID, fmt.Sprintf("Чат с %s автоматически закрыт из-за отсутствия активности 2 минуты.", b.proxyUserLabel(ctx, targetUserID)))
+}
+
+func (b *Bot) proxyDialogTimeout() time.Duration {
+	if b != nil && b.proxyIdleTimeout > 0 {
+		return b.proxyIdleTimeout
+	}
+
+	return proxyDialogIdleTimeout
 }
 
 func (b *Bot) chatLogMarker(chatID int64) string {

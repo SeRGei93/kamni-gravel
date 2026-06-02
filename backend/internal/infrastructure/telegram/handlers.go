@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"strings"
+	"time"
 
 	telegrambot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -28,6 +29,14 @@ func (b *Bot) handleProxyUpdate(ctx context.Context, update *models.Update) bool
 	}
 
 	if update.CallbackQuery != nil {
+		if msgRef, ok := callbackMessage(update.CallbackQuery); ok && b.isBotMessagesChat(msgRef.ChatID) {
+			expiredTargetUserID := b.notifyExpiredProxyDialog(ctx, msgRef.ChatID)
+			if update.CallbackQuery.Data == proxyCloseCallbackData && expiredTargetUserID != 0 {
+				_ = b.AnswerCallback(ctx, update.CallbackQuery.ID, "Чат закрыт")
+				return true
+			}
+		}
+
 		switch {
 		case update.CallbackQuery.Data == proxyCloseCallbackData:
 			b.handleProxyEndUserChatCallback(ctx, update.CallbackQuery)
@@ -44,7 +53,11 @@ func (b *Bot) handleProxyUpdate(ctx context.Context, update *models.Update) bool
 
 	command := messageCommand(update.Message)
 	if b.isBotMessagesChat(update.Message.Chat.ID) {
+		expiredTargetUserID := b.notifyExpiredProxyDialog(ctx, update.Message.Chat.ID)
 		if command != "" {
+			if command == proxyEndUserChatCommand && expiredTargetUserID != 0 {
+				return true
+			}
 			if isProxyCommand(command) {
 				b.handleProxyCommand(ctx, update.Message, command)
 				return true
@@ -104,7 +117,7 @@ func (b *Bot) openProxyDialog(ctx context.Context, chatID int64, targetUserID in
 		_, _ = b.SendMessageWithKeyboard(
 			ctx,
 			chatID,
-			fmt.Sprintf("Чат уже открыт с user_id=%d. Закройте текущий чат командой /end_user_chat или кнопкой.", activeTargetUserID),
+			fmt.Sprintf("Чат уже открыт с %s. Закройте текущий чат командой /end_user_chat или кнопкой.", b.proxyUserLabel(ctx, activeTargetUserID)),
 			proxyCloseKeyboard(),
 		)
 		return
@@ -114,7 +127,7 @@ func (b *Bot) openProxyDialog(ctx context.Context, chatID int64, targetUserID in
 	_, _ = b.SendMessageWithKeyboard(
 		ctx,
 		chatID,
-		fmt.Sprintf("Чат открыт с user_id=%d.\nВсе обычные сообщения в этом чате будут отправлены пользователю.", targetUserID),
+		fmt.Sprintf("Чат открыт с %s.\nВсе обычные сообщения в этом чате будут отправлены пользователю.", b.proxyUserLabel(ctx, targetUserID)),
 		proxyCloseKeyboard(),
 	)
 }
@@ -127,7 +140,7 @@ func (b *Bot) handleEndUserChatCommand(ctx context.Context, chatID int64) {
 	}
 
 	log.Printf("INFO Telegram proxy command routed: command=%s chat=%s target_user_id=%d", proxyEndUserChatCommand, b.chatLogMarker(chatID), targetUserID)
-	_, _ = b.SendMessage(ctx, chatID, fmt.Sprintf("Чат с user_id=%d закрыт.", targetUserID))
+	_, _ = b.SendMessage(ctx, chatID, fmt.Sprintf("Чат с %s закрыт.", b.proxyUserLabel(ctx, targetUserID)))
 }
 
 func (b *Bot) handleBroadcastParticipantsCommand(ctx context.Context, msg *models.Message) {
@@ -162,13 +175,12 @@ func (b *Bot) handleProxyEndUserChatCallback(ctx context.Context, callback *mode
 	targetUserID, closed := b.endProxyDialog()
 	if !closed {
 		_ = b.AnswerCallback(ctx, callback.ID, "Активный чат не открыт")
-		_, _ = b.SendMessage(ctx, msgRef.ChatID, "Активный чат не открыт.")
 		return
 	}
 
 	log.Printf("INFO Telegram proxy callback routed: data=%s chat=%s target_user_id=%d", callback.Data, b.chatLogMarker(msgRef.ChatID), targetUserID)
 	_ = b.AnswerCallback(ctx, callback.ID, "Чат закрыт")
-	_, _ = b.SendMessage(ctx, msgRef.ChatID, fmt.Sprintf("Чат с user_id=%d закрыт.", targetUserID))
+	_, _ = b.SendMessage(ctx, msgRef.ChatID, fmt.Sprintf("Чат с %s закрыт.", b.proxyUserLabel(ctx, targetUserID)))
 }
 
 func (b *Bot) handleProxyOpenUserChatCallback(ctx context.Context, callback *models.CallbackQuery) {
@@ -197,7 +209,7 @@ func (b *Bot) handleProxyOpenUserChatCallback(ctx context.Context, callback *mod
 		_, _ = b.SendMessageWithKeyboard(
 			ctx,
 			msgRef.ChatID,
-			fmt.Sprintf("Чат уже открыт с user_id=%d. Закройте текущий чат командой /end_user_chat или кнопкой.", activeTargetUserID),
+			fmt.Sprintf("Чат уже открыт с %s. Закройте текущий чат командой /end_user_chat или кнопкой.", b.proxyUserLabel(ctx, activeTargetUserID)),
 			proxyCloseKeyboard(),
 		)
 		return
@@ -208,7 +220,7 @@ func (b *Bot) handleProxyOpenUserChatCallback(ctx context.Context, callback *mod
 	_, _ = b.SendMessageWithKeyboard(
 		ctx,
 		msgRef.ChatID,
-		fmt.Sprintf("Чат открыт с user_id=%d.\nВсе обычные сообщения в этом чате будут отправлены пользователю.", targetUserID),
+		fmt.Sprintf("Чат открыт с %s.\nВсе обычные сообщения в этом чате будут отправлены пользователю.", b.proxyUserLabel(ctx, targetUserID)),
 		proxyCloseKeyboard(),
 	)
 }
@@ -221,11 +233,12 @@ func (b *Bot) handleProxyMessage(ctx context.Context, msg *models.Message) {
 
 	targetUserID, ok := b.activeProxyTarget()
 	if !ok {
-		_, _ = b.SendMessage(ctx, msg.Chat.ID, "Активный чат не открыт. Используйте /start_user_chat <telegram_user_id> или /broadcast_participants <текст сообщения>.")
+		b.logDebug("Telegram proxy message ignored without active dialog: chat=%s update_kind=%s", b.chatLogMarker(msg.Chat.ID), messageUpdateKind(msg))
 		return
 	}
 
 	updateKind := messageUpdateKind(msg)
+	b.touchProxyDialog(targetUserID)
 	log.Printf("INFO Telegram proxy message delivery started: chat=%s target_user_id=%d update_kind=%s", b.chatLogMarker(msg.Chat.ID), targetUserID, updateKind)
 	if _, err := b.api.CopyMessage(ctx, &telegrambot.CopyMessageParams{
 		ChatID:     targetUserID,
@@ -256,8 +269,13 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 
 	delivered := 0
 	failed := 0
-	for _, targetUserID := range recipients {
-		if _, err := b.SendMessage(ctx, targetUserID, text); err != nil {
+	for index, targetUserID := range recipients {
+		if index > 0 && !b.waitProxyBroadcastInterval(ctx) {
+			log.Printf("WARN Telegram proxy broadcast cancelled: chat=%s text_len=%d delivered=%d failed=%d recipient_count=%d error=%v", b.chatLogMarker(proxyChatID), len(text), delivered, failed, len(recipients), ctx.Err())
+			return
+		}
+
+		if err := b.sendProxyBroadcastMessage(ctx, targetUserID, text); err != nil {
 			failed++
 			log.Printf("WARN Telegram proxy broadcast delivery failed: chat=%s target_user_id=%d text_len=%d error=%v", b.chatLogMarker(proxyChatID), targetUserID, len(text), err)
 			continue
@@ -267,6 +285,53 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 
 	log.Printf("INFO Telegram proxy broadcast delivered: chat=%s text_len=%d delivered=%d failed=%d recipient_count=%d", b.chatLogMarker(proxyChatID), len(text), delivered, failed, len(recipients))
 	_, _ = b.SendMessage(ctx, proxyChatID, fmt.Sprintf("Рассылка завершена. Доставлено: %d/%d. Ошибок: %d.", delivered, len(recipients), failed))
+}
+
+func (b *Bot) sendProxyBroadcastMessage(ctx context.Context, targetUserID int64, text string) error {
+	if _, err := b.SendMessage(ctx, targetUserID, text); err != nil {
+		var rateLimitErr *telegrambot.TooManyRequestsError
+		if !errors.As(err, &rateLimitErr) {
+			return err
+		}
+
+		retryAfter := time.Duration(rateLimitErr.RetryAfter) * time.Second
+		if retryAfter <= 0 {
+			retryAfter = proxyBroadcastRetryWait
+		}
+		log.Printf("WARN Telegram proxy broadcast rate limited: target_user_id=%d retry_after=%s", targetUserID, retryAfter)
+		if !waitProxyBroadcastDuration(ctx, retryAfter) {
+			return fmt.Errorf("wait retry after: %w", ctx.Err())
+		}
+		if _, retryErr := b.SendMessage(ctx, targetUserID, text); retryErr != nil {
+			return fmt.Errorf("retry after rate limit: %w", retryErr)
+		}
+	}
+
+	return nil
+}
+
+func (b *Bot) waitProxyBroadcastInterval(ctx context.Context) bool {
+	if b == nil || b.proxySendInterval <= 0 {
+		return true
+	}
+
+	return waitProxyBroadcastDuration(ctx, b.proxySendInterval)
+}
+
+func waitProxyBroadcastDuration(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return true
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (b *Bot) proxyBroadcastRecipients(ctx context.Context) ([]int64, error) {
@@ -922,6 +987,7 @@ func (b *Bot) forwardUserMessageToProxy(ctx context.Context, msg *models.Message
 		return
 	}
 
+	b.rememberProxyUser(sender)
 	updateKind := messageUpdateKind(msg)
 	log.Printf("INFO Telegram proxy user message routing started: telegram_user_id=%d update_kind=%s", sender.ID, updateKind)
 	if _, err := b.api.CopyMessage(ctx, &telegrambot.CopyMessageParams{
@@ -935,7 +1001,103 @@ func (b *Bot) forwardUserMessageToProxy(ctx context.Context, msg *models.Message
 		return
 	}
 
+	_, _ = b.SendMessage(ctx, b.botMessagesChatID, proxyUserMetadataText(sender))
 	log.Printf("INFO Telegram proxy user message routed: telegram_user_id=%d update_kind=%s", sender.ID, updateKind)
+}
+
+func (b *Bot) notifyExpiredProxyDialog(ctx context.Context, chatID int64) int64 {
+	targetUserID, expired := b.expireProxyDialog(time.Now())
+	if !expired {
+		return 0
+	}
+
+	_, _ = b.SendMessage(ctx, chatID, fmt.Sprintf("Чат с %s автоматически закрыт из-за отсутствия активности 2 минуты.", b.proxyUserLabel(ctx, targetUserID)))
+	return targetUserID
+}
+
+func (b *Bot) proxyUserLabel(ctx context.Context, targetUserID int64) string {
+	label := fmt.Sprintf("user_id=%d", targetUserID)
+	user := b.findProxyUser(ctx, targetUserID)
+	if user == nil {
+		return label
+	}
+
+	parts := make([]string, 0, 2)
+	username := strings.TrimSpace(user.Username)
+	if username != "" {
+		if !strings.HasPrefix(username, "@") {
+			username = "@" + username
+		}
+		parts = append(parts, fmt.Sprintf("ник=%s", username))
+	}
+
+	name := strings.TrimSpace(strings.Join([]string{
+		strings.TrimSpace(user.FirstName),
+		strings.TrimSpace(user.LastName),
+	}, " "))
+	if name != "" {
+		parts = append(parts, fmt.Sprintf("имя=%s", name))
+	}
+
+	if len(parts) == 0 {
+		return label
+	}
+
+	return fmt.Sprintf("%s (%s)", label, strings.Join(parts, ", "))
+}
+
+func (b *Bot) rememberProxyUser(user *models.User) {
+	if b == nil || user == nil || user.ID <= 0 {
+		return
+	}
+
+	profile := entity.User{
+		ID:        user.ID,
+		Username:  user.Username,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
+	}
+
+	b.proxyUsersMu.Lock()
+	defer b.proxyUsersMu.Unlock()
+
+	if b.proxyUsers == nil {
+		b.proxyUsers = make(map[int64]entity.User)
+	}
+	b.proxyUsers[user.ID] = profile
+}
+
+func (b *Bot) findProxyUser(ctx context.Context, targetUserID int64) *entity.User {
+	if b == nil || targetUserID <= 0 {
+		return nil
+	}
+
+	if user := b.cachedProxyUser(targetUserID); user != nil {
+		return user
+	}
+	if b.userRepo == nil {
+		return nil
+	}
+
+	user, err := b.userRepo.FindByID(ctx, targetUserID)
+	if err != nil {
+		b.logDebug("Telegram proxy user profile lookup skipped: target_user_id=%d error=%v", targetUserID, err)
+		return nil
+	}
+
+	return user
+}
+
+func (b *Bot) cachedProxyUser(targetUserID int64) *entity.User {
+	b.proxyUsersMu.RLock()
+	defer b.proxyUsersMu.RUnlock()
+
+	user, ok := b.proxyUsers[targetUserID]
+	if !ok {
+		return nil
+	}
+
+	return &user
 }
 
 func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {

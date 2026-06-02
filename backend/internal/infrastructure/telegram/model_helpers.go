@@ -190,6 +190,29 @@ func proxyOpenUserChatKeyboard(targetUserID int64) models.InlineKeyboardMarkup {
 	}
 }
 
+func proxyUserMetadataText(user *models.User) string {
+	if user == nil {
+		return "ID: -\nНик: -\nИмя: -"
+	}
+
+	username := strings.TrimSpace(user.Username)
+	if username == "" {
+		username = "-"
+	} else if !strings.HasPrefix(username, "@") {
+		username = "@" + username
+	}
+
+	name := strings.TrimSpace(strings.Join([]string{
+		strings.TrimSpace(user.FirstName),
+		strings.TrimSpace(user.LastName),
+	}, " "))
+	if name == "" {
+		name = "-"
+	}
+
+	return fmt.Sprintf("ID: %d\nНик: %s\nИмя: %s", user.ID, username, name)
+}
+
 func proxyCloseKeyboard() models.InlineKeyboardMarkup {
 	return models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{

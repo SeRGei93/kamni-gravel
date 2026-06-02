@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	telegrambot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -313,8 +314,11 @@ func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChat(t *testing.T) {
 		Text: "hello",
 	})
 
-	if len(api.sentMessages) != 0 {
-		t.Fatalf("proxy metadata message should not be sent, got %d", len(api.sentMessages))
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("proxy metadata message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if got := api.sentMessages[0].Text; !strings.Contains(got, "ID: 123") || !strings.Contains(got, "Ник: @alex") || !strings.Contains(got, "Имя: Alex Rider") {
+		t.Fatalf("proxy metadata mismatch: got %q", got)
 	}
 	if len(api.forwardMessages) != 0 {
 		t.Fatalf("proxy user message should be copied with a keyboard, got %d forwards", len(api.forwardMessages))
@@ -339,6 +343,9 @@ func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChat(t *testing.T) {
 	if got, want := callbackData(markup), []string{proxyOpenUserChatCallbackData(123)}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("open callback mismatch: got %v, want %v", got, want)
 	}
+	if label := b.proxyUserLabel(context.Background(), 123); !strings.Contains(label, "@alex") || !strings.Contains(label, "Alex Rider") {
+		t.Fatalf("proxy user profile should be cached from update, got %q", label)
+	}
 	if sentTextContains(api, "Используйте /start") {
 		t.Fatalf("idle private message should not receive /start hint when proxy is enabled")
 	}
@@ -359,8 +366,11 @@ func TestBotHandleMessageRoutesIdlePrivateMessageToProxyChatWithoutUsername(t *t
 		Text: "hello",
 	})
 
-	if len(api.sentMessages) != 0 {
-		t.Fatalf("proxy metadata message should not be sent, got %d", len(api.sentMessages))
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("proxy metadata message count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	if got := api.sentMessages[0].Text; !strings.Contains(got, "ID: 456") || !strings.Contains(got, "Ник: -") || !strings.Contains(got, "Имя: -") {
+		t.Fatalf("proxy metadata mismatch: got %q", got)
 	}
 	if len(api.copyMessages) != 1 {
 		t.Fatalf("copy count mismatch: got %d, want 1", len(api.copyMessages))
@@ -446,8 +456,8 @@ func TestBotHandleUpdateProxyChatBypassesBlacklistGuard(t *testing.T) {
 	if len(blacklistRepo.checkedTelegramUserIDs) != 0 {
 		t.Fatalf("proxy chat should bypass blacklist checks, got %v", blacklistRepo.checkedTelegramUserIDs)
 	}
-	if !sentTextContains(api, "Активный чат не открыт") {
-		t.Fatalf("proxy chat without active dialog should get instruction, got %#v", api.sentMessages)
+	if len(api.sentMessages) != 0 || len(api.copyMessages) != 0 {
+		t.Fatalf("proxy chat without active dialog should ignore random messages, sent=%d copied=%d", len(api.sentMessages), len(api.copyMessages))
 	}
 }
 
@@ -457,6 +467,7 @@ func TestBotProxyStartUserChatOpensGlobalDialog(t *testing.T) {
 		api:               api,
 		botMessagesChatID: -300,
 	}
+	b.rememberProxyUser(&models.User{ID: 123, Username: "alex", FirstName: "Alex", LastName: "Rider"})
 
 	b.handleUpdate(context.Background(), nil, &models.Update{
 		ID:      1,
@@ -472,6 +483,9 @@ func TestBotProxyStartUserChatOpensGlobalDialog(t *testing.T) {
 	}
 	if !strings.Contains(api.sentMessages[0].Text, "user_id=123") {
 		t.Fatalf("open dialog response mismatch: %q", api.sentMessages[0].Text)
+	}
+	if !strings.Contains(api.sentMessages[0].Text, "@alex") || !strings.Contains(api.sentMessages[0].Text, "Alex Rider") {
+		t.Fatalf("open dialog user details missing: %q", api.sentMessages[0].Text)
 	}
 	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
 	if !ok {
@@ -699,6 +713,65 @@ func TestBotProxyManagerMessageCopiesToActiveTarget(t *testing.T) {
 	}
 	if copyParams.MessageID != 44 {
 		t.Fatalf("copy message id mismatch: got %d", copyParams.MessageID)
+	}
+}
+
+func TestBotProxyDialogAutoClosesAfterIdleTimeout(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	userRepo.users[123] = &entity.User{ID: 123, Username: "alex", FirstName: "Alex", LastName: "Rider"}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		userRepo:          userRepo,
+	}
+	b.startProxyDialog(123)
+	b.proxyDialogMu.Lock()
+	b.proxyLastActiveAt = time.Now().Add(-proxyDialogIdleTimeout - time.Second)
+	b.proxyDialogMu.Unlock()
+
+	b.handleUpdate(context.Background(), nil, &models.Update{
+		ID: 1,
+		Message: &models.Message{
+			ID:   44,
+			From: &models.User{ID: 999},
+			Chat: models.Chat{ID: -300, Type: models.ChatTypeSupergroup},
+			Text: "manager message",
+		},
+	})
+
+	if targetUserID, ok := b.activeProxyTarget(); ok {
+		t.Fatalf("expired proxy target should be cleared, got %d", targetUserID)
+	}
+	if len(api.copyMessages) != 0 {
+		t.Fatalf("expired proxy dialog should not copy manager message, got %d copies", len(api.copyMessages))
+	}
+	if !sentTextContains(api, "автоматически закрыт") || !sentTextContains(api, "@alex") || !sentTextContains(api, "Alex Rider") {
+		t.Fatalf("auto-close notice mismatch, got %#v", api.sentMessages)
+	}
+}
+
+func TestBotProxyDialogTimerCallbackSendsAutoCloseNotice(t *testing.T) {
+	api := &telegramAPIFake{}
+	userRepo := newTelegramUserRepoFake()
+	userRepo.users[123] = &entity.User{ID: 123, Username: "alex", FirstName: "Alex", LastName: "Rider"}
+	b := &Bot{
+		api:               api,
+		botMessagesChatID: -300,
+		userRepo:          userRepo,
+		proxyIdleTimeout:  time.Millisecond,
+	}
+	lastActiveAt := time.Now().Add(-time.Second)
+	b.proxyTargetUserID = 123
+	b.proxyLastActiveAt = lastActiveAt
+
+	b.autoCloseProxyDialog(123, lastActiveAt)
+
+	if targetUserID, ok := b.activeProxyTarget(); ok {
+		t.Fatalf("expired proxy target should be cleared by timer callback, got %d", targetUserID)
+	}
+	if !sentTextContains(api, "автоматически закрыт") || !sentTextContains(api, "@alex") || !sentTextContains(api, "Alex Rider") {
+		t.Fatalf("timer auto-close notice mismatch, got %#v", api.sentMessages)
 	}
 }
 
