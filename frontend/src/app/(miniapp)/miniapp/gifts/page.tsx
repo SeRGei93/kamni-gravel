@@ -18,7 +18,7 @@ import {
 } from "@/utils/telegramWebApp";
 import { getGiftFirstFixedPlace } from "@/utils/giftPlaceRule";
 
-const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["male", "female"];
+const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["all", "male", "female"];
 
 export default function MiniappGiftsPage() {
   const [session, setSession] = useState<MiniappSessionResponse | null>(null);
@@ -95,7 +95,7 @@ export default function MiniappGiftsPage() {
         if (!ignore) {
           setGifts(mergeUniqueGifts(catalogResponses.flatMap((response) => response.gifts)));
           setParticipantCount(
-            gender === "all_genders" ? undefined : catalogResponses[0]?.participant_count
+            catalogResponses[0]?.participant_count
           );
         }
       } catch (loadError) {
@@ -162,7 +162,7 @@ export default function MiniappGiftsPage() {
             gifts={gifts}
             isLoading={isCatalogLoading}
             participantCount={participantCount}
-            showPlaceGaps={gender !== "all_genders"}
+            showPlaceGaps
           />
         ) : (
           <GiftEmptyState />

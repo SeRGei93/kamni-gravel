@@ -23,7 +23,7 @@ interface GiftCatalogTableProps {
 
 type GiftCatalogRow =
   | { type: "gift"; gift: Gift }
-  | { type: "gap"; range: GiftPlaceRange };
+  | { type: "gap"; ranges: GiftPlaceRange[] };
 
 const genderText: Record<GenderFilter, string> = {
   all: "абсолют",
@@ -75,7 +75,10 @@ export default function GiftCatalogTable({
             row.type === "gift" ? (
               <GiftTableRow key={`gift-${row.gift.id}`} gift={row.gift} />
             ) : (
-              <GiftGapRow key={`gap-${row.range.start}-${row.range.end}`} range={row.range} />
+              <GiftGapRow
+                key={`gap-${row.ranges.map(formatPlaceRange).join(",")}`}
+                ranges={row.ranges}
+              />
             )
           ))}
         </tbody>
@@ -103,17 +106,27 @@ function buildGiftCatalogRows(
 
   for (const gift of gifts) {
     const giftPlace = getGiftFirstFixedPlace(gift) ?? Number.POSITIVE_INFINITY;
+    const pendingRanges: GiftPlaceRange[] = [];
     while (gapIndex < gapRanges.length && gapRanges[gapIndex].start < giftPlace) {
-      rows.push({ type: "gap", range: gapRanges[gapIndex] });
+      pendingRanges.push(gapRanges[gapIndex]);
       gapIndex += 1;
+    }
+
+    if (pendingRanges.length > 0) {
+      rows.push({ type: "gap", ranges: pendingRanges });
     }
 
     rows.push({ type: "gift", gift });
   }
 
+  const tailRanges: GiftPlaceRange[] = [];
   while (gapIndex < gapRanges.length) {
-    rows.push({ type: "gap", range: gapRanges[gapIndex] });
+    tailRanges.push(gapRanges[gapIndex]);
     gapIndex += 1;
+  }
+
+  if (tailRanges.length > 0) {
+    rows.push({ type: "gap", ranges: tailRanges });
   }
 
   return rows;
@@ -168,12 +181,16 @@ function GiftTableRow({ gift }: { gift: Gift }) {
   );
 }
 
-function GiftGapRow({ range }: { range: GiftPlaceRange }) {
+function GiftGapRow({ ranges }: { ranges: GiftPlaceRange[] }) {
+  const placeText = ranges.map(formatPlaceRange).join(", ");
+  const hasSinglePlace = ranges.length === 1 && ranges[0].start === ranges[0].end;
+  const suffix = hasSinglePlace ? "еще нет приза" : "еще нет призов";
+
   return (
-    <tr className="align-top">
-      <td colSpan={3} className="px-2 py-1.5">
-        <div className="tg-soft-accent rounded-lg border px-3 py-2 text-center text-xs font-semibold leading-4">
-          {formatPlaceRange(range)} {range.start === range.end ? "еще нет приза" : "еще нет призов"}
+    <tr className="align-top" aria-label={`${placeText} ${suffix}`}>
+      <td colSpan={3} className="px-2 py-1">
+        <div className="tg-divider tg-muted rounded-md border border-dashed px-2.5 py-1.5 text-center text-[11px] font-semibold leading-4">
+          {placeText} {suffix}
         </div>
       </td>
     </tr>
