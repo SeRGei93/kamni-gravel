@@ -110,7 +110,7 @@ func matchesMiniappGenderFilter(giftFilter, selectedFilter string) bool {
 		return giftFilter == "all"
 	}
 
-	return giftFilter == "all" || giftFilter == selectedFilter
+	return giftFilter == selectedFilter
 }
 
 func matchesMiniappBikeTypeFilter(giftFilter, selectedFilter string) bool {

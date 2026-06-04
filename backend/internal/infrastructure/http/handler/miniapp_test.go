@@ -86,6 +86,16 @@ func TestMiniappGiftsUsesActiveEventAndApprovedCatalog(t *testing.T) {
 				ReviewStatus:   entity.GiftReviewStatusApproved,
 				User:           &entity.User{ID: 124, FirstName: "Kate"},
 			},
+			{
+				ID:             3,
+				UserID:         125,
+				EventID:        77,
+				Description:    "Absolute prize",
+				GenderFilter:   "all",
+				BikeTypeFilter: "gravel",
+				ReviewStatus:   entity.GiftReviewStatusApproved,
+				User:           &entity.User{ID: 125, FirstName: "Sam"},
+			},
 		},
 		attachments: map[uint][]*entity.GiftAttachment{
 			1: {{ID: 10, GiftID: 1, TelegramFileID: "file-1", FileType: "photo"}},

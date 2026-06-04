@@ -82,8 +82,8 @@ func TestGetMiniappGiftsHandlerReusesApprovedGiftsQueryAndFiltersCatalog(t *test
 	if giftRepo.reviewStatus != entity.GiftReviewStatusApproved {
 		t.Fatalf("review status mismatch: got %s, want %s", giftRepo.reviewStatus, entity.GiftReviewStatusApproved)
 	}
-	if len(gifts) != 2 {
-		t.Fatalf("gift count mismatch: got %d, want 2", len(gifts))
+	if len(gifts) != 1 {
+		t.Fatalf("gift count mismatch: got %d, want 1", len(gifts))
 	}
 	if len(gifts[0].Criteria) != 1 || gifts[0].Criteria[0].ID != 5 {
 		t.Fatalf("criteria mismatch: %#v", gifts[0].Criteria)
@@ -91,8 +91,8 @@ func TestGetMiniappGiftsHandlerReusesApprovedGiftsQueryAndFiltersCatalog(t *test
 	if len(gifts[0].Attachments) != 1 || gifts[0].Attachments[0].ID != 10 {
 		t.Fatalf("attachments mismatch: %#v", gifts[0].Attachments)
 	}
-	if gifts[1].ID != 3 {
-		t.Fatalf("generic gift should match selected filters, got gift ID %d", gifts[1].ID)
+	if gifts[0].ID != 1 {
+		t.Fatalf("gender-specific catalog should exclude absolute gifts, got gift ID %d", gifts[0].ID)
 	}
 }
 
@@ -117,8 +117,8 @@ func TestGetMiniappGiftsHandlerFiltersGenderAndBikeTypeSemantics(t *testing.T) {
 		t.Fatalf("Handle error: %v", err)
 	}
 
-	if got := miniappGiftIDs(gifts); !equalUintSlices(got, []uint{1, 2}) {
-		t.Fatalf("filtered gift IDs mismatch: got %v, want %v", got, []uint{1, 2})
+	if got := miniappGiftIDs(gifts); !equalUintSlices(got, []uint{2}) {
+		t.Fatalf("filtered gift IDs mismatch: got %v, want %v", got, []uint{2})
 	}
 }
 
