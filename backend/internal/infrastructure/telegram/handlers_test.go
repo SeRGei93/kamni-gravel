@@ -406,6 +406,40 @@ func TestBotHandleMessageDisabledProxyPreservesStartHint(t *testing.T) {
 	}
 }
 
+func TestBotHandleSubmitResultCallbackReplacesMenuWithSinglePrompt(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	b := &Bot{
+		api:             api,
+		sessionManager:  manager,
+		eventRepo:       &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true, StartDate: &start}},
+		participantRepo: &telegramParticipantRepoFake{participant: &entity.Participant{ID: 11, UserID: 123, EventID: 77}},
+	}
+
+	b.handleSubmitResultCallback(context.Background(), callbackWithMessage("submit_result", 123, 500, 40))
+
+	if got := manager.GetState(123); got != session.StateAwaitingResultLink {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingResultLink)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("submit result should send exactly one prompt, got %d", len(api.sentMessages))
+	}
+	if len(api.editMessages) != 0 {
+		t.Fatalf("submit result should not edit the menu message, got %d edits", len(api.editMessages))
+	}
+	if len(api.deleteMessages) != 1 || api.deleteMessages[0].MessageID != 40 {
+		t.Fatalf("submit result should delete the source menu message, got %#v", api.deleteMessages)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("prompt should include cancel keyboard, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"cancel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("prompt keyboard mismatch: got %v, want %v", got, want)
+	}
+}
+
 func TestBotHandleIdleMessageShowsMainMenuWhenEventActive(t *testing.T) {
 	api := &telegramAPIFake{}
 	b := &Bot{

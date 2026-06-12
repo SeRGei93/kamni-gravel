@@ -584,16 +584,20 @@ func (b *Bot) handleSubmitResultCallback(ctx context.Context, callback *models.C
 		return
 	}
 
+	// Удаляем сообщение меню, с которого открыли сценарий: иначе промпт показывался
+	// дважды (отредактированное меню + новое сообщение), а кнопка оставалась кликабельной.
+	_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
+
 	if markup != nil {
-		_ = b.EditMessage(ctx, msgRef.ChatID, msgRef.MessageID, text)
 		_, _ = b.SendMessageWithKeyboard(ctx, msgRef.ChatID, text, *markup)
 		return
 	}
 
 	// Сценарий не запущен (нет активного события, нет регистрации, результат уже
-	// отправлен и т.п.) — показываем сообщение и возвращаем главное меню.
-	_ = b.EditMessage(ctx, msgRef.ChatID, msgRef.MessageID, text)
-	b.sendMainMenu(ctx, msgRef.ChatID, callback.From.ID, "Главное меню:")
+	// отправлен и т.п.) — показываем причину и возвращаем главное меню.
+	if !b.sendMainMenu(ctx, msgRef.ChatID, callback.From.ID, text) {
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, text)
+	}
 }
 
 // handleInfoCallback обрабатывает запрос информации
