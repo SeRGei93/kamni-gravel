@@ -267,6 +267,10 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 		return
 	}
 
+	// Все получатели — зарегистрированные участники активного события,
+	// поэтому прикрепляем к сообщению рассылки главное меню участника.
+	participantMenu := keyboard.MainMenu(true, true, b.miniappURL, nil)
+
 	delivered := 0
 	failed := 0
 	for index, targetUserID := range recipients {
@@ -275,7 +279,7 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 			return
 		}
 
-		if err := b.sendProxyBroadcastMessage(ctx, targetUserID, text); err != nil {
+		if err := b.sendProxyBroadcastMessage(ctx, targetUserID, text, &participantMenu); err != nil {
 			failed++
 			log.Printf("WARN Telegram proxy broadcast delivery failed: chat=%s target_user_id=%d text_len=%d error=%v", b.chatLogMarker(proxyChatID), targetUserID, len(text), err)
 			continue
@@ -287,8 +291,8 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 	_, _ = b.SendMessage(ctx, proxyChatID, fmt.Sprintf("Рассылка завершена. Доставлено: %d/%d. Ошибок: %d.", delivered, len(recipients), failed))
 }
 
-func (b *Bot) sendProxyBroadcastMessage(ctx context.Context, targetUserID int64, text string) error {
-	if _, err := b.SendMessage(ctx, targetUserID, text); err != nil {
+func (b *Bot) sendProxyBroadcastMessage(ctx context.Context, targetUserID int64, text string, markup *models.InlineKeyboardMarkup) error {
+	if _, err := b.sendWithOptionalKeyboard(ctx, targetUserID, text, markup); err != nil {
 		var rateLimitErr *telegrambot.TooManyRequestsError
 		if !errors.As(err, &rateLimitErr) {
 			return err
@@ -302,7 +306,7 @@ func (b *Bot) sendProxyBroadcastMessage(ctx context.Context, targetUserID int64,
 		if !waitProxyBroadcastDuration(ctx, retryAfter) {
 			return fmt.Errorf("wait retry after: %w", ctx.Err())
 		}
-		if _, retryErr := b.SendMessage(ctx, targetUserID, text); retryErr != nil {
+		if _, retryErr := b.sendWithOptionalKeyboard(ctx, targetUserID, text, markup); retryErr != nil {
 			return fmt.Errorf("retry after rate limit: %w", retryErr)
 		}
 	}
@@ -389,8 +393,12 @@ func (b *Bot) handleCommand(ctx context.Context, msg *models.Message) {
 	case "menu":
 		b.handleMenuCommand(ctx, msg)
 	default:
-		if _, err := b.SendMessage(ctx, msg.Chat.ID, "Неизвестная команда. Используйте /start или /menu"); err != nil {
-			return
+		userID := int64(0)
+		if sender, ok := messageSender(msg); ok {
+			userID = sender.ID
+		}
+		if !b.sendMainMenu(ctx, msg.Chat.ID, userID, "Главное меню:") {
+			_, _ = b.SendMessage(ctx, msg.Chat.ID, "Неизвестная команда. Используйте /start или /menu")
 		}
 	}
 }
@@ -582,7 +590,10 @@ func (b *Bot) handleSubmitResultCallback(ctx context.Context, callback *models.C
 		return
 	}
 
+	// Сценарий не запущен (нет активного события, нет регистрации, результат уже
+	// отправлен и т.п.) — показываем сообщение и возвращаем главное меню.
 	_ = b.EditMessage(ctx, msgRef.ChatID, msgRef.MessageID, text)
+	b.sendMainMenu(ctx, msgRef.ChatID, callback.From.ID, "Главное меню:")
 }
 
 // handleInfoCallback обрабатывает запрос информации
@@ -967,16 +978,26 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 			b.submitResultHandler,
 		)
 		text, _ := resultHandler.HandleResultLink(ctx, userID, resultLink)
+		// Если отправка завершена (сессия сброшена) — возвращаем главное меню,
+		// иначе остаёмся в сценарии и просто отвечаем текстом.
+		if b.sessionManager.GetState(userID) == session.StateIdle {
+			if !b.sendMainMenu(ctx, msg.Chat.ID, userID, text) {
+				_, _ = b.SendMessage(ctx, msg.Chat.ID, text)
+			}
+			return
+		}
 		_, _ = b.SendMessage(ctx, msg.Chat.ID, text)
 
 	default:
-		// Если нет активного состояния, передаём сообщение менеджерам или предлагаем /start.
+		// Если нет активного состояния, передаём сообщение менеджерам или показываем меню.
 		if b.botMessagesChatID != 0 {
 			b.forwardUserMessageToProxy(ctx, msg, sender)
 			return
 		}
 		if b.publicChatID == 0 || msg.Chat.ID != b.publicChatID {
-			_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
+			if !b.sendMainMenu(ctx, msg.Chat.ID, userID, "Главное меню:") {
+				_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
+			}
 		}
 	}
 }
@@ -1370,6 +1391,10 @@ func (b *Bot) handleGiftMessage(ctx context.Context, msg *models.Message, userID
 
 // getStartKeyboard возвращает стартовую клавиатуру с основными действиями
 func (b *Bot) getStartKeyboard(ctx context.Context, userID int64) *models.InlineKeyboardMarkup {
+	if b == nil || b.eventRepo == nil {
+		return nil
+	}
+
 	// Получаем активное событие
 	event, err := b.eventRepo.FindActive(ctx)
 	if err != nil {
@@ -1393,6 +1418,20 @@ func (b *Bot) getStartKeyboard(ctx context.Context, userID int64) *models.Inline
 	// Создаём клавиатуру с действиями
 	markup := keyboard.MainMenu(true, isRegistered, b.miniappURL, nil)
 	return &markup
+}
+
+// sendMainMenu отправляет сообщение с главным меню, если есть активное событие.
+// Используется, когда пользователь не находится внутри другого сценария, чтобы
+// меню оставалось доступным после ответов бота. Возвращает false, если меню
+// недоступно (нет активного события) — тогда вызывающий код решает, что отправить.
+func (b *Bot) sendMainMenu(ctx context.Context, chatID int64, userID int64, text string) bool {
+	markup := b.getStartKeyboard(ctx, userID)
+	if markup == nil {
+		return false
+	}
+
+	_, _ = b.sendWithOptionalKeyboard(ctx, chatID, text, markup)
+	return true
 }
 
 func (b *Bot) isPublicChat(chatID int64) bool {

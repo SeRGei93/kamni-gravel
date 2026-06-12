@@ -43,7 +43,7 @@ func TestBotHandleMenuCommandSendsParticipantAwareMenu(t *testing.T) {
 	if !ok {
 		t.Fatalf("reply markup type mismatch: got %T", api.sentMessages[0].ReplyMarkup)
 	}
-	if got, want := callbackData(markup), []string{"withdraw_participation", "add_gift", "event_conditions"}; !reflect.DeepEqual(got, want) {
+	if got, want := callbackData(markup), []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("menu callback data mismatch: got %v, want %v", got, want)
 	}
 }
@@ -406,6 +406,40 @@ func TestBotHandleMessageDisabledProxyPreservesStartHint(t *testing.T) {
 	}
 }
 
+func TestBotHandleIdleMessageShowsMainMenuWhenEventActive(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{
+		api:             api,
+		eventRepo:       &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true, Name: "Spring Gravel"}},
+		participantRepo: &telegramParticipantRepoFake{participant: &entity.Participant{ID: 55, UserID: 123, EventID: 77}},
+		sessionManager:  session.NewManager(0),
+	}
+
+	b.handleMessage(context.Background(), &models.Message{
+		ID:   20,
+		From: &models.User{ID: 123},
+		Chat: models.Chat{ID: 123, Type: models.ChatTypePrivate},
+		Text: "привет",
+	})
+
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("idle message should send one reply, got %d", len(api.sentMessages))
+	}
+	if got := api.sentMessages[0].Text; got != "Главное меню:" {
+		t.Fatalf("idle reply text mismatch: got %q", got)
+	}
+	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("idle reply should include menu markup, got %T", api.sentMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("idle menu callbacks mismatch: got %v, want %v", got, want)
+	}
+	if sentTextContains(api, "Используйте /start") {
+		t.Fatalf("idle message with active event should not fall back to /start hint")
+	}
+}
+
 func TestBotHandleUpdateBlacklistedPrivateUserDoesNotRouteToProxy(t *testing.T) {
 	api := &telegramAPIFake{}
 	blacklistRepo := &telegramBlacklistRepoFake{blacklisted: map[int64]bool{123: true}}
@@ -606,9 +640,19 @@ func TestBotProxyBroadcastCommandSendsTextToActiveEventParticipants(t *testing.T
 		if msg.Text != "Hello riders" {
 			t.Fatalf("broadcast text[%d] mismatch: got %q", i, msg.Text)
 		}
+		markup, ok := msg.ReplyMarkup.(models.InlineKeyboardMarkup)
+		if !ok {
+			t.Fatalf("broadcast message[%d] should include main menu, got %T", i, msg.ReplyMarkup)
+		}
+		if got, want := callbackData(markup), []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("broadcast menu[%d] callbacks mismatch: got %v, want %v", i, got, want)
+		}
 	}
 	if got := chatIDFromAny(api.sentMessages[2].ChatID); got != int64(-300) {
 		t.Fatalf("broadcast summary chat mismatch: got %d", got)
+	}
+	if api.sentMessages[2].ReplyMarkup != nil {
+		t.Fatalf("broadcast summary should not include a menu, got %#v", api.sentMessages[2].ReplyMarkup)
 	}
 	if !strings.Contains(api.sentMessages[2].Text, "Доставлено: 2/2") {
 		t.Fatalf("broadcast summary mismatch, got %q", api.sentMessages[2].Text)

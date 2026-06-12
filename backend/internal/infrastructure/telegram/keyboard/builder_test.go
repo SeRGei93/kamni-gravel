@@ -21,7 +21,7 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 		{
 			name: "main menu participant",
 			menu: MainMenu(true, true, "", nil),
-			want: []string{"withdraw_participation", "add_gift", "event_conditions"},
+			want: []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"},
 		},
 		{
 			name: "main menu not participant",
