@@ -491,7 +491,7 @@ export default function ParticipantDetailPage() {
                         onChange={setElapsedTimeSec}
                       />
                       <TimeInput
-                        label="Время в пути"
+                        label="Чистое время"
                         value={movingTimeSec}
                         onChange={setMovingTimeSec}
                       />
@@ -508,7 +508,7 @@ export default function ParticipantDetailPage() {
                       </div>
                       <div>
                         <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
-                          Время в пути
+                          Чистое время
                         </p>
                         <p className="text-sm font-medium text-gray-800 dark:text-white/90">
                           {participant.moving_time || '-'}

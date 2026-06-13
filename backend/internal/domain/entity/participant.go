@@ -39,7 +39,7 @@ func (p *Participant) ElapsedTimeFormatted() string {
 	return p.Result.ElapsedTimeFormatted()
 }
 
-// MovingTimeFormatted возвращает время в пути в формате ЧЧ:ММ:СС
+// MovingTimeFormatted возвращает чистое время в формате ЧЧ:ММ:СС
 func (p *Participant) MovingTimeFormatted() string {
 	if p.Result == nil {
 		return ""
@@ -55,7 +55,7 @@ func (p *Participant) GetElapsedTimeSec() *int {
 	return p.Result.ElapsedTimeSec
 }
 
-// GetMovingTimeSec возвращает время в пути в секундах или nil
+// GetMovingTimeSec возвращает чистое время в секундах или nil
 func (p *Participant) GetMovingTimeSec() *int {
 	if p.Result == nil {
 		return nil

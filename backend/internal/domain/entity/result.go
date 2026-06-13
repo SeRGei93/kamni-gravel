@@ -13,7 +13,7 @@ type Result struct {
 	ParticipantID  uint
 	ResultLink     *valueobject.ResultLink
 	ElapsedTimeSec *int // Общее время в секундах
-	MovingTimeSec  *int // Время в пути в секундах
+	MovingTimeSec  *int // Чистое время в секундах
 	IsCurrent      bool // Актуальный результат (последний)
 	SubmittedAt    time.Time
 
@@ -29,7 +29,7 @@ func (r *Result) ElapsedTimeFormatted() string {
 	return formatSeconds(*r.ElapsedTimeSec)
 }
 
-// MovingTimeFormatted возвращает время в пути в формате ЧЧ:ММ:СС
+// MovingTimeFormatted возвращает чистое время в формате ЧЧ:ММ:СС
 func (r *Result) MovingTimeFormatted() string {
 	if r.MovingTimeSec == nil {
 		return ""
