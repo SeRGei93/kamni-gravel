@@ -471,7 +471,7 @@ func (b *Bot) handleCallback(ctx context.Context, callback *models.CallbackQuery
 			return
 		}
 
-		_ = b.EditMessage(ctx, msgRef.ChatID, msgRef.MessageID, "Действие отменено.")
+		_ = b.editMessageWithKeyboard(ctx, msgRef.ChatID, msgRef.MessageID, "Действие отменено.", b.getStartKeyboard(ctx, userID))
 		return
 	}
 
@@ -555,7 +555,10 @@ func (b *Bot) handleAddGiftCallback(ctx context.Context, callback *models.Callba
 		return
 	}
 
-	_, _ = b.replaceGiftControlMessage(ctx, callback.From.ID, msgRef.ChatID, text, markup, msgRef.MessageID)
+	// Не удаляем приветственное меню (msgRef.MessageID не передаём): оно должно
+	// остаться в чате. Управляющие сообщения самого сценария подарка по-прежнему
+	// заменяются через отслеживаемые gift_message_ids.
+	_, _ = b.replaceGiftControlMessage(ctx, callback.From.ID, msgRef.ChatID, text, markup)
 }
 
 // handleSubmitResultCallback обрабатывает начало отправки результата
@@ -584,17 +587,15 @@ func (b *Bot) handleSubmitResultCallback(ctx context.Context, callback *models.C
 		return
 	}
 
-	// Удаляем сообщение меню, с которого открыли сценарий: иначе промпт показывался
-	// дважды (отредактированное меню + новое сообщение), а кнопка оставалась кликабельной.
-	_ = b.DeleteMessage(ctx, msgRef.ChatID, msgRef.MessageID)
-
+	// Отправляем промпт отдельным сообщением и не трогаем приветственное меню,
+	// с которого открыли сценарий (раньше его правка/удаление давали дубль промпта).
 	if markup != nil {
 		_, _ = b.SendMessageWithKeyboard(ctx, msgRef.ChatID, text, *markup)
 		return
 	}
 
 	// Сценарий не запущен (нет активного события, нет регистрации, результат уже
-	// отправлен и т.п.) — показываем причину и возвращаем главное меню.
+	// отправлен и т.п.) — показываем причину и главное меню.
 	if !b.sendMainMenu(ctx, msgRef.ChatID, callback.From.ID, text) {
 		_, _ = b.SendMessage(ctx, msgRef.ChatID, text)
 	}
@@ -981,7 +982,11 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 			b.participantRepo,
 			b.submitResultHandler,
 		)
-		text, _ := resultHandler.HandleResultLink(ctx, userID, resultLink)
+		text, participant, _ := resultHandler.HandleResultLink(ctx, userID, resultLink)
+		// При успешной отправке (participant != nil) уведомляем чат админов.
+		if participant != nil {
+			b.notifyAdminAboutResult(ctx, sender, participant)
+		}
 		// Если отправка завершена (сессия сброшена) — возвращаем главное меню,
 		// иначе остаёмся в сценарии и просто отвечаем текстом.
 		if b.sessionManager.GetState(userID) == session.StateIdle {

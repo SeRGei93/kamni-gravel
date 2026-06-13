@@ -16,6 +16,7 @@ import (
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/domain/valueobject"
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
 
@@ -406,7 +407,7 @@ func TestBotHandleMessageDisabledProxyPreservesStartHint(t *testing.T) {
 	}
 }
 
-func TestBotHandleSubmitResultCallbackReplacesMenuWithSinglePrompt(t *testing.T) {
+func TestBotHandleSubmitResultCallbackSendsSinglePromptKeepingMenu(t *testing.T) {
 	api := &telegramAPIFake{}
 	manager := session.NewManager(0)
 	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -426,10 +427,10 @@ func TestBotHandleSubmitResultCallbackReplacesMenuWithSinglePrompt(t *testing.T)
 		t.Fatalf("submit result should send exactly one prompt, got %d", len(api.sentMessages))
 	}
 	if len(api.editMessages) != 0 {
-		t.Fatalf("submit result should not edit the menu message, got %d edits", len(api.editMessages))
+		t.Fatalf("submit result should not edit the welcome message, got %d edits", len(api.editMessages))
 	}
-	if len(api.deleteMessages) != 1 || api.deleteMessages[0].MessageID != 40 {
-		t.Fatalf("submit result should delete the source menu message, got %#v", api.deleteMessages)
+	if len(api.deleteMessages) != 0 {
+		t.Fatalf("submit result should not delete the welcome message, got %#v", api.deleteMessages)
 	}
 	markup, ok := api.sentMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
 	if !ok {
@@ -437,6 +438,62 @@ func TestBotHandleSubmitResultCallbackReplacesMenuWithSinglePrompt(t *testing.T)
 	}
 	if got, want := callbackData(markup), []string{"cancel"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("prompt keyboard mismatch: got %v, want %v", got, want)
+	}
+}
+
+func TestBotHandleAddGiftCallbackKeepsWelcomeMessage(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	b := &Bot{
+		api:            api,
+		sessionManager: manager,
+		eventRepo:      &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}},
+	}
+
+	b.handleAddGiftCallback(context.Background(), callbackWithMessage("add_gift", 123, 500, 40))
+
+	if got := manager.GetState(123); got != session.StateAwaitingGiftGender {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftGender)
+	}
+	if len(api.deleteMessages) != 0 {
+		t.Fatalf("add gift should not delete the welcome message, got %#v", api.deleteMessages)
+	}
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("add gift should send one control message, got %d", len(api.sentMessages))
+	}
+}
+
+func TestBotHandleCancelCallbackShowsMainMenu(t *testing.T) {
+	api := &telegramAPIFake{}
+	manager := session.NewManager(0)
+	manager.SetState(123, session.StateAwaitingResultLink)
+	b := &Bot{
+		api:             api,
+		sessionManager:  manager,
+		eventRepo:       &telegramEventRepoFake{event: &entity.Event{ID: 77, Active: true}},
+		participantRepo: &telegramParticipantRepoFake{participant: &entity.Participant{ID: 11, UserID: 123, EventID: 77}},
+	}
+
+	b.handleCallback(context.Background(), callbackWithMessage("cancel", 123, 500, 40))
+
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("cancel should reset state to idle, got %s", got)
+	}
+	if len(api.deleteMessages) != 0 {
+		t.Fatalf("cancel should not delete messages, got %#v", api.deleteMessages)
+	}
+	if len(api.editMessages) != 1 {
+		t.Fatalf("cancel should edit the prompt message once, got %d", len(api.editMessages))
+	}
+	if got := api.editMessages[0].Text; got != "Действие отменено." {
+		t.Fatalf("cancel text mismatch: got %q", got)
+	}
+	markup, ok := api.editMessages[0].ReplyMarkup.(models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("cancel message should include the main menu, got %T", api.editMessages[0].ReplyMarkup)
+	}
+	if got, want := callbackData(markup), []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("cancel menu callbacks mismatch: got %v, want %v", got, want)
 	}
 }
 
@@ -1300,6 +1357,50 @@ func TestBotHandleWithdrawParticipationCallbackDeletesParticipant(t *testing.T) 
 	}
 	if _, ok := api.sentMessages[1].ReplyMarkup.(models.InlineKeyboardMarkup); !ok {
 		t.Fatalf("menu reply markup type mismatch: got %T", api.sentMessages[1].ReplyMarkup)
+	}
+}
+
+func TestBotNotifyAdminAboutResultSendsTextNotification(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{api: api, adminChatID: 900}
+
+	participant := &entity.Participant{
+		ID:     5,
+		UserID: 123,
+		Result: &entity.Result{
+			ResultLink: &valueobject.ResultLink{
+				URL:      "https://www.strava.com/activities/14758223172",
+				Platform: valueobject.PlatformStrava,
+			},
+		},
+	}
+	sender := &models.User{ID: 123, FirstName: "Alex", LastName: "Rider", Username: "alex"}
+
+	b.notifyAdminAboutResult(context.Background(), sender, participant)
+
+	if len(api.sentMessages) != 1 {
+		t.Fatalf("admin result notification count mismatch: got %d, want 1", len(api.sentMessages))
+	}
+	msg := api.sentMessages[0]
+	if got := chatIDFromAny(msg.ChatID); got != int64(900) {
+		t.Fatalf("admin result notification chat mismatch: got %v", got)
+	}
+	if !strings.Contains(msg.Text, "Alex Rider (@alex)") {
+		t.Fatalf("admin result notification should include participant label: %q", msg.Text)
+	}
+	if !strings.Contains(msg.Text, "https://www.strava.com/activities/14758223172") {
+		t.Fatalf("admin result notification should include result link: %q", msg.Text)
+	}
+}
+
+func TestBotNotifyAdminAboutResultSkippedWhenAdminChatDisabled(t *testing.T) {
+	api := &telegramAPIFake{}
+	b := &Bot{api: api}
+
+	b.notifyAdminAboutResult(context.Background(), &models.User{ID: 1}, &entity.Participant{UserID: 1})
+
+	if len(api.sentMessages) != 0 {
+		t.Fatalf("disabled admin chat should not send messages, got %d", len(api.sentMessages))
 	}
 }
 

@@ -134,17 +134,18 @@ func (h *ResultHandler) StartSubmitResult(ctx context.Context, userID int64) (st
 	return ResultLinkPromptText(texts), &keyboard
 }
 
-// HandleResultLink обрабатывает ссылку на результат
-func (h *ResultHandler) HandleResultLink(ctx context.Context, userID int64, resultLink string) (string, error) {
+// HandleResultLink обрабатывает ссылку на результат. При успешной отправке возвращает
+// участника с привязанным результатом (для уведомления админов), иначе participant == nil.
+func (h *ResultHandler) HandleResultLink(ctx context.Context, userID int64, resultLink string) (string, *entity.Participant, error) {
 	// Получаем сохранённые данные
 	participantIDRaw, ok := h.sessionManager.GetData(userID, "participant_id")
 	if !ok {
-		return "Ошибка: данные сессии не найдены. Начните отправку результата заново.", nil
+		return "Ошибка: данные сессии не найдены. Начните отправку результата заново.", nil, nil
 	}
 	participantID, ok := participantIDRaw.(uint)
 	if !ok {
 		log.Printf("WARN Invalid result session data: user_id=%d key=participant_id type=%T", userID, participantIDRaw)
-		return "Ошибка: данные сессии некорректны. Начните отправку результата заново.", nil
+		return "Ошибка: данные сессии некорректны. Начните отправку результата заново.", nil, nil
 	}
 
 	// Выполняем команду отправки результата
@@ -163,11 +164,11 @@ func (h *ResultHandler) HandleResultLink(ctx context.Context, userID int64, resu
 				participantID,
 				eventID,
 			)
-			return ResultLinkInvalidInputText(resultSessionTelegramTexts(h.sessionManager, userID)), nil
+			return ResultLinkInvalidInputText(resultSessionTelegramTexts(h.sessionManager, userID)), nil, nil
 		}
 
 		log.Printf("Error submitting result: user_id=%d participant_id=%d error=%v", userID, participantID, err)
-		return fmt.Sprintf("Ошибка при отправке результата: %v", err), err
+		return fmt.Sprintf("Ошибка при отправке результата: %v", err), nil, err
 	}
 
 	// Очищаем сессию
@@ -176,7 +177,7 @@ func (h *ResultHandler) HandleResultLink(ctx context.Context, userID int64, resu
 	return applyResultTextPlaceholders(
 		resultSessionTelegramTexts(h.sessionManager, userID).ResultSuccess,
 		map[string]string{"result_link": participant.GetResultLink()},
-	), nil
+	), participant, nil
 }
 
 func applyResultTextPlaceholders(text string, values map[string]string) string {

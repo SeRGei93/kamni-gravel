@@ -33,23 +33,24 @@ const (
 
 // Bot представляет Telegram бота
 type Bot struct {
-	api               telegramAPI
-	debug             bool
-	botUsername       string
-	miniappURL        string
-	adminChatID       int64
-	publicChatID      int64
-	botMessagesChatID int64
-	proxyUsersMu      sync.RWMutex
-	proxyUsers        map[int64]entity.User
-	proxyDialogMu     sync.Mutex
-	proxyTargetUserID int64
-	proxyLastActiveAt time.Time
-	proxyIdleTimeout  time.Duration
-	proxyCloseTimer   *time.Timer
-	proxySendInterval time.Duration
-	adminChatLogOnce  sync.Once
-	sessionManager    *session.Manager
+	api                telegramAPI
+	debug              bool
+	botUsername        string
+	miniappURL         string
+	adminChatID        int64
+	publicChatID       int64
+	botMessagesChatID  int64
+	proxyUsersMu       sync.RWMutex
+	proxyUsers         map[int64]entity.User
+	proxyDialogMu      sync.Mutex
+	proxyTargetUserID  int64
+	proxyLastActiveAt  time.Time
+	proxyIdleTimeout   time.Duration
+	proxyCloseTimer    *time.Timer
+	proxySendInterval  time.Duration
+	adminChatLogOnce   sync.Once
+	adminResultLogOnce sync.Once
+	sessionManager     *session.Manager
 
 	// Repositories
 	userRepo            repository.UserRepository
@@ -509,6 +510,93 @@ func (b *Bot) notifyAdminAboutGift(ctx context.Context, gift *entity.Gift) error
 	}
 }
 
+// notifyAdminAboutResult отправляет в чат админов уведомление о том, что участник
+// прислал результат через кнопку «я уже проехал». Ошибки доставки не должны влиять
+// на пользовательский сценарий, поэтому они только логируются.
+func (b *Bot) notifyAdminAboutResult(ctx context.Context, sender *models.User, participant *entity.Participant) {
+	if b == nil || b.api == nil {
+		return
+	}
+
+	if b.adminChatID == 0 {
+		b.adminResultLogOnce.Do(func() {
+			log.Printf("WARN Admin result notification skipped: reason=admin_chat_disabled")
+		})
+		return
+	}
+
+	userID := adminResultUserID(sender, participant)
+	text := adminResultNotificationText(sender, participant)
+	if _, err := b.SendMessage(ctx, b.adminChatID, text); err != nil {
+		log.Printf("ERROR Admin result notification failed: user_id=%d chat=admin error=%v", userID, err)
+		return
+	}
+
+	log.Printf("INFO Admin result notification sent: user_id=%d chat=admin", userID)
+}
+
+func adminResultNotificationText(sender *models.User, participant *entity.Participant) string {
+	link := ""
+	if participant != nil {
+		link = strings.TrimSpace(participant.GetResultLink())
+	}
+	if link == "" {
+		link = "не указана"
+	}
+
+	return fmt.Sprintf(
+		"🏁 Участник прислал результат\n\nОт: %s\nСсылка: %s",
+		adminResultParticipantLabel(sender, participant),
+		link,
+	)
+}
+
+func adminResultParticipantLabel(sender *models.User, participant *entity.Participant) string {
+	if sender != nil {
+		if label := personLabel(sender.FirstName, sender.LastName, sender.Username, sender.ID); label != "неизвестен" {
+			return label
+		}
+	}
+
+	if participant != nil && participant.UserID != 0 {
+		return fmt.Sprintf("user_id: %d", participant.UserID)
+	}
+
+	return "неизвестен"
+}
+
+func adminResultUserID(sender *models.User, participant *entity.Participant) int64 {
+	if sender != nil && sender.ID != 0 {
+		return sender.ID
+	}
+	if participant != nil {
+		return participant.UserID
+	}
+	return 0
+}
+
+// personLabel формирует подпись пользователя вида "Имя Фамилия (@username)" с
+// откатом на @username, имя или user_id.
+func personLabel(firstName, lastName, username string, userID int64) string {
+	firstName = strings.TrimSpace(firstName)
+	lastName = strings.TrimSpace(lastName)
+	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	fullName := strings.TrimSpace(strings.Join([]string{firstName, lastName}, " "))
+
+	switch {
+	case fullName != "" && username != "":
+		return fmt.Sprintf("%s (@%s)", fullName, username)
+	case username != "":
+		return "@" + username
+	case fullName != "":
+		return fullName
+	case userID != 0:
+		return fmt.Sprintf("user_id: %d", userID)
+	default:
+		return "неизвестен"
+	}
+}
+
 func (b *Bot) sendAdminGiftTextNotification(ctx context.Context, gift *entity.Gift) error {
 	giftID, eventID, userID := adminGiftLogFields(gift)
 	text := b.adminGiftNotificationText(gift, telegramTextLimit)
@@ -887,6 +975,26 @@ func (b *Bot) EditMessage(ctx context.Context, chatID int64, messageID int, text
 	})
 	if err != nil {
 		log.Printf("Telegram API call failed: operation=edit_message chat=%s message_id=%d error=%v", b.chatLogMarker(chatID), messageID, err)
+		return err
+	}
+
+	return nil
+}
+
+// editMessageWithKeyboard редактирует текст сообщения и заменяет его inline-клавиатуру.
+// Если markup == nil, клавиатура убирается (поведение обычного EditMessage).
+func (b *Bot) editMessageWithKeyboard(ctx context.Context, chatID int64, messageID int, text string, markup *models.InlineKeyboardMarkup) error {
+	params := &telegrambot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		Text:      text,
+	}
+	if markup != nil {
+		params.ReplyMarkup = *markup
+	}
+
+	if _, err := b.api.EditMessageText(ctx, params); err != nil {
+		log.Printf("Telegram API call failed: operation=edit_message_with_keyboard chat=%s message_id=%d error=%v", b.chatLogMarker(chatID), messageID, err)
 		return err
 	}
 
