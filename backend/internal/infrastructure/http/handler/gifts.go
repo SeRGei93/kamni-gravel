@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,6 +27,7 @@ type GiftsHandler struct {
 	giftRepo           repository.GiftRepository
 	getGiftsHandler    *query.GetGiftsHandler
 	getGiftByIDHandler *query.GetGiftByIDHandler
+	addGiftHandler     *command.AddGiftHandler
 	updateGiftHandler  *command.UpdateGiftHandler
 	publicGiftNotifier GiftPublicationNotifier
 }
@@ -40,6 +42,7 @@ func NewGiftsHandler(
 	giftRepo repository.GiftRepository,
 	getGiftsHandler *query.GetGiftsHandler,
 	getGiftByIDHandler *query.GetGiftByIDHandler,
+	addGiftHandler *command.AddGiftHandler,
 	updateGiftHandler *command.UpdateGiftHandler,
 	publicGiftNotifier ...GiftPublicationNotifier,
 ) *GiftsHandler {
@@ -52,6 +55,7 @@ func NewGiftsHandler(
 		giftRepo:           giftRepo,
 		getGiftsHandler:    getGiftsHandler,
 		getGiftByIDHandler: getGiftByIDHandler,
+		addGiftHandler:     addGiftHandler,
 		updateGiftHandler:  updateGiftHandler,
 		publicGiftNotifier: notifier,
 	}
@@ -137,6 +141,91 @@ func (h *GiftsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 	// Возвращаем DTO
 	response.Success(w, dto.FromGift(gift))
+}
+
+// CreateGiftRequest представляет запрос на ручное добавление подарка от имени Telegram-пользователя.
+type CreateGiftRequest struct {
+	UserID         int64  `json:"user_id"`
+	Description    string `json:"description"`
+	GenderFilter   string `json:"gender_filter"`
+	BikeTypeFilter string `json:"bike_type_filter"`
+}
+
+// Create обрабатывает POST /api/events/:eventId/gifts - ручное добавление подарка администратором.
+func (h *GiftsHandler) Create(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := strconv.ParseUint(eventIDStr, 10, 32)
+	if err != nil || eventID == 0 {
+		response.BadRequest(w, "Invalid event ID")
+		return
+	}
+
+	var req CreateGiftRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "Invalid request body")
+		return
+	}
+
+	req.Description = strings.TrimSpace(req.Description)
+	if req.UserID <= 0 {
+		log.Printf("WARN Manual gift creation rejected: event_id=%d telegram_user_id=%d error_class=missing_user_id", eventID, req.UserID)
+		response.BadRequest(w, "user_id is required")
+		return
+	}
+	if req.Description == "" {
+		log.Printf("WARN Manual gift creation rejected: event_id=%d telegram_user_id=%d error_class=missing_description", eventID, req.UserID)
+		response.BadRequest(w, "description is required")
+		return
+	}
+
+	gift, err := h.addGiftHandler.Handle(r.Context(), command.AddGiftCommand{
+		UserID:         req.UserID,
+		EventID:        uint(eventID),
+		Description:    req.Description,
+		GenderFilter:   req.GenderFilter,
+		BikeTypeFilter: req.BikeTypeFilter,
+	})
+	if err != nil {
+		errorClass := giftCreateErrorClass(err)
+		switch {
+		case errors.Is(err, command.ErrUserBlacklisted):
+			log.Printf("WARN Manual gift creation rejected: event_id=%d telegram_user_id=%d error_class=%s", eventID, req.UserID, errorClass)
+			response.Forbidden(w, err.Error())
+		case errors.Is(err, command.ErrUserNotFound), errors.Is(err, command.ErrEventNotFound):
+			log.Printf("WARN Manual gift creation rejected: event_id=%d telegram_user_id=%d error_class=%s", eventID, req.UserID, errorClass)
+			response.NotFound(w, err.Error())
+		case errors.Is(err, command.ErrEmptyDescription),
+			errors.Is(err, command.ErrInvalidGiftGenderFilter),
+			errors.Is(err, command.ErrInvalidGiftBikeTypeFilter):
+			log.Printf("WARN Manual gift creation rejected: event_id=%d telegram_user_id=%d error_class=%s", eventID, req.UserID, errorClass)
+			response.BadRequest(w, err.Error())
+		default:
+			log.Printf("ERROR Manual gift creation failed: event_id=%d telegram_user_id=%d error_class=%s error=%v", eventID, req.UserID, errorClass, err)
+			response.InternalServerError(w, "Failed to create gift")
+		}
+		return
+	}
+
+	response.Created(w, dto.FromGift(gift))
+}
+
+func giftCreateErrorClass(err error) string {
+	switch {
+	case errors.Is(err, command.ErrUserBlacklisted):
+		return "user_blacklisted"
+	case errors.Is(err, command.ErrUserNotFound):
+		return "user_not_found"
+	case errors.Is(err, command.ErrEventNotFound):
+		return "event_not_found"
+	case errors.Is(err, command.ErrEmptyDescription):
+		return "missing_description"
+	case errors.Is(err, command.ErrInvalidGiftGenderFilter):
+		return "invalid_gender_filter"
+	case errors.Is(err, command.ErrInvalidGiftBikeTypeFilter):
+		return "invalid_bike_type_filter"
+	default:
+		return "unknown"
+	}
 }
 
 // UpdateGiftRequest представляет запрос на обновление подарка

@@ -1,12 +1,18 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
+	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/valueobject"
 )
@@ -60,6 +66,109 @@ func TestGiftsHandlerNotifyPublicGiftApprovedDoesNotReturnNotifierError(t *testi
 	}
 }
 
+func TestGiftsHandlerCreateManualGift(t *testing.T) {
+	giftRepo := &createGiftRepoFake{}
+	h := newCreateGiftTestHandler(
+		&createGiftUserRepoFake{user: &entity.User{ID: 123}},
+		&createGiftEventRepoFake{event: &entity.Event{ID: 77}},
+		giftRepo,
+		&createGiftBlacklistRepoFake{},
+	)
+
+	rr := giftCreateRequest(t, h, 77, CreateGiftRequest{
+		UserID:         123,
+		Description:    "  Bottle cage  ",
+		GenderFilter:   "all",
+		BikeTypeFilter: "gravel",
+	})
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+	}
+	if giftRepo.createdGift == nil {
+		t.Fatal("gift was not created")
+	}
+	if giftRepo.createdGift.UserID != 123 || giftRepo.createdGift.EventID != 77 {
+		t.Fatalf("gift owner/event mismatch: got user=%d event=%d", giftRepo.createdGift.UserID, giftRepo.createdGift.EventID)
+	}
+	if giftRepo.createdGift.Description != "Bottle cage" {
+		t.Fatalf("description mismatch: got %q", giftRepo.createdGift.Description)
+	}
+	if giftRepo.createdGift.ReviewStatus != entity.GiftReviewStatusPendingReview {
+		t.Fatalf("review status mismatch: got %s", giftRepo.createdGift.ReviewStatus)
+	}
+}
+
+func TestGiftsHandlerCreateRejectsMissingUserID(t *testing.T) {
+	giftRepo := &createGiftRepoFake{}
+	h := newCreateGiftTestHandler(
+		&createGiftUserRepoFake{user: &entity.User{ID: 123}},
+		&createGiftEventRepoFake{event: &entity.Event{ID: 77}},
+		giftRepo,
+		&createGiftBlacklistRepoFake{},
+	)
+
+	rr := giftCreateRequest(t, h, 77, CreateGiftRequest{Description: "Bottle cage"})
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+	if giftRepo.createdGift != nil {
+		t.Fatal("gift should not be created without user_id")
+	}
+}
+
+func TestGiftsHandlerCreateRejectsBlacklistedUser(t *testing.T) {
+	giftRepo := &createGiftRepoFake{}
+	h := newCreateGiftTestHandler(
+		&createGiftUserRepoFake{user: &entity.User{ID: 123}},
+		&createGiftEventRepoFake{event: &entity.Event{ID: 77}},
+		giftRepo,
+		&createGiftBlacklistRepoFake{blacklisted: true},
+	)
+
+	rr := giftCreateRequest(t, h, 77, CreateGiftRequest{UserID: 123, Description: "Bottle cage"})
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusForbidden, rr.Body.String())
+	}
+	if giftRepo.createdGift != nil {
+		t.Fatal("gift should not be created for blacklisted user")
+	}
+}
+
+func TestGiftsHandlerCreateReturnsNotFoundForUnknownUserOrEvent(t *testing.T) {
+	tests := []struct {
+		name  string
+		user  *entity.User
+		event *entity.Event
+	}{
+		{name: "unknown user", user: nil, event: &entity.Event{ID: 77}},
+		{name: "missing event", user: &entity.User{ID: 123}, event: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			giftRepo := &createGiftRepoFake{}
+			h := newCreateGiftTestHandler(
+				&createGiftUserRepoFake{user: tt.user},
+				&createGiftEventRepoFake{event: tt.event},
+				giftRepo,
+				&createGiftBlacklistRepoFake{},
+			)
+
+			rr := giftCreateRequest(t, h, 77, CreateGiftRequest{UserID: 123, Description: "Bottle cage"})
+
+			if rr.Code != http.StatusNotFound {
+				t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+			}
+			if giftRepo.createdGift != nil {
+				t.Fatal("gift should not be created")
+			}
+		})
+	}
+}
+
 type giftPublicationNotifierFake struct {
 	calls  int
 	giftID uint
@@ -72,6 +181,129 @@ func (n *giftPublicationNotifierFake) NotifyWithRetry(ctx context.Context, gift 
 		n.giftID = gift.ID
 	}
 	return n.err
+}
+
+func newCreateGiftTestHandler(
+	userRepo *createGiftUserRepoFake,
+	eventRepo *createGiftEventRepoFake,
+	giftRepo *createGiftRepoFake,
+	blacklistRepo *createGiftBlacklistRepoFake,
+) *GiftsHandler {
+	return &GiftsHandler{
+		addGiftHandler: command.NewAddGiftHandler(userRepo, eventRepo, giftRepo, blacklistRepo),
+	}
+}
+
+func giftCreateRequest(t *testing.T, h *GiftsHandler, eventID uint, bodyData CreateGiftRequest) *httptest.ResponseRecorder {
+	t.Helper()
+
+	body, err := json.Marshal(bodyData)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	router := chi.NewRouter()
+	router.Post("/api/events/{eventId}/gifts", h.Create)
+	req := httptest.NewRequest(http.MethodPost, "/api/events/"+uintString(eventID)+"/gifts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	return rr
+}
+
+type createGiftUserRepoFake struct {
+	user *entity.User
+}
+
+func (r *createGiftUserRepoFake) Create(ctx context.Context, user *entity.User) error { return nil }
+func (r *createGiftUserRepoFake) Update(ctx context.Context, user *entity.User) error { return nil }
+func (r *createGiftUserRepoFake) FindByID(ctx context.Context, id int64) (*entity.User, error) {
+	return r.user, nil
+}
+func (r *createGiftUserRepoFake) Delete(ctx context.Context, id int64) error { return nil }
+func (r *createGiftUserRepoFake) GetAll(ctx context.Context) ([]*entity.User, error) {
+	return nil, nil
+}
+
+type createGiftEventRepoFake struct {
+	event *entity.Event
+}
+
+func (r *createGiftEventRepoFake) Create(ctx context.Context, event *entity.Event) error {
+	return nil
+}
+func (r *createGiftEventRepoFake) Update(ctx context.Context, event *entity.Event) error {
+	return nil
+}
+func (r *createGiftEventRepoFake) FindByID(ctx context.Context, id uint) (*entity.Event, error) {
+	return r.event, nil
+}
+func (r *createGiftEventRepoFake) FindByName(ctx context.Context, name string) (*entity.Event, error) {
+	return nil, nil
+}
+func (r *createGiftEventRepoFake) FindActive(ctx context.Context) (*entity.Event, error) {
+	return r.event, nil
+}
+func (r *createGiftEventRepoFake) GetAll(ctx context.Context) ([]*entity.Event, error) {
+	return nil, nil
+}
+func (r *createGiftEventRepoFake) Delete(ctx context.Context, id uint) error { return nil }
+
+type createGiftBlacklistRepoFake struct {
+	blacklisted bool
+}
+
+func (r *createGiftBlacklistRepoFake) List(ctx context.Context) ([]*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *createGiftBlacklistRepoFake) FindByTelegramUserID(ctx context.Context, telegramUserID int64) (*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *createGiftBlacklistRepoFake) IsBlacklisted(ctx context.Context, telegramUserID int64) (bool, error) {
+	return r.blacklisted, nil
+}
+func (r *createGiftBlacklistRepoFake) Upsert(ctx context.Context, entry *entity.UserBlacklist) error {
+	return nil
+}
+func (r *createGiftBlacklistRepoFake) UpdateReason(ctx context.Context, telegramUserID int64, reason string) (*entity.UserBlacklist, error) {
+	return nil, nil
+}
+func (r *createGiftBlacklistRepoFake) Delete(ctx context.Context, telegramUserID int64) error {
+	return nil
+}
+
+type createGiftRepoFake struct {
+	createdGift *entity.Gift
+}
+
+func (r *createGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error { return nil }
+func (r *createGiftRepoFake) CreateWithAttachments(ctx context.Context, gift *entity.Gift, attachments []*entity.GiftAttachment) error {
+	gift.ID = 99
+	r.createdGift = gift
+	return nil
+}
+func (r *createGiftRepoFake) Update(ctx context.Context, gift *entity.Gift) error { return nil }
+func (r *createGiftRepoFake) UpdateWithCriteria(ctx context.Context, gift *entity.Gift, criteriaIDs []uint) error {
+	return nil
+}
+func (r *createGiftRepoFake) FindByID(ctx context.Context, id uint) (*entity.Gift, error) {
+	return nil, nil
+}
+func (r *createGiftRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
+	return nil, nil
+}
+func (r *createGiftRepoFake) FindByEventAndReviewStatus(ctx context.Context, eventID uint, reviewStatus entity.GiftReviewStatus) ([]*entity.Gift, error) {
+	return nil, nil
+}
+func (r *createGiftRepoFake) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
+	return nil, nil
+}
+func (r *createGiftRepoFake) Delete(ctx context.Context, id uint) error { return nil }
+func (r *createGiftRepoFake) AddAttachment(ctx context.Context, attachment *entity.GiftAttachment) error {
+	return nil
+}
+func (r *createGiftRepoFake) GetAttachments(ctx context.Context, giftID uint) ([]*entity.GiftAttachment, error) {
+	return nil, nil
 }
 
 func TestDecodeUpdateGiftRequestPlaceRulePresence(t *testing.T) {

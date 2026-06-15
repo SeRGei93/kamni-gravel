@@ -73,6 +73,88 @@ func TestAddGiftHandlerRejectsBlacklistedUser(t *testing.T) {
 	}
 }
 
+func TestAddGiftHandlerRejectsUnknownUser(t *testing.T) {
+	giftRepo := &addGiftRepoFake{}
+	h := NewAddGiftHandler(
+		&addGiftUserRepoFake{},
+		&addGiftEventRepoFake{event: &entity.Event{ID: 77}},
+		giftRepo,
+		&addGiftUserBlacklistRepoFake{},
+	)
+
+	_, err := h.Handle(context.Background(), AddGiftCommand{
+		UserID:      123,
+		EventID:     77,
+		Description: "Bottle cage",
+	})
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("error mismatch: got %v, want %v", err, ErrUserNotFound)
+	}
+	if giftRepo.createWithAttachmentsCalled || giftRepo.createCalled {
+		t.Fatal("gift should not be created for unknown user")
+	}
+}
+
+func TestAddGiftHandlerRejectsMissingEvent(t *testing.T) {
+	giftRepo := &addGiftRepoFake{}
+	h := NewAddGiftHandler(
+		&addGiftUserRepoFake{user: &entity.User{ID: 123}},
+		&addGiftEventRepoFake{},
+		giftRepo,
+		&addGiftUserBlacklistRepoFake{},
+	)
+
+	_, err := h.Handle(context.Background(), AddGiftCommand{
+		UserID:      123,
+		EventID:     77,
+		Description: "Bottle cage",
+	})
+	if !errors.Is(err, ErrEventNotFound) {
+		t.Fatalf("error mismatch: got %v, want %v", err, ErrEventNotFound)
+	}
+	if giftRepo.createWithAttachmentsCalled || giftRepo.createCalled {
+		t.Fatal("gift should not be created for missing event")
+	}
+}
+
+func TestAddGiftHandlerRejectsInvalidFilters(t *testing.T) {
+	tests := []struct {
+		name     string
+		gender   string
+		bikeType string
+		wantErr  error
+	}{
+		{name: "gender", gender: "unknown", bikeType: "all", wantErr: ErrInvalidGiftGenderFilter},
+		{name: "bike type", gender: "all", bikeType: "unknown", wantErr: ErrInvalidGiftBikeTypeFilter},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			giftRepo := &addGiftRepoFake{}
+			h := NewAddGiftHandler(
+				&addGiftUserRepoFake{user: &entity.User{ID: 123}},
+				&addGiftEventRepoFake{event: &entity.Event{ID: 77}},
+				giftRepo,
+				&addGiftUserBlacklistRepoFake{},
+			)
+
+			_, err := h.Handle(context.Background(), AddGiftCommand{
+				UserID:         123,
+				EventID:        77,
+				Description:    "Bottle cage",
+				GenderFilter:   tt.gender,
+				BikeTypeFilter: tt.bikeType,
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error mismatch: got %v, want %v", err, tt.wantErr)
+			}
+			if giftRepo.createWithAttachmentsCalled || giftRepo.createCalled {
+				t.Fatal("gift should not be created for invalid filters")
+			}
+		})
+	}
+}
+
 type addGiftUserRepoFake struct {
 	user *entity.User
 }

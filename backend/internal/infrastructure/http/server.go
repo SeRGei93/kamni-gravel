@@ -122,6 +122,10 @@ func NewServer(
 		eventRepo,
 		resultRepo,
 	)
+	createManualResultHandler := command.NewCreateManualResultHandler(
+		participantRepo,
+		resultRepo,
+	)
 
 	assignPrizeHandler := command.NewAssignPrizeHandler(
 		participantRepo,
@@ -163,6 +167,12 @@ func NewServer(
 	updateCriteriaHandler := command.NewUpdateCriteriaHandler(criteriaRepo)
 
 	// Создаём command handlers для gifts
+	addGiftHandler := command.NewAddGiftHandler(
+		userRepo,
+		eventRepo,
+		giftRepo,
+		userBlacklistRepo,
+	)
 	updateGiftHandler := command.NewUpdateGiftHandler(giftRepo)
 
 	// Создаём command handlers для blacklist пользователей
@@ -241,6 +251,7 @@ func NewServer(
 		giftRepo,
 		getGiftsHandler,
 		getGiftByIDHandler,
+		addGiftHandler,
 		updateGiftHandler,
 		giftPublicationNotifiers...,
 	)
@@ -257,7 +268,7 @@ func NewServer(
 		getPrizeAssignmentByIDHandler,
 		assignPrizeHandler,
 	)
-	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo, submitResultHandler)
+	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo, submitResultHandler, createManualResultHandler)
 	statsHandler := handler.NewStatsHandler(getStatsHandler)
 	telegramHandler := handler.NewTelegramHandler(cfg.BotToken)
 	miniappHandler := handler.NewMiniappHandler(
@@ -460,6 +471,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Delete("/results/{id}/criteria/{criteriaId}", s.resultsHandler.RemoveCriteria)
 
 			// Gifts admin routes
+			r.Post("/events/{eventId}/gifts", s.giftsHandler.Create)
 			r.Put("/gifts/{id}", s.giftsHandler.Update)
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)
 

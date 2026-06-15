@@ -18,61 +18,95 @@ import (
 	"gravel_bot/internal/domain/valueobject"
 )
 
-func TestResultsHandlerCreateUsesSubmitResultCommand(t *testing.T) {
+func TestResultsHandlerCreateManualResult(t *testing.T) {
 	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
-	start := now.Add(-time.Minute)
 	participantRepo := &resultsParticipantRepoFake{participant: &entity.Participant{ID: 11, EventID: 77}}
 	resultRepo := &resultsResultRepoFake{}
-	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true, StartDate: &start}}
+	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
 	h := newResultsTestHandler(participantRepo, eventRepo, resultRepo, now)
 
-	rr := resultsCreateRequest(t, h, 11, "https://www.strava.com/activities/14758223172")
+	rr := resultsCreateRequest(t, h, 11, CreateResultRequest{
+		ElapsedTimeSec: intPointer(3600),
+		MovingTimeSec:  intPointer(3500),
+	})
 
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
 	}
 	if resultRepo.created == nil {
-		t.Fatal("result was not created through command")
+		t.Fatal("result was not created through manual command")
+	}
+	if resultRepo.created.ResultLink != nil {
+		t.Fatalf("result link should be nil, got %#v", resultRepo.created.ResultLink)
 	}
 
 	var got struct {
-		ResultLink string `json:"result_link"`
+		ElapsedTimeSec int `json:"elapsed_time_sec"`
+		MovingTimeSec  int `json:"moving_time_sec"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.ResultLink != "https://www.strava.com/activities/14758223172" {
-		t.Fatalf("result_link mismatch: got %q", got.ResultLink)
+	if got.ElapsedTimeSec != 3600 || got.MovingTimeSec != 3500 {
+		t.Fatalf("time mismatch: got elapsed=%d moving=%d", got.ElapsedTimeSec, got.MovingTimeSec)
 	}
 }
 
-func TestResultsHandlerCreateReturnsConflictBeforeEventStart(t *testing.T) {
-	now := time.Date(2026, 5, 27, 11, 0, 0, 0, valueobject.MinskLocation())
-	start := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
+func TestResultsHandlerCreateReturnsBadRequestWithoutElapsedTime(t *testing.T) {
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
 	participantRepo := &resultsParticipantRepoFake{participant: &entity.Participant{ID: 11, EventID: 77}}
 	resultRepo := &resultsResultRepoFake{}
-	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true, StartDate: &start}}
+	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
 	h := newResultsTestHandler(participantRepo, eventRepo, resultRepo, now)
 
-	rr := resultsCreateRequest(t, h, 11, "https://www.strava.com/activities/14758223172")
+	rr := resultsCreateRequest(t, h, 11, CreateResultRequest{
+		ResultLink: "https://www.strava.com/activities/14758223172",
+	})
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+	if resultRepo.created != nil {
+		t.Fatal("result should not be created without elapsed_time_sec")
+	}
+}
+
+func TestResultsHandlerCreateReturnsConflictWhenCurrentResultExists(t *testing.T) {
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
+	participantRepo := &resultsParticipantRepoFake{
+		participant: &entity.Participant{
+			ID:      11,
+			EventID: 77,
+			Result:  &entity.Result{ID: 88, IsCurrent: true},
+		},
+	}
+	resultRepo := &resultsResultRepoFake{}
+	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
+	h := newResultsTestHandler(participantRepo, eventRepo, resultRepo, now)
+
+	rr := resultsCreateRequest(t, h, 11, CreateResultRequest{
+		ElapsedTimeSec: intPointer(3600),
+	})
 
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusConflict, rr.Body.String())
 	}
 	if resultRepo.created != nil {
-		t.Fatal("result should not be created before event start")
+		t.Fatal("result should not be created when current result exists")
 	}
 }
 
 func TestResultsHandlerCreateReturnsBadRequestForKomoot(t *testing.T) {
 	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
-	start := now.Add(-time.Minute)
 	participantRepo := &resultsParticipantRepoFake{participant: &entity.Participant{ID: 11, EventID: 77}}
 	resultRepo := &resultsResultRepoFake{}
-	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true, StartDate: &start}}
+	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
 	h := newResultsTestHandler(participantRepo, eventRepo, resultRepo, now)
 
-	rr := resultsCreateRequest(t, h, 11, "https://www.komoot.com/tour/2308024419")
+	rr := resultsCreateRequest(t, h, 11, CreateResultRequest{
+		ElapsedTimeSec: intPointer(3600),
+		ResultLink:     "https://www.komoot.com/tour/2308024419",
+	})
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
@@ -89,13 +123,18 @@ func newResultsTestHandler(participantRepo *resultsParticipantRepoFake, eventRep
 		resultRepo,
 		command.WithSubmitResultClock(func() time.Time { return now }),
 	)
-	return NewResultsHandler(resultRepo, participantRepo, &resultsCriteriaRepoFake{}, submitHandler)
+	manualHandler := command.NewCreateManualResultHandler(
+		participantRepo,
+		resultRepo,
+		command.WithCreateManualResultClock(func() time.Time { return now }),
+	)
+	return NewResultsHandler(resultRepo, participantRepo, &resultsCriteriaRepoFake{}, submitHandler, manualHandler)
 }
 
-func resultsCreateRequest(t *testing.T, h *ResultsHandler, participantID uint, resultLink string) *httptest.ResponseRecorder {
+func resultsCreateRequest(t *testing.T, h *ResultsHandler, participantID uint, bodyData CreateResultRequest) *httptest.ResponseRecorder {
 	t.Helper()
 
-	body, err := json.Marshal(CreateResultRequest{ResultLink: resultLink})
+	body, err := json.Marshal(bodyData)
 	if err != nil {
 		t.Fatalf("marshal request: %v", err)
 	}
@@ -107,6 +146,10 @@ func resultsCreateRequest(t *testing.T, h *ResultsHandler, participantID uint, r
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	return rr
+}
+
+func intPointer(value int) *int {
+	return &value
 }
 
 func uintString(value uint) string {

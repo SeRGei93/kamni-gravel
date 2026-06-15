@@ -1,15 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { giftsApi } from '@/api/gifts';
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
-import type { Gift, Event, GiftReviewStatus } from '@/types';
+import type { BikeTypeFilter, Gift, Event, GenderFilter, GiftReviewStatus } from '@/types';
 import GiftsTable from '@/components/gifts/GiftsTable';
+import Button from '@/components/ui/button/Button';
+import Input from '@/components/form/input/InputField';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
-import { GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
+import TextArea from '@/components/form/input/TextArea';
+import { BIKE_TYPE_OPTIONS, GENDER_OPTIONS, GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
+import { CheckLineIcon, CloseLineIcon, PlusIcon } from '@/icons';
+import { getManualGiftErrorMessage } from '@/utils/manualGiftErrors';
 
 type GiftReviewStatusFilter = 'all' | GiftReviewStatus;
 
@@ -44,6 +49,14 @@ export default function GiftsPage() {
   const [assignedGiftIds, setAssignedGiftIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCreatingGift, setIsCreatingGift] = useState(false);
+  const [isSavingGift, setIsSavingGift] = useState(false);
+  const [manualGiftUserId, setManualGiftUserId] = useState('');
+  const [manualGiftDescription, setManualGiftDescription] = useState('');
+  const [manualGiftGenderFilter, setManualGiftGenderFilter] =
+    useState<GenderFilter>('all');
+  const [manualGiftBikeTypeFilter, setManualGiftBikeTypeFilter] =
+    useState<BikeTypeFilter>('all');
 
   const listQueryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -237,6 +250,63 @@ export default function GiftsPage() {
     }
   };
 
+  const resetManualGiftForm = () => {
+    setManualGiftUserId('');
+    setManualGiftDescription('');
+    setManualGiftGenderFilter('all');
+    setManualGiftBikeTypeFilter('all');
+  };
+
+  const handleManualGiftSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedEventId) {
+      setError('Выберите событие');
+      return;
+    }
+
+    const telegramUserId = Number(manualGiftUserId);
+    if (!Number.isInteger(telegramUserId) || telegramUserId <= 0) {
+      setError('Введите корректный Telegram ID');
+      return;
+    }
+
+    const description = manualGiftDescription.trim();
+    if (!description) {
+      setError('Введите описание приза');
+      return;
+    }
+
+    try {
+      setIsSavingGift(true);
+      setError(null);
+      await giftsApi.create(selectedEventId, {
+        user_id: telegramUserId,
+        description,
+        gender_filter: manualGiftGenderFilter,
+        bike_type_filter: manualGiftBikeTypeFilter,
+      });
+      resetManualGiftForm();
+      setIsCreatingGift(false);
+
+      if (reviewStatusFilter === 'approved') {
+        setReviewStatusFilter('pending_review');
+        updateListQuery({ reviewStatus: 'pending_review' });
+      } else {
+        await loadGifts();
+      }
+    } catch (err) {
+      setError(getManualGiftErrorMessage(err, telegramUserId));
+      console.error('[FIX:manual-gift-error] Failed to create gift:', {
+        operation: 'create_manual_gift',
+        event_id: selectedEventId,
+        telegram_user_id: telegramUserId,
+        error: err,
+      });
+    } finally {
+      setIsSavingGift(false);
+    }
+  };
+
   const eventOptions = events.map((e) => ({
     value: String(e.id),
     label: e.name,
@@ -250,15 +320,25 @@ export default function GiftsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
             Призы
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Призы поступают из Telegram и проходят проверку администратора перед распределением
+            Призы проходят проверку администратора перед распределением
           </p>
         </div>
+        {!isCreatingGift && (
+          <Button
+            size="sm"
+            startIcon={<PlusIcon />}
+            onClick={() => setIsCreatingGift(true)}
+            disabled={!selectedEventId}
+          >
+            Добавить приз вручную
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -273,6 +353,86 @@ export default function GiftsPage() {
             На проверке {totalPendingReviewCount} призов. До проверки они не участвуют в распределении.
           </p>
         </div>
+      )}
+
+      {isCreatingGift && (
+        <form
+          onSubmit={handleManualGiftSubmit}
+          className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]"
+        >
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
+              Добавить приз вручную
+            </h2>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                startIcon={<CloseLineIcon />}
+                onClick={() => {
+                  resetManualGiftForm();
+                  setIsCreatingGift(false);
+                }}
+                disabled={isSavingGift}
+              >
+                Отмена
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                startIcon={<CheckLineIcon />}
+                disabled={isSavingGift || !selectedEventId}
+              >
+                {isSavingGift ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+            <div>
+              <Label>Telegram ID</Label>
+              <Input
+                type="number"
+                min="1"
+                placeholder="7045033621"
+                value={manualGiftUserId}
+                onChange={(event) => setManualGiftUserId(event.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Пол</Label>
+              <Select
+                options={GENDER_OPTIONS}
+                key={`manual-gift-gender-${manualGiftGenderFilter}`}
+                defaultValue={manualGiftGenderFilter}
+                onChange={(value) => setManualGiftGenderFilter(value as GenderFilter)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Тип велосипеда</Label>
+              <Select
+                options={BIKE_TYPE_OPTIONS}
+                key={`manual-gift-bike-${manualGiftBikeTypeFilter}`}
+                defaultValue={manualGiftBikeTypeFilter}
+                onChange={(value) => setManualGiftBikeTypeFilter(value as BikeTypeFilter)}
+                required
+              />
+            </div>
+            <div className="lg:col-span-4">
+              <Label>Описание приза</Label>
+              <TextArea
+                placeholder="Введите описание приза"
+                value={manualGiftDescription}
+                onChange={setManualGiftDescription}
+                rows={3}
+                required
+              />
+            </div>
+          </div>
+        </form>
       )}
 
       {/* Фильтры */}

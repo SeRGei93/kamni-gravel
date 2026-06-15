@@ -344,12 +344,21 @@ export interface ResultListResponse {
 }
 
 export interface CreateResultRequest {
-  result_link: string;
+  elapsed_time_sec: number;
+  moving_time_sec?: number;
+  result_link?: string;
 }
 
 export interface UpdateResultRequest {
   elapsed_time_sec?: number;
   moving_time_sec?: number;
+}
+
+export interface CreateGiftRequest {
+  user_id: number;
+  description: string;
+  gender_filter?: GenderFilter;
+  bike_type_filter?: BikeTypeFilter;
 }
 
 export interface Criteria {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Input from '../form/input/InputField';
 import Label from '../form/Label';
 import { secondsToTimeString, timeStringToSeconds } from '@/utils/time';
@@ -10,6 +10,7 @@ interface TimeInputProps {
   value: number | undefined;
   onChange: (seconds: number | undefined) => void;
   disabled?: boolean;
+  required?: boolean;
 }
 
 export default function TimeInput({
@@ -17,19 +18,12 @@ export default function TimeInput({
   value,
   onChange,
   disabled = false,
+  required = false,
 }: TimeInputProps) {
   const [timeString, setTimeString] = useState(
     value ? secondsToTimeString(value) : ''
   );
   const [error, setError] = useState(false);
-
-  useEffect(() => {
-    if (value !== undefined) {
-      setTimeString(secondsToTimeString(value));
-    } else {
-      setTimeString('');
-    }
-  }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
@@ -44,6 +38,7 @@ export default function TimeInput({
     const seconds = timeStringToSeconds(newValue);
     if (seconds === null) {
       setError(true);
+      onChange(undefined);
     } else {
       setError(false);
       onChange(seconds);
@@ -56,9 +51,10 @@ export default function TimeInput({
       <Input
         type="text"
         placeholder="ЧЧ:ММ:СС"
-        defaultValue={timeString}
+        value={timeString}
         onChange={handleChange}
         disabled={disabled}
+        required={required}
         error={error}
         hint={error ? 'Неверный формат. Используйте ЧЧ:ММ:СС' : ''}
       />

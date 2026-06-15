@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/domain/valueobject"
 )
 
 var (
@@ -79,20 +81,21 @@ func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entit
 
 	// Проверяем существование пользователя
 	user, err := h.userRepo.FindByID(ctx, cmd.UserID)
-	if err != nil {
+	if err != nil || user == nil {
 		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=find_user error=%v", cmd.UserID, cmd.EventID, err)
 		return nil, ErrUserNotFound
 	}
 
 	// Проверяем существование события
-	_, err = h.eventRepo.FindByID(ctx, cmd.EventID)
-	if err != nil {
+	event, err := h.eventRepo.FindByID(ctx, cmd.EventID)
+	if err != nil || event == nil {
 		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=find_event error=%v", cmd.UserID, cmd.EventID, err)
 		return nil, ErrEventNotFound
 	}
 
 	// Валидация описания
-	if cmd.Description == "" {
+	description := strings.TrimSpace(cmd.Description)
+	if description == "" {
 		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=validate_description reason=empty_description", cmd.UserID, cmd.EventID)
 		return nil, ErrEmptyDescription
 	}
@@ -102,16 +105,25 @@ func (h *AddGiftHandler) Handle(ctx context.Context, cmd AddGiftCommand) (*entit
 	if genderFilter == "" {
 		genderFilter = "all"
 	}
+	if _, err := valueobject.NewGenderFilter(genderFilter); err != nil {
+		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=validate_gender_filter gender_filter=%q", cmd.UserID, cmd.EventID, genderFilter)
+		return nil, fmt.Errorf("%w: %s", ErrInvalidGiftGenderFilter, genderFilter)
+	}
+
 	bikeTypeFilter := cmd.BikeTypeFilter
 	if bikeTypeFilter == "" {
 		bikeTypeFilter = "all"
+	}
+	if _, err := valueobject.NewBikeTypeFilter(bikeTypeFilter); err != nil {
+		log.Printf("WARN Gift creation failed: telegram_user_id=%d event_id=%d stage=validate_bike_type_filter bike_type_filter=%q", cmd.UserID, cmd.EventID, bikeTypeFilter)
+		return nil, fmt.Errorf("%w: %s", ErrInvalidGiftBikeTypeFilter, bikeTypeFilter)
 	}
 
 	// Создаём подарок
 	gift := &entity.Gift{
 		UserID:         cmd.UserID,
 		EventID:        cmd.EventID,
-		Description:    cmd.Description,
+		Description:    description,
 		GenderFilter:   genderFilter,
 		BikeTypeFilter: bikeTypeFilter,
 		ReviewStatus:   entity.GiftReviewStatusPendingReview,

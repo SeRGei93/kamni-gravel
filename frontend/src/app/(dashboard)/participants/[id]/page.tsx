@@ -1,17 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { participantsApi } from '@/api/participants';
 import { resultsApi } from '@/api/results';
 import type { ParticipantDetail, Gift, Result, PrizeGiftAssignment } from '@/types';
 import Badge from '@/components/ui/badge/Badge';
 import Button from '@/components/ui/button/Button';
+import Input from '@/components/form/input/InputField';
 import TextArea from '@/components/form/input/TextArea';
 import TimeInput from '@/components/participants/TimeInput';
 import ResultCriteriaManager from '@/components/participants/ResultCriteriaManager';
 import { getCriteriaColor } from '@/utils/criteria';
-import { ChevronLeftIcon, PencilIcon, CheckLineIcon, CloseLineIcon, TrashIcon } from '@/icons';
+import { ChevronLeftIcon, PencilIcon, CheckLineIcon, CloseLineIcon, PlusIcon, TrashIcon } from '@/icons';
 import Link from 'next/link';
 
 const GENDER_LABELS: Record<string, string> = {
@@ -60,6 +61,7 @@ export default function ParticipantDetailPage() {
   // Редактируемые поля результата
   const [elapsedTimeSec, setElapsedTimeSec] = useState<number | undefined>();
   const [movingTimeSec, setMovingTimeSec] = useState<number | undefined>();
+  const [resultLink, setResultLink] = useState('');
   const [isEditingResult, setIsEditingResult] = useState(false);
   const [isSavingResult, setIsSavingResult] = useState(false);
 
@@ -84,6 +86,7 @@ export default function ParticipantDetailPage() {
       
       setElapsedTimeSec(participantData.elapsed_time_sec);
       setMovingTimeSec(participantData.moving_time_sec);
+      setResultLink(participantData.result_link || '');
       setNotes(participantData.notes || '');
     } catch (err) {
       setError('Ошибка загрузки данных участника');
@@ -132,11 +135,36 @@ export default function ParticipantDetailPage() {
     }
   };
 
-  const handleSaveResult = async () => {
+  const handleStartResultEdit = () => {
     if (!participant) return;
+    setElapsedTimeSec(participant.elapsed_time_sec);
+    setMovingTimeSec(participant.moving_time_sec);
+    setResultLink(participant.result_link || '');
+    setIsEditingResult(true);
+  };
+
+  const handleStartResultCreate = () => {
+    setElapsedTimeSec(undefined);
+    setMovingTimeSec(undefined);
+    setResultLink('');
+    setIsEditingResult(true);
+  };
+
+  const handleSaveResult = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!participant) return;
+    if (elapsedTimeSec === undefined || elapsedTimeSec <= 0) {
+      setError('Введите общее время результата');
+      return;
+    }
+    if (movingTimeSec !== undefined && movingTimeSec > elapsedTimeSec) {
+      setError('Чистое время не может быть больше общего времени');
+      return;
+    }
 
     try {
       setIsSavingResult(true);
+      setError(null);
       const resultId = await getCurrentResultId();
       
       if (resultId) {
@@ -144,13 +172,23 @@ export default function ParticipantDetailPage() {
           elapsed_time_sec: elapsedTimeSec,
           moving_time_sec: movingTimeSec,
         });
+      } else {
+        await resultsApi.create(participant.id, {
+          elapsed_time_sec: elapsedTimeSec,
+          moving_time_sec: movingTimeSec,
+          result_link: resultLink.trim() || undefined,
+        });
       }
       
       setIsEditingResult(false);
       await loadParticipant();
     } catch (err) {
-      setError('Ошибка сохранения времени');
-      console.error('Failed to update result:', err);
+      setError('Ошибка сохранения результата');
+      console.error('Failed to save result:', {
+        operation: currentResult ? 'update_result' : 'create_result',
+        participant_id: participant.id,
+        error: err,
+      });
     } finally {
       setIsSavingResult(false);
     }
@@ -160,6 +198,7 @@ export default function ParticipantDetailPage() {
     if (!participant) return;
     setElapsedTimeSec(participant.elapsed_time_sec);
     setMovingTimeSec(participant.moving_time_sec);
+    setResultLink(participant.result_link || '');
     setIsEditingResult(false);
   };
 
@@ -407,7 +446,10 @@ export default function ParticipantDetailPage() {
           </div>
 
           {/* Результат и Время */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">
+          <form
+            onSubmit={handleSaveResult}
+            className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6"
+          >
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
                 Результат
@@ -417,14 +459,25 @@ export default function ParticipantDetailPage() {
                   size="sm"
                   variant="outline"
                   startIcon={<PencilIcon />}
-                  onClick={() => setIsEditingResult(true)}
+                  onClick={handleStartResultEdit}
                 >
                   Изменить время
+                </Button>
+              )}
+              {!participant.is_finished && !isEditingResult && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  startIcon={<PlusIcon />}
+                  onClick={handleStartResultCreate}
+                >
+                  Добавить результат
                 </Button>
               )}
               {isEditingResult && (
                 <div className="flex gap-2">
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     onClick={handleCancelResultEdit}
@@ -433,8 +486,8 @@ export default function ParticipantDetailPage() {
                     Отмена
                   </Button>
                   <Button
+                    type="submit"
                     size="sm"
-                    onClick={handleSaveResult}
                     disabled={isSavingResult}
                   >
                     {isSavingResult ? 'Сохранение...' : 'Сохранить'}
@@ -481,20 +534,36 @@ export default function ParticipantDetailPage() {
               )}
 
               {/* Время */}
-              {participant.is_finished && (
+              {(participant.is_finished || isEditingResult) && (
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                   {isEditingResult ? (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <TimeInput
-                        label="Общее время"
-                        value={elapsedTimeSec}
-                        onChange={setElapsedTimeSec}
-                      />
-                      <TimeInput
-                        label="Чистое время"
-                        value={movingTimeSec}
-                        onChange={setMovingTimeSec}
-                      />
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <TimeInput
+                          label="Общее время"
+                          value={elapsedTimeSec}
+                          onChange={setElapsedTimeSec}
+                          required
+                        />
+                        <TimeInput
+                          label="Чистое время"
+                          value={movingTimeSec}
+                          onChange={setMovingTimeSec}
+                        />
+                      </div>
+                      {!currentResult && (
+                        <div>
+                          <p className="mb-1.5 text-sm font-medium text-gray-700 dark:text-gray-400">
+                            Ссылка Strava
+                          </p>
+                          <Input
+                            type="url"
+                            placeholder="https://www.strava.com/activities/..."
+                            value={resultLink}
+                            onChange={(event) => setResultLink(event.target.value)}
+                          />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -519,7 +588,7 @@ export default function ParticipantDetailPage() {
                 </div>
               )}
             </div>
-          </div>
+          </form>
 
           {/* Критерии результата */}
           <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">

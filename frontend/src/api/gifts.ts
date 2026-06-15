@@ -1,5 +1,5 @@
-import { get, put, del } from './client';
-import type { Gift, GiftListResponse, GiftReviewStatus, UpdateGiftRequest } from '@/types';
+import { get, post, put, del } from './client';
+import type { CreateGiftRequest, Gift, GiftListResponse, GiftReviewStatus, UpdateGiftRequest } from '@/types';
 
 const GIFTS_PREFIX = '/api/gifts';
 const EVENTS_PREFIX = '/api/events';
@@ -21,6 +21,10 @@ export const giftsApi = {
 
   async getById(id: number): Promise<Gift> {
     return get<Gift>(`${GIFTS_PREFIX}/${id}`);
+  },
+
+  async create(eventId: number, data: CreateGiftRequest): Promise<Gift> {
+    return post<Gift>(`${EVENTS_PREFIX}/${eventId}/gifts`, data);
   },
 
   async update(id: number, data: UpdateGiftRequest): Promise<Gift> {

@@ -643,8 +643,8 @@ paths:
 
     post:
       tags: [Results]
-      summary: Добавить результат участнику
-      description: Принимает только ссылки на активности Strava. Подача результата доступна только после времени старта события, указанного в Минске UTC+3.
+      summary: Добавить результат участнику вручную
+      description: Администратор добавляет обычный текущий результат из профиля участника. Общее время обязательно, ссылка Strava опциональна.
       security:
         - BearerAuth: []
       parameters:
@@ -658,13 +658,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [result_link]
-              properties:
-                result_link:
-                  type: string
-                  description: Ссылка на активность Strava
-                  example: https://www.strava.com/activities/123456789
+              $ref: '#/components/schemas/CreateManualResultRequest'
       responses:
         '201':
           description: Результат добавлен
@@ -673,11 +667,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/Result'
         '400':
-          description: Некорректная ссылка результата. Принимаются только ссылки Strava.
+          description: Некорректные обязательные поля, время или ссылка результата.
         '404':
           description: Участник не найден
         '409':
-          description: Подача результата ещё недоступна или время старта события не настроено
+          description: У участника уже есть текущий результат
 
   /results/{id}:
     get:
@@ -770,6 +764,34 @@ paths:
                       $ref: '#/components/schemas/Gift'
                   total:
                     type: integer
+
+    post:
+      tags: [Gifts]
+      summary: Добавить приз вручную
+      description: Администратор создаёт обычный приз от имени Telegram-пользователя. Новый приз попадает в стандартный статус проверки.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGiftRequest'
+      responses:
+        '201':
+          description: Приз создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gift'
+        '400':
+          description: Некорректные обязательные поля или фильтры
+        '403':
+          description: Telegram-пользователь находится в blacklist
+        '404':
+          description: Событие или Telegram-пользователь не найден
 
   /gifts/{id}:
     get:
@@ -1668,6 +1690,24 @@ components:
           type: string
           format: date-time
 
+    CreateManualResultRequest:
+      type: object
+      required:
+        - elapsed_time_sec
+      properties:
+        elapsed_time_sec:
+          type: integer
+          minimum: 1
+          description: Общее время в секундах
+        moving_time_sec:
+          type: integer
+          minimum: 0
+          description: Чистое время в секундах. Не может быть больше elapsed_time_sec.
+        result_link:
+          type: string
+          description: Опциональная ссылка на активность Strava
+          example: https://www.strava.com/activities/123456789
+
     Gift:
       type: object
       properties:
@@ -1727,6 +1767,30 @@ components:
           format: date-time
         is_assigned:
           type: boolean
+
+    CreateGiftRequest:
+      type: object
+      required:
+        - user_id
+        - description
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Telegram ID пользователя, от имени которого создаётся приз
+        description:
+          type: string
+          minLength: 1
+          description: Описание приза
+        gender_filter:
+          type: string
+          enum: [all, male, female]
+          default: all
+        bike_type_filter:
+          type: string
+          enum: [all, gravel, mtb, road, single_speed, tandem]
+          default: all
 
     GiftPlaceRule:
       type: object

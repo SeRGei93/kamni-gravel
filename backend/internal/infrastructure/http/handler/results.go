@@ -21,6 +21,7 @@ type ResultsHandler struct {
 	participantRepo     repository.ParticipantRepository
 	criteriaRepo        repository.CriteriaRepository
 	submitResultHandler *command.SubmitResultHandler
+	manualResultHandler *command.CreateManualResultHandler
 }
 
 // NewResultsHandler создаёт новый handler
@@ -29,12 +30,14 @@ func NewResultsHandler(
 	participantRepo repository.ParticipantRepository,
 	criteriaRepo repository.CriteriaRepository,
 	submitResultHandler *command.SubmitResultHandler,
+	manualResultHandler *command.CreateManualResultHandler,
 ) *ResultsHandler {
 	return &ResultsHandler{
 		resultRepo:          resultRepo,
 		participantRepo:     participantRepo,
 		criteriaRepo:        criteriaRepo,
 		submitResultHandler: submitResultHandler,
+		manualResultHandler: manualResultHandler,
 	}
 }
 
@@ -99,7 +102,9 @@ func (h *ResultsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 // CreateResultRequest представляет запрос на создание результата
 type CreateResultRequest struct {
-	ResultLink string `json:"result_link"`
+	ResultLink     string `json:"result_link,omitempty"`
+	ElapsedTimeSec *int   `json:"elapsed_time_sec,omitempty"`
+	MovingTimeSec  *int   `json:"moving_time_sec,omitempty"`
 }
 
 // Create обрабатывает POST /api/participants/:participantId/results
@@ -117,20 +122,22 @@ func (h *ResultsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.ResultLink == "" {
-		response.BadRequest(w, "result_link is required")
+	if req.ElapsedTimeSec == nil {
+		log.Printf("WARN Manual result creation rejected: participant_id=%d error_class=missing_elapsed_time", participantID)
+		response.BadRequest(w, "elapsed_time_sec is required")
 		return
 	}
 
-	participant, err := h.submitResultHandler.Handle(r.Context(), command.SubmitResultCommand{
-		ParticipantID: uint(participantID),
-		ResultLink:    req.ResultLink,
+	result, err := h.manualResultHandler.Handle(r.Context(), command.CreateManualResultCommand{
+		ParticipantID:  uint(participantID),
+		ResultLink:     req.ResultLink,
+		ElapsedTimeSec: *req.ElapsedTimeSec,
+		MovingTimeSec:  req.MovingTimeSec,
 	})
 	if err != nil {
 		errorClass := resultCreateErrorClass(err)
-		if errors.Is(err, command.ErrInvalidResultLink) || errors.Is(err, command.ErrParticipantNotFound) ||
-			errors.Is(err, command.ErrResultSubmissionNotOpen) || errors.Is(err, command.ErrEventStartNotConfigured) ||
-			errors.Is(err, command.ErrEventNotStarted) || errors.Is(err, command.ErrEventNotFound) {
+		if errors.Is(err, command.ErrInvalidResultLink) || errors.Is(err, command.ErrInvalidResultTime) ||
+			errors.Is(err, command.ErrParticipantNotFound) || errors.Is(err, command.ErrResultAlreadyExists) {
 			log.Printf("WARN Result creation rejected: participant_id=%d error_class=%s", participantID, errorClass)
 		} else {
 			log.Printf("ERROR Result creation failed: participant_id=%d error_class=%s error=%v", participantID, errorClass, err)
@@ -139,29 +146,29 @@ func (h *ResultsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, command.ErrInvalidResultLink):
 			response.BadRequest(w, "Only Strava result links are accepted")
+		case errors.Is(err, command.ErrInvalidResultTime):
+			response.BadRequest(w, "elapsed_time_sec must be positive and moving_time_sec must be between 0 and elapsed_time_sec")
 		case errors.Is(err, command.ErrParticipantNotFound):
 			response.NotFound(w, "Participant not found")
-		case errors.Is(err, command.ErrEventNotFound):
-			response.Conflict(w, "Participant event was not found")
-		case errors.Is(err, command.ErrEventStartNotConfigured):
-			response.Conflict(w, "Event start time is not configured")
-		case errors.Is(err, command.ErrEventNotStarted):
-			response.Conflict(w, "Result submission is available only after the event start time in Minsk UTC+3")
-		case errors.Is(err, command.ErrResultSubmissionNotOpen):
-			response.Conflict(w, "Result submission is not open")
+		case errors.Is(err, command.ErrResultAlreadyExists):
+			response.Conflict(w, "Participant already has a current result")
 		default:
 			response.InternalServerError(w, "Failed to create result")
 		}
 		return
 	}
 
-	response.Created(w, dto.FromResult(participant.Result))
+	response.Created(w, dto.FromResult(result))
 }
 
 func resultCreateErrorClass(err error) string {
 	switch {
 	case errors.Is(err, command.ErrInvalidResultLink):
 		return "invalid_result_link"
+	case errors.Is(err, command.ErrInvalidResultTime):
+		return "invalid_result_time"
+	case errors.Is(err, command.ErrResultAlreadyExists):
+		return "result_already_exists"
 	case errors.Is(err, command.ErrParticipantNotFound):
 		return "participant_not_found"
 	case errors.Is(err, command.ErrEventNotFound):
