@@ -63,7 +63,7 @@ export default function ParticipantsTable({
                   isHeader
                   className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
                 >
-                  ID
+                  Telegram ID
                 </TableCell>
                 <TableCell
                   isHeader
@@ -142,7 +142,7 @@ export default function ParticipantsTable({
                 >
                   <TableCell className="px-5 py-4 text-start">
                     <span className="text-gray-500 text-theme-sm dark:text-gray-400">
-                      {participant.id}
+                      {participant.user_id}
                     </span>
                   </TableCell>
                   <TableCell className="px-5 py-4 text-start">
