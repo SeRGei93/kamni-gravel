@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
-import type { Event, PrizeDistribution, UnassignedPrizeSlot } from '@/types';
+import { extractActiveEvent } from '@/utils/events';
+import type { PrizeDistribution, UnassignedPrizeSlot } from '@/types';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
 import Badge from '@/components/ui/badge/Badge';
@@ -44,8 +45,7 @@ const MATCH_REASON_COLORS: Record<string, 'success' | 'info' | 'warning' | 'ligh
 };
 
 export default function PrizeDistributionPage() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [distribution, setDistribution] = useState<PrizeDistribution[]>([]);
   const [unassignedSlots, setUnassignedSlots] = useState<UnassignedPrizeSlot[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -54,59 +54,63 @@ export default function PrizeDistributionPage() {
   // Фильтры
   const [matchReasonFilter, setMatchReasonFilter] = useState<string>('');
 
-  const loadEvents = useCallback(async () => {
+  const loadActiveEvent = useCallback(async () => {
     try {
-      const response = await eventsApi.getAll();
-      setEvents(response.events);
-      // Автоматически выбираем первое активное событие
-      const activeEvent = response.events.find((e) => e.active);
-      if (activeEvent) {
-        setSelectedEventId(activeEvent.id);
-      } else if (response.events.length > 0) {
-        setSelectedEventId(response.events[0].id);
+      const response = await eventsApi.getActive();
+      const activeEvent = extractActiveEvent(response);
+      setActiveEventId(activeEvent?.id ?? null);
+      if (!activeEvent) {
+        setDistribution([]);
+        setUnassignedSlots([]);
+        setError('Нет активного события');
       }
     } catch (err) {
-      setError('Ошибка загрузки событий');
-      console.error('Failed to load events:', err);
+      setActiveEventId(null);
+      setDistribution([]);
+      setUnassignedSlots([]);
+      setError('Ошибка загрузки активного события');
+      console.error('Failed to load active event:', {
+        operation: 'load_active_event',
+        error: err,
+      });
     }
   }, []);
 
   const loadDistribution = useCallback(async () => {
-    if (!selectedEventId) return;
+    if (!activeEventId) return;
 
     try {
       setIsLoading(true);
       setError(null);
       const response = await prizeDistributionApi.getPrizeDistribution(
-        selectedEventId
+        activeEventId
       );
       setDistribution(response.distribution);
       setUnassignedSlots(response.unassigned_slots ?? []);
     } catch (err) {
       setError('Ошибка загрузки распределения призов');
-      console.error('Failed to load prize distribution:', err);
+      console.error('Failed to load prize distribution:', {
+        operation: 'load_prize_distribution',
+        event_id: activeEventId,
+        error: err,
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [selectedEventId]);
+  }, [activeEventId]);
 
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    loadActiveEvent();
+  }, [loadActiveEvent]);
 
   useEffect(() => {
-    if (selectedEventId) {
+    if (activeEventId) {
       loadDistribution();
     } else {
       setDistribution([]);
       setUnassignedSlots([]);
     }
-  }, [loadDistribution, selectedEventId]);
-
-  const eventOptions = events.map((e) => ({
-    value: String(e.id),
-    label: e.name,
-  }));
+  }, [loadDistribution, activeEventId]);
 
   // Фильтрация
   const filteredDistribution = distribution.filter((d) => {
@@ -141,18 +145,6 @@ export default function PrizeDistributionPage() {
       {/* Фильтры */}
       <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <Label>Событие</Label>
-            <Select
-              options={eventOptions}
-              placeholder="Выберите событие"
-              defaultValue={selectedEventId ? String(selectedEventId) : ''}
-              onChange={(value) =>
-                setSelectedEventId(value ? Number(value) : null)
-              }
-            />
-          </div>
-
           <div>
             <Label>Тип совпадения</Label>
             <Select

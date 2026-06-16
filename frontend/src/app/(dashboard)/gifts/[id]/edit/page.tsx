@@ -5,21 +5,6 @@ interface GiftEditRedirectPageProps {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-function appendSearchParam(
-  params: URLSearchParams,
-  key: string,
-  value: string | string[] | undefined
-) {
-  if (Array.isArray(value)) {
-    value.forEach((item) => params.append(key, item));
-    return;
-  }
-
-  if (value !== undefined) {
-    params.set(key, value);
-  }
-}
-
 export default async function GiftEditRedirectPage({
   params,
   searchParams,
@@ -28,9 +13,18 @@ export default async function GiftEditRedirectPage({
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const query = new URLSearchParams();
 
-  Object.entries(resolvedSearchParams).forEach(([key, value]) => {
-    appendSearchParam(query, key, value);
-  });
+  // Сохраняем только поддерживаемое состояние списка призов (статус проверки),
+  // чтобы не протаскивать устаревший event_id после отказа от фильтра по событию.
+  const reviewStatus = resolvedSearchParams.review_status;
+  const reviewStatusValue = Array.isArray(reviewStatus)
+    ? reviewStatus[0]
+    : reviewStatus;
+  if (
+    reviewStatusValue === 'pending_review' ||
+    reviewStatusValue === 'approved'
+  ) {
+    query.set('review_status', reviewStatusValue);
+  }
 
   const queryString = query.toString();
   redirect(`/gifts/${id}${queryString ? `?${queryString}` : ''}`);

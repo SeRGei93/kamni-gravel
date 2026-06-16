@@ -12,12 +12,8 @@ import type { Criteria, Gift, UpdateGiftRequest } from '@/types';
 
 function getGiftListHref(searchParams: URLSearchParams): string {
   const params = new URLSearchParams();
-  const eventId = searchParams.get('event_id');
   const reviewStatus = searchParams.get('review_status');
 
-  if (eventId && /^\d+$/.test(eventId)) {
-    params.set('event_id', eventId);
-  }
   if (reviewStatus === 'pending_review' || reviewStatus === 'approved') {
     params.set('review_status', reviewStatus);
   }

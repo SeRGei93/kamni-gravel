@@ -16,7 +16,7 @@ export function getManualGiftErrorMessage(
   }
 
   if (error.status === 404 && backendMessage.includes('event not found')) {
-    return 'Событие для добавления приза не найдено. Обновите страницу и выберите событие заново.';
+    return 'Активное событие не найдено. Обновите страницу — приз добавляется к активному событию.';
   }
 
   if (error.status === 403 && backendMessage.includes('blacklisted')) {
