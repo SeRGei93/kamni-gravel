@@ -226,6 +226,12 @@ export default function AdminUsersPage() {
                     isHeader
                     className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400"
                   >
+                    ID
+                  </TableCell>
+                  <TableCell
+                    isHeader
+                    className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400"
+                  >
                     Пользователь
                   </TableCell>
                   <TableCell
@@ -252,7 +258,7 @@ export default function AdminUsersPage() {
                 {isLoading ? (
                   <TableRow>
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                     >
                       Загрузка...
@@ -261,7 +267,7 @@ export default function AdminUsersPage() {
                 ) : admins.length === 0 ? (
                   <TableRow>
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                     >
                       Администраторы не найдены
@@ -274,6 +280,11 @@ export default function AdminUsersPage() {
                       className="hover:bg-gray-50 dark:hover:bg-white/5"
                     >
                       <TableCell className="px-5 py-4 text-start">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          {admin.id}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-5 py-4 text-start">
                         <div className="flex items-center gap-3">
                           <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-white/[0.06] dark:text-gray-300">
                             <UserIcon />
@@ -281,9 +292,6 @@ export default function AdminUsersPage() {
                           <div>
                             <p className="text-sm font-medium text-gray-800 dark:text-white/90">
                               {admin.username}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              ID {admin.id}
                             </p>
                           </div>
                         </div>

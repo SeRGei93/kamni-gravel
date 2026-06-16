@@ -110,6 +110,12 @@ export default function NominationsTable({
                 isHeader
                 className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
               >
+                ID
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
                 Порядок
               </TableCell>
               <TableCell
@@ -151,6 +157,11 @@ export default function NominationsTable({
                 key={nomination.id}
                 className="hover:bg-gray-50 dark:hover:bg-white/5"
               >
+                <TableCell className="px-5 py-4 text-start">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {nomination.id}
+                  </span>
+                </TableCell>
                 <TableCell className="px-5 py-4 text-start">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-800 dark:text-white/90">

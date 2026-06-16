@@ -63,6 +63,12 @@ export default function ParticipantsTable({
                   isHeader
                   className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
                 >
+                  ID
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
                   Место
                 </TableCell>
                 <TableCell
@@ -134,6 +140,11 @@ export default function ParticipantsTable({
                       : ''
                   } hover:bg-gray-50 dark:hover:bg-white/5`}
                 >
+                  <TableCell className="px-5 py-4 text-start">
+                    <span className="text-gray-500 text-theme-sm dark:text-gray-400">
+                      {participant.id}
+                    </span>
+                  </TableCell>
                   <TableCell className="px-5 py-4 text-start">
                     <span className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
                       {participant.place && participant.place > 0

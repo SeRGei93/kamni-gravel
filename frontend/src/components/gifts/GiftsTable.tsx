@@ -99,6 +99,12 @@ export default function GiftsTable({
                   isHeader
                   className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
                 >
+                  ID
+                </TableCell>
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                >
                   Фото
                 </TableCell>
                 <TableCell
@@ -167,6 +173,11 @@ export default function GiftsTable({
                     key={gift.id}
                     className="hover:bg-gray-50 dark:hover:bg-white/5"
                   >
+                    <TableCell className="px-5 py-4 text-start">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {gift.id}
+                      </span>
+                    </TableCell>
                     <TableCell className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         {photoUrl ? (

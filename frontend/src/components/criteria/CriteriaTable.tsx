@@ -70,6 +70,12 @@ export default function CriteriaTable({
                 isHeader
                 className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
               >
+                ID
+              </TableCell>
+              <TableCell
+                isHeader
+                className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+              >
                 Название
               </TableCell>
               <TableCell
@@ -105,6 +111,11 @@ export default function CriteriaTable({
                 key={criterion.id}
                 className="hover:bg-gray-50 dark:hover:bg-white/5"
               >
+                <TableCell className="px-5 py-4 text-start">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {criterion.id}
+                  </span>
+                </TableCell>
                 <TableCell className="px-5 py-4 text-start">
                   <div className="font-medium text-gray-800 dark:text-white/90">
                     {criterion.name}
