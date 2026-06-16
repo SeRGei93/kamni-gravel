@@ -1,6 +1,25 @@
-import type { CriteriaType } from '@/types';
+import type { Criteria, CriteriaType } from '@/types';
 
 type BadgeColor = 'primary' | 'success' | 'error' | 'warning' | 'info' | 'light' | 'dark';
+
+/**
+ * Добавляет критерий в список или заменяет существующий с тем же id.
+ * Чистая функция — не мутирует входной массив.
+ */
+export function mergeCriterion(list: Criteria[], criterion: Criteria): Criteria[] {
+  const index = list.findIndex((item) => item.id === criterion.id);
+  if (index === -1) {
+    return [...list, criterion];
+  }
+  const next = [...list];
+  next[index] = criterion;
+  return next;
+}
+
+/** Добавляет id в выбор, если его там ещё нет (идемпотентно). */
+export function addSelectedCriterionId(ids: number[], id: number): number[] {
+  return ids.includes(id) ? ids : [...ids, id];
+}
 
 export const getCriteriaTypeLabel = (type: CriteriaType): string => {
   switch (type) {

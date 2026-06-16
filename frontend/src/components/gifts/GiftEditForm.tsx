@@ -7,13 +7,19 @@ import InputField from '@/components/form/input/InputField';
 import Select from '@/components/form/Select';
 import Button from '@/components/ui/button/Button';
 import Badge from '@/components/ui/badge/Badge';
-import { getCriteriaColor } from '@/utils/criteria';
+import { Modal } from '@/components/ui/modal';
+import { useModal } from '@/hooks/useModal';
+import CriteriaForm from '@/components/criteria/CriteriaForm';
+import { PlusIcon } from '@/icons';
+import { addSelectedCriterionId, getCriteriaColor } from '@/utils/criteria';
 import type {
   BikeTypeFilter,
+  CreateCriteriaRequest,
   Criteria,
   GenderFilter,
   Gift,
   GiftReviewStatus,
+  UpdateCriteriaRequest,
   UpdateGiftRequest,
 } from '@/types';
 import {
@@ -34,6 +40,7 @@ interface GiftEditFormProps {
   criteria: Criteria[];
   onSubmit: (data: UpdateGiftRequest) => Promise<void>;
   onCancel: () => void;
+  onCreateCriteria?: (data: CreateCriteriaRequest) => Promise<Criteria>;
 }
 
 export default function GiftEditForm({
@@ -41,6 +48,7 @@ export default function GiftEditForm({
   criteria,
   onSubmit,
   onCancel,
+  onCreateCriteria,
 }: GiftEditFormProps) {
   const [description, setDescription] = useState(gift.description);
   const [genderFilter, setGenderFilter] = useState<GenderFilter>(
@@ -67,6 +75,41 @@ export default function GiftEditForm({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const {
+    isOpen: isCriteriaModalOpen,
+    openModal: openCriteriaModal,
+    closeModal: closeCriteriaModal,
+  } = useModal();
+  const [isCreatingCriteria, setIsCreatingCriteria] = useState(false);
+  const [criteriaError, setCriteriaError] = useState<string | null>(null);
+
+  const handleOpenCriteriaModal = () => {
+    setCriteriaError(null);
+    openCriteriaModal();
+  };
+
+  // Создание критерия обновляет состояние через onCreateCriteria и авто-выбирает
+  // новый критерий — страница не перезагружается.
+  const handleCreateCriteria = async (
+    data: CreateCriteriaRequest | UpdateCriteriaRequest
+  ) => {
+    if (!onCreateCriteria) {
+      return;
+    }
+    setCriteriaError(null);
+    setIsCreatingCriteria(true);
+    try {
+      const created = await onCreateCriteria(data as CreateCriteriaRequest);
+      setSelectedCriteriaIds((current) =>
+        addSelectedCriterionId(current, created.id)
+      );
+      closeCriteriaModal();
+    } catch {
+      setCriteriaError('Не удалось создать критерий. Попробуйте ещё раз.');
+    } finally {
+      setIsCreatingCriteria(false);
+    }
+  };
 
   useEffect(() => {
     setDescription(gift.description);
@@ -141,6 +184,7 @@ export default function GiftEditForm({
   };
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
         <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
@@ -226,7 +270,20 @@ export default function GiftEditForm({
       </div>
 
       <div>
-        <Label>Критерии</Label>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <Label>Критерии</Label>
+          {onCreateCriteria && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              startIcon={<PlusIcon />}
+              onClick={handleOpenCriteriaModal}
+            >
+              Создать критерий
+            </Button>
+          )}
+        </div>
         <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
           Выберите критерии, которым соответствует приз
         </p>
@@ -277,5 +334,39 @@ export default function GiftEditForm({
         </Button>
       </div>
     </form>
+
+    {onCreateCriteria && (
+      <Modal
+        isOpen={isCriteriaModalOpen}
+        onClose={closeCriteriaModal}
+        className="max-w-2xl m-4"
+      >
+        <div className="no-scrollbar relative w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-4 dark:bg-gray-900 lg:p-11">
+          <div className="px-2 pr-14">
+            <h4 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white/90">
+              Создать критерий
+            </h4>
+            <p className="mb-6 text-sm text-gray-500 dark:text-gray-400 lg:mb-7">
+              Новый критерий сразу станет доступен и будет выбран для этого приза
+            </p>
+          </div>
+          {criteriaError && (
+            <div className="mx-2 mb-4 rounded-lg border border-error-200 bg-error-50 p-3 dark:border-error-800 dark:bg-error-900/20">
+              <p className="text-sm text-error-600 dark:text-error-400">
+                {criteriaError}
+              </p>
+            </div>
+          )}
+          <div className="px-2">
+            <CriteriaForm
+              onSubmit={handleCreateCriteria}
+              onCancel={closeCriteriaModal}
+              isLoading={isCreatingCriteria}
+            />
+          </div>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }

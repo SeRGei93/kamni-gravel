@@ -8,7 +8,13 @@ import { giftsApi } from '@/api/gifts';
 import GiftEditForm from '@/components/gifts/GiftEditForm';
 import GiftPhotoPreviewGrid from '@/components/gifts/GiftPhotoPreviewGrid';
 import Badge from '@/components/ui/badge/Badge';
-import type { Criteria, Gift, UpdateGiftRequest } from '@/types';
+import { mergeCriterion } from '@/utils/criteria';
+import type {
+  CreateCriteriaRequest,
+  Criteria,
+  Gift,
+  UpdateGiftRequest,
+} from '@/types';
 
 function getGiftListHref(searchParams: URLSearchParams): string {
   const params = new URLSearchParams();
@@ -74,6 +80,23 @@ export default function GiftEditPage() {
     await giftsApi.update(giftId, data);
     router.push(returnHref);
   };
+
+  const handleCreateCriteria = useCallback(
+    async (data: CreateCriteriaRequest): Promise<Criteria> => {
+      try {
+        const created = await criteriaApi.create(data);
+        setCriteria((current) => mergeCriterion(current, created));
+        return created;
+      } catch (err) {
+        console.error('Failed to create criteria:', {
+          operation: 'create_criteria',
+          error: err,
+        });
+        throw err;
+      }
+    },
+    []
+  );
 
   const donorName =
     gift && [gift.first_name, gift.last_name].filter(Boolean).join(' ');
@@ -142,6 +165,7 @@ export default function GiftEditPage() {
               criteria={criteria}
               onSubmit={handleSubmit}
               onCancel={() => router.push(returnHref)}
+              onCreateCriteria={handleCreateCriteria}
             />
           </div>
 
