@@ -13,6 +13,10 @@ export const eventsApi = {
     return get<EventListResponse>(EVENTS_PREFIX);
   },
 
+  async getActive(): Promise<EventListResponse> {
+    return get<EventListResponse>(`${EVENTS_PREFIX}?activeOnly=true`);
+  },
+
   async getById(id: number): Promise<Event> {
     return get<Event>(`${EVENTS_PREFIX}/${id}`);
   },

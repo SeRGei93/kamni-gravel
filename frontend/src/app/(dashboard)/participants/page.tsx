@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { participantsApi } from '@/api/participants';
 import { eventsApi } from '@/api/events';
-import type { Participant, Event } from '@/types';
+import { extractActiveEvent } from '@/utils/events';
+import { filterParticipants, type HasGiftFilter } from '@/utils/participants';
+import type { Participant } from '@/types';
 import ParticipantsTable from '@/components/participants/ParticipantsTable';
 import Select from '@/components/form/Select';
 import Input from '@/components/form/input/InputField';
 import Label from '@/components/form/Label';
 
 export default function ParticipantsPage() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingParticipantId, setDeletingParticipantId] = useState<number | null>(null);
@@ -21,27 +22,31 @@ export default function ParticipantsPage() {
   const [genderFilter, setGenderFilter] = useState<string>('');
   const [bikeTypeFilter, setBikeTypeFilter] = useState<string>('');
   const [isFinishedFilter, setIsFinishedFilter] = useState<string>('');
+  const [hasGiftFilter, setHasGiftFilter] = useState<HasGiftFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const loadEvents = useCallback(async () => {
+  const loadActiveEvent = useCallback(async () => {
     try {
-      const response = await eventsApi.getAll();
-      setEvents(response.events);
-      // Автоматически выбираем первое активное событие
-      const activeEvent = response.events.find((e) => e.active);
-      if (activeEvent) {
-        setSelectedEventId(activeEvent.id);
-      } else if (response.events.length > 0) {
-        setSelectedEventId(response.events[0].id);
+      const response = await eventsApi.getActive();
+      const activeEvent = extractActiveEvent(response);
+      setActiveEventId(activeEvent?.id ?? null);
+      if (!activeEvent) {
+        setParticipants([]);
+        setError('Нет активного события');
       }
     } catch (err) {
-      setError('Ошибка загрузки событий');
-      console.error('Failed to load events:', err);
+      setActiveEventId(null);
+      setParticipants([]);
+      setError('Ошибка загрузки активного события');
+      console.error('Failed to load active event:', {
+        operation: 'load_active_event',
+        error: err,
+      });
     }
   }, []);
 
   const loadParticipants = useCallback(async () => {
-    if (!selectedEventId) {
+    if (!activeEventId) {
       setParticipants([]);
       return;
     }
@@ -61,20 +66,24 @@ export default function ParticipantsPage() {
       if (isFinishedFilter !== '')
         filters.is_finished = isFinishedFilter === 'true';
 
-      const response = await participantsApi.getByEvent(selectedEventId, filters);
+      const response = await participantsApi.getByEvent(activeEventId, filters);
       setParticipants(response.participants);
     } catch (err) {
       setError('Ошибка загрузки участников');
-      console.error('Failed to load participants:', err);
+      console.error('Failed to load participants:', {
+        operation: 'load_participants',
+        event_id: activeEventId,
+        error: err,
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [bikeTypeFilter, genderFilter, isFinishedFilter, selectedEventId]);
+  }, [bikeTypeFilter, genderFilter, isFinishedFilter, activeEventId]);
 
-  // Загрузка событий
+  // Загрузка активного события
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    loadActiveEvent();
+  }, [loadActiveEvent]);
 
   // Загрузка участников при изменении фильтров
   useEffect(() => {
@@ -82,7 +91,7 @@ export default function ParticipantsPage() {
   }, [loadParticipants]);
 
   const handleDeleteParticipant = async (participant: Participant) => {
-    if (!selectedEventId) return;
+    if (!activeEventId) return;
     if (
       !window.confirm(
         `Удалить участника ${participant.first_name || participant.username || participant.user_id}?`
@@ -101,7 +110,7 @@ export default function ParticipantsPage() {
       console.error('Failed to delete participant:', {
         operation: 'delete_participant',
         participant_id: participant.id,
-        event_id: selectedEventId,
+        event_id: activeEventId,
         error: err,
       });
     } finally {
@@ -109,22 +118,10 @@ export default function ParticipantsPage() {
     }
   };
 
-  // Фильтрация по поисковому запросу
-  const filteredParticipants = participants.filter((p) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      p.username?.toLowerCase().includes(query) ||
-      p.first_name?.toLowerCase().includes(query) ||
-      p.last_name?.toLowerCase().includes(query) ||
-      String(p.user_id).includes(query)
-    );
+  const filteredParticipants = filterParticipants(participants, {
+    searchQuery,
+    hasGiftFilter,
   });
-
-  const eventOptions = events.map((e) => ({
-    value: String(e.id),
-    label: e.name,
-  }));
 
   return (
     <div className="space-y-6">
@@ -146,16 +143,6 @@ export default function ParticipantsPage() {
       {/* Фильтры */}
       <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <div>
-            <Label>Событие</Label>
-            <Select
-              options={eventOptions}
-              placeholder="Выберите событие"
-              defaultValue={selectedEventId ? String(selectedEventId) : ''}
-              onChange={(value) => setSelectedEventId(value ? Number(value) : null)}
-            />
-          </div>
-
           <div>
             <Label>Пол</Label>
             <Select
@@ -198,6 +185,20 @@ export default function ParticipantsPage() {
               placeholder="Все"
               defaultValue={isFinishedFilter}
               onChange={setIsFinishedFilter}
+            />
+          </div>
+
+          <div>
+            <Label>Добавил приз</Label>
+            <Select
+              options={[
+                { value: 'all', label: 'Все' },
+                { value: 'yes', label: 'Да' },
+                { value: 'no', label: 'Нет' },
+              ]}
+              placeholder="Все"
+              defaultValue={hasGiftFilter}
+              onChange={(value) => setHasGiftFilter(value as HasGiftFilter)}
             />
           </div>
 

@@ -5,7 +5,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { giftsApi } from '@/api/gifts';
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
-import type { BikeTypeFilter, Gift, Event, GenderFilter, GiftReviewStatus } from '@/types';
+import { extractActiveEvent } from '@/utils/events';
+import type { BikeTypeFilter, Gift, GenderFilter, GiftReviewStatus } from '@/types';
 import GiftsTable from '@/components/gifts/GiftsTable';
 import Button from '@/components/ui/button/Button';
 import Input from '@/components/form/input/InputField';
@@ -22,24 +23,13 @@ function parseReviewStatusFilter(value: string | null): GiftReviewStatusFilter {
   return value === 'pending_review' || value === 'approved' ? value : 'all';
 }
 
-function parseEventId(value: string | null): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const eventId = Number(value);
-  return Number.isInteger(eventId) && eventId > 0 ? eventId : null;
-}
-
 export default function GiftsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const eventIdParam = searchParams.get('event_id');
   const reviewStatusParam = searchParams.get('review_status');
 
-  const [events, setEvents] = useState<Event[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [allGifts, setAllGifts] = useState<Gift[]>([]);
   const [reviewStatusFilter, setReviewStatusFilter] =
@@ -61,30 +51,16 @@ export default function GiftsPage() {
   const listQueryString = useMemo(() => {
     const params = new URLSearchParams();
 
-    if (selectedEventId) {
-      params.set('event_id', String(selectedEventId));
-    }
     if (reviewStatusFilter !== 'all') {
       params.set('review_status', reviewStatusFilter);
     }
 
     return params.toString();
-  }, [selectedEventId, reviewStatusFilter]);
+  }, [reviewStatusFilter]);
 
   const updateListQuery = useCallback(
-    (next: {
-      eventId?: number | null;
-      reviewStatus?: GiftReviewStatusFilter;
-    }) => {
+    (next: { reviewStatus?: GiftReviewStatusFilter }) => {
       const params = new URLSearchParams(searchParams.toString());
-
-      if ('eventId' in next) {
-        if (next.eventId) {
-          params.set('event_id', String(next.eventId));
-        } else {
-          params.delete('event_id');
-        }
-      }
 
       if ('reviewStatus' in next) {
         if (next.reviewStatus && next.reviewStatus !== 'all') {
@@ -102,20 +78,31 @@ export default function GiftsPage() {
     [pathname, router, searchParams]
   );
 
-  // Загрузка событий
-  useEffect(() => {
-    loadEvents();
+  const loadActiveEvent = useCallback(async () => {
+    try {
+      const response = await eventsApi.getActive();
+      const activeEvent = extractActiveEvent(response);
+      setActiveEventId(activeEvent?.id ?? null);
+      if (!activeEvent) {
+        setGifts([]);
+        setAllGifts([]);
+        setAssignedGiftIds(new Set());
+        setError('Нет активного события');
+      }
+    } catch (err) {
+      setActiveEventId(null);
+      setError('Ошибка загрузки активного события');
+      console.error('Failed to load active event:', {
+        operation: 'load_active_event',
+        error: err,
+      });
+    }
   }, []);
 
-  const loadEvents = async () => {
-    try {
-      const response = await eventsApi.getAll();
-      setEvents(response.events);
-    } catch (err) {
-      setError('Ошибка загрузки событий');
-      console.error('Failed to load events:', err);
-    }
-  };
+  // Загрузка активного события
+  useEffect(() => {
+    loadActiveEvent();
+  }, [loadActiveEvent]);
 
   useEffect(() => {
     const nextReviewStatus = parseReviewStatusFilter(reviewStatusParam);
@@ -124,40 +111,22 @@ export default function GiftsPage() {
     );
   }, [reviewStatusParam]);
 
-  useEffect(() => {
-    if (events.length === 0) {
-      setSelectedEventId(null);
-      return;
-    }
-
-    const requestedEventId = parseEventId(eventIdParam);
-    const eventFromUrl = requestedEventId
-      ? events.find((event) => event.id === requestedEventId)
-      : undefined;
-    const activeEvent = events.find((event) => event.active);
-    const nextEventId = (eventFromUrl || activeEvent || events[0]).id;
-
-    setSelectedEventId((current) =>
-      current === nextEventId ? current : nextEventId
-    );
-  }, [events, eventIdParam]);
-
   const loadGifts = useCallback(async () => {
-    if (!selectedEventId) return;
+    if (!activeEventId) return;
 
     try {
       setIsLoading(true);
       setError(null);
 
       // Загружаем полный список для счётчиков и выбранный фильтр для таблицы.
-      const allResponse = await giftsApi.getByEvent(selectedEventId);
+      const allResponse = await giftsApi.getByEvent(activeEventId);
       setAllGifts(allResponse.gifts);
 
       if (reviewStatusFilter === 'all') {
         setGifts(allResponse.gifts);
       } else {
         const response = await giftsApi.getByEvent(
-          selectedEventId,
+          activeEventId,
           reviewStatusFilter
         );
         setGifts(response.gifts);
@@ -165,7 +134,7 @@ export default function GiftsPage() {
 
       // Загружаем распределение призов
       try {
-        const distribution = await prizeDistributionApi.getPrizeDistribution(selectedEventId);
+        const distribution = await prizeDistributionApi.getPrizeDistribution(activeEventId);
         // Собираем ID всех назначенных призов
         const assignedIds = new Set<number>();
         distribution.distribution.forEach((dist) => {
@@ -179,7 +148,7 @@ export default function GiftsPage() {
         setAssignedGiftIds(assignedIds);
       } catch (err) {
         console.error('Failed to load prize distribution:', {
-          event_id: selectedEventId,
+          event_id: activeEventId,
           operation: 'load_prize_distribution',
           error: err,
         });
@@ -188,7 +157,7 @@ export default function GiftsPage() {
     } catch (err) {
       setError('Ошибка загрузки призов');
       console.error('Failed to load gifts:', {
-        event_id: selectedEventId,
+        event_id: activeEventId,
         review_status: reviewStatusFilter,
         operation: 'load_gifts',
         error: err,
@@ -196,17 +165,17 @@ export default function GiftsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedEventId, reviewStatusFilter]);
+  }, [activeEventId, reviewStatusFilter]);
 
   // Загрузка призов при изменении фильтров
   useEffect(() => {
-    if (selectedEventId) {
+    if (activeEventId) {
       loadGifts();
     } else {
       setGifts([]);
       setAllGifts([]);
     }
-  }, [selectedEventId, loadGifts]);
+  }, [activeEventId, loadGifts]);
 
   const handleDelete = async (giftId: number) => {
     try {
@@ -217,7 +186,7 @@ export default function GiftsPage() {
       setError('Ошибка удаления приза');
       console.error('Failed to delete gift:', {
         gift_id: giftId,
-        event_id: selectedEventId,
+        event_id: activeEventId,
         operation: 'delete_gift',
         error: err,
       });
@@ -242,7 +211,7 @@ export default function GiftsPage() {
       setError('Ошибка проверки приза');
       console.error('Failed to approve gift:', {
         gift_id: gift.id,
-        event_id: selectedEventId,
+        event_id: activeEventId,
         operation: 'approve_gift',
         error: err,
       });
@@ -259,8 +228,8 @@ export default function GiftsPage() {
 
   const handleManualGiftSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedEventId) {
-      setError('Выберите событие');
+    if (!activeEventId) {
+      setError('Активное событие не найдено. Обновите страницу.');
       return;
     }
 
@@ -279,7 +248,7 @@ export default function GiftsPage() {
     try {
       setIsSavingGift(true);
       setError(null);
-      await giftsApi.create(selectedEventId, {
+      await giftsApi.create(activeEventId, {
         user_id: telegramUserId,
         description,
         gender_filter: manualGiftGenderFilter,
@@ -298,7 +267,7 @@ export default function GiftsPage() {
       setError(getManualGiftErrorMessage(err, telegramUserId));
       console.error('[FIX:manual-gift-error] Failed to create gift:', {
         operation: 'create_manual_gift',
-        event_id: selectedEventId,
+        event_id: activeEventId,
         telegram_user_id: telegramUserId,
         error: err,
       });
@@ -307,10 +276,6 @@ export default function GiftsPage() {
     }
   };
 
-  const eventOptions = events.map((e) => ({
-    value: String(e.id),
-    label: e.name,
-  }));
   const pendingReviewCount = gifts.filter(
     (gift) => gift.review_status === 'pending_review'
   ).length;
@@ -334,7 +299,7 @@ export default function GiftsPage() {
             size="sm"
             startIcon={<PlusIcon />}
             onClick={() => setIsCreatingGift(true)}
-            disabled={!selectedEventId}
+            disabled={!activeEventId}
           >
             Добавить приз вручную
           </Button>
@@ -347,7 +312,7 @@ export default function GiftsPage() {
         </div>
       )}
 
-      {selectedEventId && totalPendingReviewCount > 0 && (
+      {activeEventId && totalPendingReviewCount > 0 && (
         <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
           <p className="text-sm font-medium text-warning-700 dark:text-orange-300">
             На проверке {totalPendingReviewCount} призов. До проверки они не участвуют в распределении.
@@ -382,7 +347,7 @@ export default function GiftsPage() {
                 type="submit"
                 size="sm"
                 startIcon={<CheckLineIcon />}
-                disabled={isSavingGift || !selectedEventId}
+                disabled={isSavingGift || !activeEventId}
               >
                 {isSavingGift ? 'Сохранение...' : 'Сохранить'}
               </Button>
@@ -437,21 +402,7 @@ export default function GiftsPage() {
 
       {/* Фильтры */}
       <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <Label>Событие</Label>
-            <Select
-              options={eventOptions}
-              placeholder="Выберите событие"
-              key={`event-${selectedEventId ?? 'empty'}`}
-              defaultValue={selectedEventId ? String(selectedEventId) : ''}
-              onChange={(value) => {
-                const nextEventId = value ? Number(value) : null;
-                setSelectedEventId(nextEventId);
-                updateListQuery({ eventId: nextEventId });
-              }}
-            />
-          </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <Label>Статус проверки</Label>
             <Select
