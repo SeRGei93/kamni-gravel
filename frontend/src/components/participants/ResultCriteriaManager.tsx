@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { resultsApi } from '@/api/results';
 import { criteriaApi } from '@/api/criteria';
 import { getCriteriaColor } from '@/utils/criteria';
+import Input from '@/components/form/input/InputField';
 import type { Result, Criteria } from '@/types';
 
 interface ResultCriteriaManagerProps {
@@ -16,13 +17,21 @@ export default function ResultCriteriaManager({
   onUpdate,
 }: ResultCriteriaManagerProps) {
   const [allCriteria, setAllCriteria] = useState<Criteria[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     loadCriteria();
   }, []);
+
+  // Локальный стейт выбранных критериев — источник правды для чекбоксов.
+  // Синхронизируем из пропа при смене результата (первичная загрузка / полный рефреш).
+  useEffect(() => {
+    setSelectedIds(new Set(result?.criteria?.map((c) => c.id) ?? []));
+  }, [result]);
 
   const loadCriteria = async () => {
     try {
@@ -38,26 +47,46 @@ export default function ResultCriteriaManager({
   };
 
   const handleToggleCriteria = async (criteriaId: number, isChecked: boolean) => {
-    if (!result || isUpdating) return;
+    // Гард только против повторного клика по этому же критерию, пока запрос в полёте.
+    if (!result || pendingIds.has(criteriaId)) return;
+
+    // Оптимистично обновляем чекбокс сразу — без ожидания ответа сервера.
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (isChecked) next.add(criteriaId);
+      else next.delete(criteriaId);
+      return next;
+    });
+    setPendingIds((prev) => new Set(prev).add(criteriaId));
+    setError(null);
 
     try {
-      setIsUpdating(true);
-      setError(null);
-      
       if (isChecked) {
         await resultsApi.addCriteria(result.id, criteriaId);
       } else {
         await resultsApi.removeCriteria(result.id, criteriaId);
       }
-      
+
+      // Успех — обновляем только блок «Подобранные призы» в родителе (без перезагрузки страницы).
       if (onUpdate) {
         onUpdate();
       }
     } catch (err) {
       console.error('Failed to toggle criteria:', err);
+      // Откатываем именно это изменение (безопасно при параллельных тогглах).
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (isChecked) next.delete(criteriaId);
+        else next.add(criteriaId);
+        return next;
+      });
       setError(isChecked ? 'Ошибка добавления критерия' : 'Ошибка удаления критерия');
     } finally {
-      setIsUpdating(false);
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(criteriaId);
+        return next;
+      });
     }
   };
 
@@ -77,9 +106,16 @@ export default function ResultCriteriaManager({
     );
   }
 
-  const isCriteriaSelected = (criteriaId: number) => {
-    return result.criteria?.some((c) => c.id === criteriaId) || false;
-  };
+  const isCriteriaSelected = (criteriaId: number) => selectedIds.has(criteriaId);
+
+  const query = search.trim().toLowerCase();
+  const filteredCriteria = query
+    ? allCriteria.filter(
+        (c) =>
+          c.name.toLowerCase().includes(query) ||
+          (c.description?.toLowerCase().includes(query) ?? false)
+      )
+    : allCriteria;
 
   return (
     <div className="space-y-4">
@@ -94,11 +130,25 @@ export default function ResultCriteriaManager({
           Нет доступных критериев
         </p>
       ) : (
-        <div className="space-y-2">
-          {allCriteria.map((criteria) => {
+        <>
+          <Input
+            type="text"
+            placeholder="Поиск по критериям..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          {filteredCriteria.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Ничего не найдено
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {filteredCriteria.map((criteria) => {
             const isSelected = isCriteriaSelected(criteria.id);
+            const isPending = pendingIds.has(criteria.id);
             const color = getCriteriaColor(criteria.criteria_type);
-            
+
             return (
               <label
                 key={criteria.id}
@@ -106,13 +156,13 @@ export default function ResultCriteriaManager({
                   isSelected
                     ? 'border-brand-500 bg-brand-50 dark:border-brand-600 dark:bg-brand-900/20'
                     : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
-                } ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                } ${isPending ? 'opacity-60 cursor-progress' : ''}`}
               >
                 <input
                   type="checkbox"
                   checked={isSelected}
                   onChange={(e) => handleToggleCriteria(criteria.id, e.target.checked)}
-                  disabled={isUpdating}
+                  disabled={isPending}
                   className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700"
                 />
                 <div className="flex-1">
@@ -137,8 +187,10 @@ export default function ResultCriteriaManager({
                 </div>
               </label>
             );
-          })}
-        </div>
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

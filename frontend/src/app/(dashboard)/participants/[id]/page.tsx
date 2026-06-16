@@ -100,6 +100,27 @@ export default function ParticipantDetailPage() {
     loadParticipant();
   }, [loadParticipant]);
 
+  // Точечное обновление только блока «Подобранные призы».
+  // Привязка/отвязка критерия пересчитывает подобранные призы на сервере,
+  // поэтому достаточно перезапросить участника и обновить только matched-поля —
+  // без полноэкранного спиннера и без сброса редактируемых полей результата/заметок.
+  const refreshMatchedGifts = useCallback(async () => {
+    try {
+      const data = await participantsApi.getById(participantId);
+      setParticipant((prev) =>
+        prev
+          ? {
+              ...prev,
+              matched_gifts: data.matched_gifts,
+              matched_gift_assignments: data.matched_gift_assignments,
+            }
+          : data
+      );
+    } catch (err) {
+      console.error('Failed to refresh matched gifts after criteria change:', err);
+    }
+  }, [participantId]);
+
   const handleSaveNotes = async () => {
     if (!participant) return;
 
@@ -597,7 +618,7 @@ export default function ParticipantDetailPage() {
             </h3>
             <ResultCriteriaManager
               result={currentResult}
-              onUpdate={loadParticipant}
+              onUpdate={refreshMatchedGifts}
             />
           </div>
 
