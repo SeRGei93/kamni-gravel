@@ -11,6 +11,16 @@ import (
 	"gravel_bot/internal/domain/valueobject"
 )
 
+// resultColumns — полный список колонок результата для SELECT.
+// Порядок ДОЛЖЕН совпадать с порядком сканирования в scanResultRow.
+const resultColumns = `id, participant_id, result_link, elapsed_time_sec, moving_time_sec, is_current, submitted_at,
+	started_at, finished_at, distance_meters, avg_heart_rate, max_heart_rate, peak_speed_kmh, avg_cadence, calories`
+
+// rowScanner абстрагирует *sql.Row и *sql.Rows для общего сканирования.
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
 type resultRepository struct {
 	db *sql.DB
 }
@@ -30,8 +40,11 @@ func (r *resultRepository) Create(ctx context.Context, result *entity.Result) er
 	}
 
 	query := `
-		INSERT INTO results (participant_id, result_link, elapsed_time_sec, moving_time_sec, is_current, submitted_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO results (
+			participant_id, result_link, elapsed_time_sec, moving_time_sec, is_current, submitted_at,
+			started_at, finished_at, distance_meters, avg_heart_rate, max_heart_rate, peak_speed_kmh, avg_cadence, calories
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id
 	`
 
@@ -52,6 +65,14 @@ func (r *resultRepository) Create(ctx context.Context, result *entity.Result) er
 		result.MovingTimeSec,
 		true, // Новый результат всегда актуальный
 		result.SubmittedAt,
+		result.StartedAt,
+		result.FinishedAt,
+		result.DistanceMeters,
+		result.AvgHeartRate,
+		result.MaxHeartRate,
+		result.PeakSpeedKmh,
+		result.AvgCadence,
+		result.Calories,
 	).Scan(&result.ID)
 
 	if err != nil {
@@ -63,34 +84,29 @@ func (r *resultRepository) Create(ctx context.Context, result *entity.Result) er
 }
 
 func (r *resultRepository) FindByID(ctx context.Context, id uint) (*entity.Result, error) {
-	query := `
-		SELECT id, participant_id, result_link, elapsed_time_sec, moving_time_sec, is_current, submitted_at
-		FROM results
-		WHERE id = $1
-	`
-
+	query := fmt.Sprintf(`SELECT %s FROM results WHERE id = $1`, resultColumns)
 	return r.scanResult(r.db.QueryRowContext(ctx, query, id))
 }
 
 func (r *resultRepository) FindCurrentByParticipant(ctx context.Context, participantID uint) (*entity.Result, error) {
-	query := `
-		SELECT id, participant_id, result_link, elapsed_time_sec, moving_time_sec, is_current, submitted_at
+	query := fmt.Sprintf(`
+		SELECT %s
 		FROM results
 		WHERE participant_id = $1 AND is_current = true
 		ORDER BY submitted_at DESC
 		LIMIT 1
-	`
+	`, resultColumns)
 
 	return r.scanResult(r.db.QueryRowContext(ctx, query, participantID))
 }
 
 func (r *resultRepository) FindByParticipant(ctx context.Context, participantID uint) ([]*entity.Result, error) {
-	query := `
-		SELECT id, participant_id, result_link, elapsed_time_sec, moving_time_sec, is_current, submitted_at
+	query := fmt.Sprintf(`
+		SELECT %s
 		FROM results
 		WHERE participant_id = $1
 		ORDER BY submitted_at DESC
-	`
+	`, resultColumns)
 
 	rows, err := r.db.QueryContext(ctx, query, participantID)
 	if err != nil {
@@ -116,6 +132,37 @@ func (r *resultRepository) UpdateTime(ctx context.Context, id uint, elapsedSec, 
 	return err
 }
 
+func (r *resultRepository) UpdateMetrics(ctx context.Context, result *entity.Result) error {
+	query := `
+		UPDATE results SET
+			elapsed_time_sec = $1,
+			moving_time_sec = $2,
+			started_at = $3,
+			finished_at = $4,
+			distance_meters = $5,
+			avg_heart_rate = $6,
+			max_heart_rate = $7,
+			peak_speed_kmh = $8,
+			avg_cadence = $9,
+			calories = $10
+		WHERE id = $11
+	`
+	_, err := r.db.ExecContext(ctx, query,
+		result.ElapsedTimeSec,
+		result.MovingTimeSec,
+		result.StartedAt,
+		result.FinishedAt,
+		result.DistanceMeters,
+		result.AvgHeartRate,
+		result.MaxHeartRate,
+		result.PeakSpeedKmh,
+		result.AvgCadence,
+		result.Calories,
+		result.ID,
+	)
+	return err
+}
+
 func (r *resultRepository) MarkAsNotCurrent(ctx context.Context, id uint) error {
 	query := `UPDATE results SET is_current = false WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, id)
@@ -128,11 +175,13 @@ func (r *resultRepository) Delete(ctx context.Context, id uint) error {
 	return err
 }
 
-func (r *resultRepository) scanResult(row *sql.Row) (*entity.Result, error) {
+// scanResultRow сканирует одну строку результата (общая логика для *sql.Row и *sql.Rows).
+// Нулевые колонки попадают в указатели как nil (стандартный nullable-паттерн database/sql).
+func scanResultRow(s rowScanner) (*entity.Result, error) {
 	result := &entity.Result{}
 	var resultLink *string
 
-	err := row.Scan(
+	err := s.Scan(
 		&result.ID,
 		&result.ParticipantID,
 		&resultLink,
@@ -140,45 +189,43 @@ func (r *resultRepository) scanResult(row *sql.Row) (*entity.Result, error) {
 		&result.MovingTimeSec,
 		&result.IsCurrent,
 		&result.SubmittedAt,
+		&result.StartedAt,
+		&result.FinishedAt,
+		&result.DistanceMeters,
+		&result.AvgHeartRate,
+		&result.MaxHeartRate,
+		&result.PeakSpeedKmh,
+		&result.AvgCadence,
+		&result.Calories,
 	)
+	if err != nil {
+		return nil, err
+	}
 
+	applyResultLink(result, resultLink)
+	return result, nil
+}
+
+// applyResultLink парсит строку ссылки в value object, если она не пуста.
+func applyResultLink(result *entity.Result, resultLink *string) {
+	if resultLink != nil && *resultLink != "" {
+		result.ResultLink, _ = valueobject.NewResultLink(*resultLink)
+	}
+}
+
+func (r *resultRepository) scanResult(row *sql.Row) (*entity.Result, error) {
+	result, err := scanResultRow(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	if resultLink != nil && *resultLink != "" {
-		result.ResultLink, _ = valueobject.NewResultLink(*resultLink)
-	}
-
 	return result, nil
 }
 
 func (r *resultRepository) scanResultFromRows(rows *sql.Rows) (*entity.Result, error) {
-	result := &entity.Result{}
-	var resultLink *string
-
-	err := rows.Scan(
-		&result.ID,
-		&result.ParticipantID,
-		&resultLink,
-		&result.ElapsedTimeSec,
-		&result.MovingTimeSec,
-		&result.IsCurrent,
-		&result.SubmittedAt,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if resultLink != nil && *resultLink != "" {
-		result.ResultLink, _ = valueobject.NewResultLink(*resultLink)
-	}
-
-	return result, nil
+	return scanResultRow(rows)
 }
 
 func (r *resultRepository) AddCriteria(ctx context.Context, resultID, criteriaID uint) error {
@@ -245,8 +292,9 @@ func (r *resultRepository) FindWithCriteria(ctx context.Context, resultID uint) 
 
 func (r *resultRepository) FindByEventWithPlaces(ctx context.Context, eventID uint) ([]*repository.ResultWithPlace, error) {
 	query := `
-		SELECT 
+		SELECT
 			r.id, r.participant_id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at,
+			r.started_at, r.finished_at, r.distance_meters, r.avg_heart_rate, r.max_heart_rate, r.peak_speed_kmh, r.avg_cadence, r.calories,
 			p.gender, p.bike_type,
 			ROW_NUMBER() OVER (PARTITION BY p.event_id ORDER BY r.elapsed_time_sec) as place_absolute,
 			ROW_NUMBER() OVER (PARTITION BY p.event_id, p.gender ORDER BY r.elapsed_time_sec) as place_by_gender,
@@ -278,6 +326,14 @@ func (r *resultRepository) FindByEventWithPlaces(ctx context.Context, eventID ui
 			&result.MovingTimeSec,
 			&result.IsCurrent,
 			&result.SubmittedAt,
+			&result.StartedAt,
+			&result.FinishedAt,
+			&result.DistanceMeters,
+			&result.AvgHeartRate,
+			&result.MaxHeartRate,
+			&result.PeakSpeedKmh,
+			&result.AvgCadence,
+			&result.Calories,
 			&gender,
 			&bikeType,
 			&placeAbsolute,
@@ -288,9 +344,7 @@ func (r *resultRepository) FindByEventWithPlaces(ctx context.Context, eventID ui
 			return nil, fmt.Errorf("failed to scan result: %w", err)
 		}
 
-		if resultLink != nil && *resultLink != "" {
-			result.ResultLink, _ = valueobject.NewResultLink(*resultLink)
-		}
+		applyResultLink(result, resultLink)
 
 		results = append(results, &repository.ResultWithPlace{
 			Result:              result,

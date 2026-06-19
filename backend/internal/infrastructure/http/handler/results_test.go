@@ -116,6 +116,47 @@ func TestResultsHandlerCreateReturnsBadRequestForKomoot(t *testing.T) {
 	}
 }
 
+func TestResultsHandlerCreateAcceptsStartFinishWithoutElapsed(t *testing.T) {
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
+	participantRepo := &resultsParticipantRepoFake{participant: &entity.Participant{ID: 11, EventID: 77}}
+	resultRepo := &resultsResultRepoFake{}
+	eventRepo := &resultsEventRepoFake{event: &entity.Event{ID: 77, Active: true}}
+	h := newResultsTestHandler(participantRepo, eventRepo, resultRepo, now)
+
+	rr := resultsCreateRequest(t, h, 11, CreateResultRequest{
+		StartedAt:      stringPointer("2025-06-15T09:00:00+03:00"),
+		FinishedAt:     stringPointer("2025-06-15T15:15:00+03:00"),
+		DistanceMeters: intPointer(202000),
+		AvgHeartRate:   intPointer(140),
+	})
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+	}
+	if resultRepo.created == nil {
+		t.Fatal("result was not created from start/finish")
+	}
+	if resultRepo.created.ElapsedTimeSec == nil || *resultRepo.created.ElapsedTimeSec != 6*3600+15*60 {
+		t.Fatalf("elapsed not computed from start/finish: %v", resultRepo.created.ElapsedTimeSec)
+	}
+
+	var got struct {
+		AvgSpeedKmh *float64 `json:"avg_speed_kmh"`
+		RideDate    *string  `json:"ride_date"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.AvgSpeedKmh == nil {
+		t.Fatal("response should include computed avg_speed_kmh")
+	}
+	if got.RideDate == nil || *got.RideDate != "2025-06-15" {
+		t.Fatalf("ride_date mismatch: got %v", got.RideDate)
+	}
+}
+
+func stringPointer(value string) *string { return &value }
+
 func newResultsTestHandler(participantRepo *resultsParticipantRepoFake, eventRepo *resultsEventRepoFake, resultRepo *resultsResultRepoFake, now time.Time) *ResultsHandler {
 	submitHandler := command.NewSubmitResultHandler(
 		participantRepo,
@@ -128,7 +169,8 @@ func newResultsTestHandler(participantRepo *resultsParticipantRepoFake, eventRep
 		resultRepo,
 		command.WithCreateManualResultClock(func() time.Time { return now }),
 	)
-	return NewResultsHandler(resultRepo, participantRepo, &resultsCriteriaRepoFake{}, submitHandler, manualHandler)
+	updateHandler := command.NewUpdateResultHandler(resultRepo)
+	return NewResultsHandler(resultRepo, participantRepo, &resultsCriteriaRepoFake{}, submitHandler, manualHandler, updateHandler)
 }
 
 func resultsCreateRequest(t *testing.T, h *ResultsHandler, participantID uint, bodyData CreateResultRequest) *httptest.ResponseRecorder {
@@ -211,6 +253,8 @@ func (r *resultsEventRepoFake) Delete(ctx context.Context, id uint) error { retu
 
 type resultsResultRepoFake struct {
 	created *entity.Result
+	stored  *entity.Result
+	updated *entity.Result
 }
 
 func (r *resultsResultRepoFake) Create(ctx context.Context, result *entity.Result) error {
@@ -219,7 +263,7 @@ func (r *resultsResultRepoFake) Create(ctx context.Context, result *entity.Resul
 	return nil
 }
 func (r *resultsResultRepoFake) FindByID(ctx context.Context, id uint) (*entity.Result, error) {
-	return nil, nil
+	return r.stored, nil
 }
 func (r *resultsResultRepoFake) FindCurrentByParticipant(ctx context.Context, participantID uint) (*entity.Result, error) {
 	return nil, nil
@@ -228,6 +272,10 @@ func (r *resultsResultRepoFake) FindByParticipant(ctx context.Context, participa
 	return nil, nil
 }
 func (r *resultsResultRepoFake) UpdateTime(ctx context.Context, id uint, elapsedSec, movingSec *int) error {
+	return nil
+}
+func (r *resultsResultRepoFake) UpdateMetrics(ctx context.Context, result *entity.Result) error {
+	r.updated = result
 	return nil
 }
 func (r *resultsResultRepoFake) MarkAsNotCurrent(ctx context.Context, id uint) error {

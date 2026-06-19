@@ -18,6 +18,23 @@ type ResultDTO struct {
 	IsCurrent      bool           `json:"is_current"`
 	SubmittedAt    time.Time      `json:"submitted_at"`
 	Criteria       []*CriteriaDTO `json:"criteria,omitempty"` // критерии результата
+
+	// Метрики заезда (вводятся вручную; опциональны)
+	StartedAt      *time.Time `json:"started_at,omitempty"`      // Время старта
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`     // Время финиша
+	DistanceMeters *int       `json:"distance_meters,omitempty"` // Дистанция в метрах
+	AvgHeartRate   *int       `json:"avg_heart_rate,omitempty"`  // Средний пульс
+	MaxHeartRate   *int       `json:"max_heart_rate,omitempty"`  // Максимальный пульс
+	PeakSpeedKmh   *float64   `json:"peak_speed_kmh,omitempty"`  // Пиковая скорость, км/ч
+	AvgCadence     *int       `json:"avg_cadence,omitempty"`     // Средний каденс
+	Calories       *int       `json:"calories,omitempty"`        // Калории
+
+	// Вычисляемые поля (только для чтения; считаются на сервере)
+	RideDate          *string  `json:"ride_date,omitempty"`            // Дата проезда, YYYY-MM-DD
+	IdleTimeSec       *int     `json:"idle_time_sec,omitempty"`        // Простой в секундах
+	IdleTime          *string  `json:"idle_time,omitempty"`            // Простой, ЧЧ:ММ:СС
+	AvgSpeedKmh       *float64 `json:"avg_speed_kmh,omitempty"`        // Средняя скорость, км/ч
+	AvgMovingSpeedKmh *float64 `json:"avg_moving_speed_kmh,omitempty"` // Средняя скорость в движении, км/ч
 }
 
 // FromResult создаёт DTO из entity.Result
@@ -49,6 +66,29 @@ func FromResult(r *entity.Result) *ResultDTO {
 		formatted := r.MovingTimeFormatted()
 		dto.MovingTime = &formatted
 	}
+
+	// Сырые метрики заезда
+	dto.StartedAt = r.StartedAt
+	dto.FinishedAt = r.FinishedAt
+	dto.DistanceMeters = r.DistanceMeters
+	dto.AvgHeartRate = r.AvgHeartRate
+	dto.MaxHeartRate = r.MaxHeartRate
+	dto.PeakSpeedKmh = r.PeakSpeedKmh
+	dto.AvgCadence = r.AvgCadence
+	dto.Calories = r.Calories
+
+	// Вычисляемые поля — только когда есть исходные данные
+	if rideDate := r.RideDate(); rideDate != nil {
+		formatted := rideDate.Format("2006-01-02")
+		dto.RideDate = &formatted
+	}
+	if idle := r.IdleTimeSec(); idle != nil {
+		dto.IdleTimeSec = idle
+		formatted := r.IdleTimeFormatted()
+		dto.IdleTime = &formatted
+	}
+	dto.AvgSpeedKmh = r.AvgSpeedKmh()
+	dto.AvgMovingSpeedKmh = r.AvgMovingSpeedKmh()
 
 	// Добавляем критерии
 	if len(r.Criteria) > 0 {

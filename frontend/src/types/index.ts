@@ -336,6 +336,23 @@ export interface Result {
   is_current: boolean;
   submitted_at: string;
   criteria?: Criteria[]; // критерии результата
+
+  // Метрики заезда (вводятся вручную; опциональны)
+  started_at?: string; // ISO 8601
+  finished_at?: string; // ISO 8601
+  distance_meters?: number;
+  avg_heart_rate?: number;
+  max_heart_rate?: number;
+  peak_speed_kmh?: number;
+  avg_cadence?: number;
+  calories?: number;
+
+  // Вычисляемые поля (только для чтения; считаются на сервере)
+  ride_date?: string; // YYYY-MM-DD
+  idle_time_sec?: number;
+  idle_time?: string; // формат ЧЧ:ММ:СС
+  avg_speed_kmh?: number;
+  avg_moving_speed_kmh?: number;
 }
 
 export interface ResultListResponse {
@@ -343,16 +360,26 @@ export interface ResultListResponse {
   total: number;
 }
 
-export interface CreateResultRequest {
-  elapsed_time_sec: number;
+// Поля ввода метрик заезда (общие для создания и обновления результата).
+// Общее время задаётся через elapsed_time_sec ИЛИ пару started_at+finished_at.
+export interface ResultMetricsInput {
+  elapsed_time_sec?: number;
   moving_time_sec?: number;
+  started_at?: string; // ISO 8601 (зона Минск)
+  finished_at?: string; // ISO 8601 (зона Минск)
+  distance_meters?: number;
+  avg_heart_rate?: number;
+  max_heart_rate?: number;
+  peak_speed_kmh?: number;
+  avg_cadence?: number;
+  calories?: number;
+}
+
+export interface CreateResultRequest extends ResultMetricsInput {
   result_link?: string;
 }
 
-export interface UpdateResultRequest {
-  elapsed_time_sec?: number;
-  moving_time_sec?: number;
-}
+export type UpdateResultRequest = ResultMetricsInput;
 
 export interface CreateGiftRequest {
   user_id: number;

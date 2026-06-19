@@ -21,7 +21,7 @@ func TestCreateManualResultHandlerCreatesCurrentResultWithoutStravaLink(t *testi
 
 	result, err := h.Handle(context.Background(), CreateManualResultCommand{
 		ParticipantID:  participant.ID,
-		ElapsedTimeSec: 3600,
+		ElapsedTimeSec: intPtr(3600),
 	})
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -68,7 +68,7 @@ func TestCreateManualResultHandlerRejectsInvalidTime(t *testing.T) {
 
 			_, err := h.Handle(context.Background(), CreateManualResultCommand{
 				ParticipantID:  11,
-				ElapsedTimeSec: tt.elapsed,
+				ElapsedTimeSec: intPtr(tt.elapsed),
 				MovingTimeSec:  tt.moving,
 			})
 			if !errors.Is(err, ErrInvalidResultTime) {
@@ -96,7 +96,7 @@ func TestCreateManualResultHandlerRejectsDuplicateCurrentResult(t *testing.T) {
 
 	_, err := h.Handle(context.Background(), CreateManualResultCommand{
 		ParticipantID:  11,
-		ElapsedTimeSec: 3600,
+		ElapsedTimeSec: intPtr(3600),
 	})
 	if !errors.Is(err, ErrResultAlreadyExists) {
 		t.Fatalf("error mismatch: got %v, want %v", err, ErrResultAlreadyExists)
@@ -115,7 +115,7 @@ func TestCreateManualResultHandlerRejectsInvalidOptionalResultLink(t *testing.T)
 
 	_, err := h.Handle(context.Background(), CreateManualResultCommand{
 		ParticipantID:  11,
-		ElapsedTimeSec: 3600,
+		ElapsedTimeSec: intPtr(3600),
 		ResultLink:     "https://www.komoot.com/tour/2308024419",
 	})
 	if !errors.Is(err, ErrInvalidResultLink) {

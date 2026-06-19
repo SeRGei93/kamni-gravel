@@ -126,6 +126,7 @@ func NewServer(
 		participantRepo,
 		resultRepo,
 	)
+	updateResultHandler := command.NewUpdateResultHandler(resultRepo)
 
 	assignPrizeHandler := command.NewAssignPrizeHandler(
 		participantRepo,
@@ -268,7 +269,7 @@ func NewServer(
 		getPrizeAssignmentByIDHandler,
 		assignPrizeHandler,
 	)
-	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo, submitResultHandler, createManualResultHandler)
+	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo, submitResultHandler, createManualResultHandler, updateResultHandler)
 	statsHandler := handler.NewStatsHandler(getStatsHandler)
 	telegramHandler := handler.NewTelegramHandler(cfg.BotToken)
 	miniappHandler := handler.NewMiniappHandler(

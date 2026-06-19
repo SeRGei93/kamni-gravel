@@ -6,12 +6,15 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/domain/valueobject"
 	"gravel_bot/internal/infrastructure/http/response"
 )
 
@@ -22,6 +25,7 @@ type ResultsHandler struct {
 	criteriaRepo        repository.CriteriaRepository
 	submitResultHandler *command.SubmitResultHandler
 	manualResultHandler *command.CreateManualResultHandler
+	updateResultHandler *command.UpdateResultHandler
 }
 
 // NewResultsHandler создаёт новый handler
@@ -31,6 +35,7 @@ func NewResultsHandler(
 	criteriaRepo repository.CriteriaRepository,
 	submitResultHandler *command.SubmitResultHandler,
 	manualResultHandler *command.CreateManualResultHandler,
+	updateResultHandler *command.UpdateResultHandler,
 ) *ResultsHandler {
 	return &ResultsHandler{
 		resultRepo:          resultRepo,
@@ -38,7 +43,21 @@ func NewResultsHandler(
 		criteriaRepo:        criteriaRepo,
 		submitResultHandler: submitResultHandler,
 		manualResultHandler: manualResultHandler,
+		updateResultHandler: updateResultHandler,
 	}
+}
+
+// parseOptionalMinskTime разбирает опциональную метку времени (RFC3339 или
+// Минск wall time). Возвращает (значение, задано_ли, ошибка_парсинга).
+func parseOptionalMinskTime(raw *string) (*time.Time, bool, error) {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return nil, false, nil
+	}
+	parsed, err := valueobject.ParseMinskDateTime(*raw)
+	if err != nil {
+		return nil, false, err
+	}
+	return &parsed, true, nil
 }
 
 // GetByParticipant обрабатывает GET /api/participants/:participantId/results
@@ -100,11 +119,21 @@ func (h *ResultsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, dto.FromResult(result))
 }
 
-// CreateResultRequest представляет запрос на создание результата
+// CreateResultRequest представляет запрос на создание результата.
+// Общее время задаётся через elapsed_time_sec ИЛИ парой started_at+finished_at.
+// distance_meters — дистанция в метрах (конвертация км↔м на стороне фронтенда).
 type CreateResultRequest struct {
-	ResultLink     string `json:"result_link,omitempty"`
-	ElapsedTimeSec *int   `json:"elapsed_time_sec,omitempty"`
-	MovingTimeSec  *int   `json:"moving_time_sec,omitempty"`
+	ResultLink     string   `json:"result_link,omitempty"`
+	ElapsedTimeSec *int     `json:"elapsed_time_sec,omitempty"`
+	MovingTimeSec  *int     `json:"moving_time_sec,omitempty"`
+	StartedAt      *string  `json:"started_at,omitempty"`
+	FinishedAt     *string  `json:"finished_at,omitempty"`
+	DistanceMeters *int     `json:"distance_meters,omitempty"`
+	AvgHeartRate   *int     `json:"avg_heart_rate,omitempty"`
+	MaxHeartRate   *int     `json:"max_heart_rate,omitempty"`
+	PeakSpeedKmh   *float64 `json:"peak_speed_kmh,omitempty"`
+	AvgCadence     *int     `json:"avg_cadence,omitempty"`
+	Calories       *int     `json:"calories,omitempty"`
 }
 
 // Create обрабатывает POST /api/participants/:participantId/results
@@ -122,21 +151,44 @@ func (h *ResultsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.ElapsedTimeSec == nil {
-		log.Printf("WARN Manual result creation rejected: participant_id=%d error_class=missing_elapsed_time", participantID)
-		response.BadRequest(w, "elapsed_time_sec is required")
+	startedAt, startPresent, err := parseOptionalMinskTime(req.StartedAt)
+	if err != nil {
+		log.Printf("WARN Manual result creation rejected: participant_id=%d error_class=invalid_started_at", participantID)
+		response.BadRequest(w, "Invalid started_at format. Use ISO 8601 (RFC3339)")
+		return
+	}
+	finishedAt, finishPresent, err := parseOptionalMinskTime(req.FinishedAt)
+	if err != nil {
+		log.Printf("WARN Manual result creation rejected: participant_id=%d error_class=invalid_finished_at", participantID)
+		response.BadRequest(w, "Invalid finished_at format. Use ISO 8601 (RFC3339)")
+		return
+	}
+
+	// Общее время обязательно: либо elapsed_time_sec, либо пара старт+финиш.
+	if req.ElapsedTimeSec == nil && !(startPresent && finishPresent) {
+		log.Printf("WARN Manual result creation rejected: participant_id=%d error_class=missing_total", participantID)
+		response.BadRequest(w, "Provide elapsed_time_sec or both started_at and finished_at")
 		return
 	}
 
 	result, err := h.manualResultHandler.Handle(r.Context(), command.CreateManualResultCommand{
 		ParticipantID:  uint(participantID),
 		ResultLink:     req.ResultLink,
-		ElapsedTimeSec: *req.ElapsedTimeSec,
+		ElapsedTimeSec: req.ElapsedTimeSec,
 		MovingTimeSec:  req.MovingTimeSec,
+		StartedAt:      startedAt,
+		FinishedAt:     finishedAt,
+		DistanceMeters: req.DistanceMeters,
+		AvgHeartRate:   req.AvgHeartRate,
+		MaxHeartRate:   req.MaxHeartRate,
+		PeakSpeedKmh:   req.PeakSpeedKmh,
+		AvgCadence:     req.AvgCadence,
+		Calories:       req.Calories,
 	})
 	if err != nil {
 		errorClass := resultCreateErrorClass(err)
 		if errors.Is(err, command.ErrInvalidResultLink) || errors.Is(err, command.ErrInvalidResultTime) ||
+			errors.Is(err, command.ErrInvalidResultMetric) ||
 			errors.Is(err, command.ErrParticipantNotFound) || errors.Is(err, command.ErrResultAlreadyExists) {
 			log.Printf("WARN Result creation rejected: participant_id=%d error_class=%s", participantID, errorClass)
 		} else {
@@ -147,7 +199,9 @@ func (h *ResultsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, command.ErrInvalidResultLink):
 			response.BadRequest(w, "Only Strava result links are accepted")
 		case errors.Is(err, command.ErrInvalidResultTime):
-			response.BadRequest(w, "elapsed_time_sec must be positive and moving_time_sec must be between 0 and elapsed_time_sec")
+			response.BadRequest(w, "Total time must be positive (from elapsed_time_sec or finish-start), and moving_time_sec must be between 0 and total")
+		case errors.Is(err, command.ErrInvalidResultMetric):
+			response.BadRequest(w, "Metric values (distance, heart rate, cadence, calories, peak speed) must not be negative")
 		case errors.Is(err, command.ErrParticipantNotFound):
 			response.NotFound(w, "Participant not found")
 		case errors.Is(err, command.ErrResultAlreadyExists):
@@ -167,6 +221,10 @@ func resultCreateErrorClass(err error) string {
 		return "invalid_result_link"
 	case errors.Is(err, command.ErrInvalidResultTime):
 		return "invalid_result_time"
+	case errors.Is(err, command.ErrInvalidResultMetric):
+		return "invalid_result_metric"
+	case errors.Is(err, command.ErrResultNotFound):
+		return "result_not_found"
 	case errors.Is(err, command.ErrResultAlreadyExists):
 		return "result_already_exists"
 	case errors.Is(err, command.ErrParticipantNotFound):
@@ -184,10 +242,20 @@ func resultCreateErrorClass(err error) string {
 	}
 }
 
-// UpdateResultRequest представляет запрос на обновление результата
+// UpdateResultRequest представляет запрос на обновление результата.
+// Семантика — полная замена метрик: отсутствующее поле очищается.
+// Общее время — через elapsed_time_sec ИЛИ пару started_at+finished_at.
 type UpdateResultRequest struct {
-	ElapsedTimeSec *int `json:"elapsed_time_sec,omitempty"`
-	MovingTimeSec  *int `json:"moving_time_sec,omitempty"`
+	ElapsedTimeSec *int     `json:"elapsed_time_sec,omitempty"`
+	MovingTimeSec  *int     `json:"moving_time_sec,omitempty"`
+	StartedAt      *string  `json:"started_at,omitempty"`
+	FinishedAt     *string  `json:"finished_at,omitempty"`
+	DistanceMeters *int     `json:"distance_meters,omitempty"`
+	AvgHeartRate   *int     `json:"avg_heart_rate,omitempty"`
+	MaxHeartRate   *int     `json:"max_heart_rate,omitempty"`
+	PeakSpeedKmh   *float64 `json:"peak_speed_kmh,omitempty"`
+	AvgCadence     *int     `json:"avg_cadence,omitempty"`
+	Calories       *int     `json:"calories,omitempty"`
 }
 
 // Update обрабатывает PUT /api/results/:id
@@ -205,25 +273,54 @@ func (h *ResultsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем существование результата
-	result, err := h.resultRepo.FindByID(r.Context(), uint(id))
-	if err != nil || result == nil {
-		response.NotFound(w, "Result not found")
-		return
-	}
-
-	// Обновляем время
-	if err := h.resultRepo.UpdateTime(r.Context(), uint(id), req.ElapsedTimeSec, req.MovingTimeSec); err != nil {
-		log.Printf("Error updating result: %v", err)
-		response.InternalServerError(w, "Failed to update result")
-		return
-	}
-
-	// Получаем обновлённый результат
-	result, err = h.resultRepo.FindByID(r.Context(), uint(id))
+	startedAt, startPresent, err := parseOptionalMinskTime(req.StartedAt)
 	if err != nil {
-		log.Printf("Error getting updated result: %v", err)
-		response.InternalServerError(w, "Failed to get updated result")
+		log.Printf("WARN Result update rejected: result_id=%d error_class=invalid_started_at", id)
+		response.BadRequest(w, "Invalid started_at format. Use ISO 8601 (RFC3339)")
+		return
+	}
+	finishedAt, finishPresent, err := parseOptionalMinskTime(req.FinishedAt)
+	if err != nil {
+		log.Printf("WARN Result update rejected: result_id=%d error_class=invalid_finished_at", id)
+		response.BadRequest(w, "Invalid finished_at format. Use ISO 8601 (RFC3339)")
+		return
+	}
+
+	if req.ElapsedTimeSec == nil && !(startPresent && finishPresent) {
+		log.Printf("WARN Result update rejected: result_id=%d error_class=missing_total", id)
+		response.BadRequest(w, "Provide elapsed_time_sec or both started_at and finished_at")
+		return
+	}
+
+	result, err := h.updateResultHandler.Handle(r.Context(), command.UpdateResultCommand{
+		ResultID:       uint(id),
+		ElapsedTimeSec: req.ElapsedTimeSec,
+		MovingTimeSec:  req.MovingTimeSec,
+		StartedAt:      startedAt,
+		FinishedAt:     finishedAt,
+		DistanceMeters: req.DistanceMeters,
+		AvgHeartRate:   req.AvgHeartRate,
+		MaxHeartRate:   req.MaxHeartRate,
+		PeakSpeedKmh:   req.PeakSpeedKmh,
+		AvgCadence:     req.AvgCadence,
+		Calories:       req.Calories,
+	})
+	if err != nil {
+		errorClass := resultCreateErrorClass(err)
+		switch {
+		case errors.Is(err, command.ErrResultNotFound):
+			log.Printf("WARN Result update rejected: result_id=%d error_class=%s", id, errorClass)
+			response.NotFound(w, "Result not found")
+		case errors.Is(err, command.ErrInvalidResultTime):
+			log.Printf("WARN Result update rejected: result_id=%d error_class=%s", id, errorClass)
+			response.BadRequest(w, "Total time must be positive (from elapsed_time_sec or finish-start), and moving_time_sec must be between 0 and total")
+		case errors.Is(err, command.ErrInvalidResultMetric):
+			log.Printf("WARN Result update rejected: result_id=%d error_class=%s", id, errorClass)
+			response.BadRequest(w, "Metric values (distance, heart rate, cadence, calories, peak speed) must not be negative")
+		default:
+			log.Printf("ERROR Result update failed: result_id=%d error_class=%s error=%v", id, errorClass, err)
+			response.InternalServerError(w, "Failed to update result")
+		}
 		return
 	}
 

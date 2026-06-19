@@ -177,6 +177,8 @@ func (r *submitEventRepoFake) Delete(ctx context.Context, id uint) error { retur
 
 type submitResultRepoFake struct {
 	created *entity.Result
+	stored  *entity.Result
+	updated *entity.Result
 }
 
 func (r *submitResultRepoFake) Create(ctx context.Context, result *entity.Result) error {
@@ -184,7 +186,7 @@ func (r *submitResultRepoFake) Create(ctx context.Context, result *entity.Result
 	return nil
 }
 func (r *submitResultRepoFake) FindByID(ctx context.Context, id uint) (*entity.Result, error) {
-	return nil, nil
+	return r.stored, nil
 }
 func (r *submitResultRepoFake) FindCurrentByParticipant(ctx context.Context, participantID uint) (*entity.Result, error) {
 	return nil, nil
@@ -193,6 +195,10 @@ func (r *submitResultRepoFake) FindByParticipant(ctx context.Context, participan
 	return nil, nil
 }
 func (r *submitResultRepoFake) UpdateTime(ctx context.Context, id uint, elapsedSec, movingSec *int) error {
+	return nil
+}
+func (r *submitResultRepoFake) UpdateMetrics(ctx context.Context, result *entity.Result) error {
+	r.updated = result
 	return nil
 }
 func (r *submitResultRepoFake) MarkAsNotCurrent(ctx context.Context, id uint) error { return nil }

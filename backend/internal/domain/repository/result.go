@@ -22,6 +22,10 @@ type ResultRepository interface {
 	// UpdateTime обновляет время результата
 	UpdateTime(ctx context.Context, id uint, elapsedSec, movingSec *int) error
 
+	// UpdateMetrics обновляет время и метрики заезда результата по его ID
+	// (старт, финиш, дистанция, пульс, пиковая скорость, каденс, калории).
+	UpdateMetrics(ctx context.Context, result *entity.Result) error
+
 	// MarkAsNotCurrent помечает результат как неактуальный
 	MarkAsNotCurrent(ctx context.Context, id uint) error
 

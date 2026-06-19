@@ -13,14 +13,65 @@ import (
 	"gravel_bot/internal/domain/valueobject"
 )
 
-var ErrInvalidResultTime = errors.New("invalid result time")
+var (
+	ErrInvalidResultTime   = errors.New("invalid result time")
+	ErrInvalidResultMetric = errors.New("invalid result metric")
+)
 
 // CreateManualResultCommand представляет команду ручного добавления результата администратором.
+// Все поля метрик опциональны. Общее время берётся из старт/финиш, если оба заданы,
+// иначе из ElapsedTimeSec.
 type CreateManualResultCommand struct {
 	ParticipantID  uint
 	ResultLink     string
-	ElapsedTimeSec int
+	ElapsedTimeSec *int
 	MovingTimeSec  *int
+
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	DistanceMeters *int
+	AvgHeartRate   *int
+	MaxHeartRate   *int
+	PeakSpeedKmh   *float64
+	AvgCadence     *int
+	Calories       *int
+}
+
+// resolveResultElapsed определяет общее время результата: разница финиша и старта,
+// если оба заданы; иначе переданное elapsed. Возвращает (секунды, причина_отказа, ok).
+func resolveResultElapsed(startedAt, finishedAt *time.Time, elapsedTimeSec *int) (int, string, bool) {
+	if startedAt != nil && finishedAt != nil {
+		if !finishedAt.After(*startedAt) {
+			return 0, "invalid_time_order", false
+		}
+		return int(finishedAt.Sub(*startedAt).Seconds()), "", true
+	}
+	if elapsedTimeSec != nil {
+		return *elapsedTimeSec, "", true
+	}
+	return 0, "missing_total", false
+}
+
+// validateResultMetrics проверяет чистое время и числовые метрики относительно
+// общего времени. Возвращает (причина_отказа, ok).
+func validateResultMetrics(elapsed int, movingTimeSec, distanceMeters, avgHeartRate, maxHeartRate, avgCadence, calories *int, peakSpeedKmh *float64) (string, bool) {
+	if movingTimeSec != nil {
+		if *movingTimeSec < 0 {
+			return "moving_negative", false
+		}
+		if *movingTimeSec > elapsed {
+			return "moving_gt_total", false
+		}
+	}
+	for _, v := range []*int{distanceMeters, avgHeartRate, maxHeartRate, avgCadence, calories} {
+		if v != nil && *v < 0 {
+			return "negative_metric", false
+		}
+	}
+	if peakSpeedKmh != nil && *peakSpeedKmh < 0 {
+		return "negative_metric", false
+	}
+	return "", true
 }
 
 // CreateManualResultHandler обрабатывает ручное добавление результата.
@@ -64,26 +115,29 @@ func NewCreateManualResultHandler(
 // Handle выполняет ручное добавление результата.
 func (h *CreateManualResultHandler) Handle(ctx context.Context, cmd CreateManualResultCommand) (*entity.Result, error) {
 	log.Printf(
-		"INFO Manual result creation requested: participant_id=%d elapsed_time_sec=%d moving_time_present=%t result_link_present=%t",
+		"INFO Manual result creation requested: participant_id=%d start_finish_present=%t elapsed_present=%t moving_time_present=%t result_link_present=%t",
 		cmd.ParticipantID,
-		cmd.ElapsedTimeSec,
+		cmd.StartedAt != nil && cmd.FinishedAt != nil,
+		cmd.ElapsedTimeSec != nil,
 		cmd.MovingTimeSec != nil,
 		strings.TrimSpace(cmd.ResultLink) != "",
 	)
 
-	if cmd.ElapsedTimeSec <= 0 {
-		log.Printf("WARN Manual result creation failed: participant_id=%d stage=validate_elapsed_time reason=non_positive", cmd.ParticipantID)
+	elapsed, reason, ok := resolveResultElapsed(cmd.StartedAt, cmd.FinishedAt, cmd.ElapsedTimeSec)
+	if !ok {
+		log.Printf("WARN Manual result creation failed: participant_id=%d stage=resolve_elapsed reason=%s", cmd.ParticipantID, reason)
 		return nil, ErrInvalidResultTime
 	}
-	if cmd.MovingTimeSec != nil {
-		if *cmd.MovingTimeSec < 0 {
-			log.Printf("WARN Manual result creation failed: participant_id=%d stage=validate_moving_time reason=negative", cmd.ParticipantID)
-			return nil, ErrInvalidResultTime
+	if elapsed <= 0 {
+		log.Printf("WARN Manual result creation failed: participant_id=%d stage=resolve_elapsed reason=non_positive", cmd.ParticipantID)
+		return nil, ErrInvalidResultTime
+	}
+	if reason, ok := validateResultMetrics(elapsed, cmd.MovingTimeSec, cmd.DistanceMeters, cmd.AvgHeartRate, cmd.MaxHeartRate, cmd.AvgCadence, cmd.Calories, cmd.PeakSpeedKmh); !ok {
+		log.Printf("WARN Manual result creation failed: participant_id=%d stage=validate_metrics reason=%s", cmd.ParticipantID, reason)
+		if reason == "negative_metric" {
+			return nil, ErrInvalidResultMetric
 		}
-		if *cmd.MovingTimeSec > cmd.ElapsedTimeSec {
-			log.Printf("WARN Manual result creation failed: participant_id=%d stage=validate_moving_time reason=greater_than_elapsed", cmd.ParticipantID)
-			return nil, ErrInvalidResultTime
-		}
+		return nil, ErrInvalidResultTime
 	}
 
 	participant, err := h.participantRepo.FindByID(ctx, cmd.ParticipantID)
@@ -110,7 +164,7 @@ func (h *CreateManualResultHandler) Handle(ctx context.Context, cmd CreateManual
 		resultLink = parsedLink
 	}
 
-	elapsedTimeSec := cmd.ElapsedTimeSec
+	elapsedTimeSec := elapsed
 	result := &entity.Result{
 		ParticipantID:  participant.ID,
 		ResultLink:     resultLink,
@@ -118,6 +172,14 @@ func (h *CreateManualResultHandler) Handle(ctx context.Context, cmd CreateManual
 		MovingTimeSec:  cmd.MovingTimeSec,
 		IsCurrent:      true,
 		SubmittedAt:    h.now(),
+		StartedAt:      cmd.StartedAt,
+		FinishedAt:     cmd.FinishedAt,
+		DistanceMeters: cmd.DistanceMeters,
+		AvgHeartRate:   cmd.AvgHeartRate,
+		MaxHeartRate:   cmd.MaxHeartRate,
+		PeakSpeedKmh:   cmd.PeakSpeedKmh,
+		AvgCadence:     cmd.AvgCadence,
+		Calories:       cmd.Calories,
 	}
 
 	if err := h.resultRepo.Create(ctx, result); err != nil {

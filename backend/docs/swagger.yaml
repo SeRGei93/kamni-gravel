@@ -693,7 +693,7 @@ paths:
 
     put:
       tags: [Results]
-      summary: Обновить время результата
+      summary: Обновить результат (время и метрики заезда)
       security:
         - BearerAuth: []
       parameters:
@@ -703,17 +703,11 @@ paths:
           schema:
             type: integer
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                elapsed_time_sec:
-                  type: integer
-                  description: Общее время в секундах
-                moving_time_sec:
-                  type: integer
-                  description: Время в пути в секундах
+              $ref: '#/components/schemas/UpdateResultRequest'
       responses:
         '200':
           description: Результат обновлён
@@ -1689,24 +1683,165 @@ components:
         submitted_at:
           type: string
           format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Время старта заезда
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Время финиша заезда
+        distance_meters:
+          type: integer
+          nullable: true
+          description: Дистанция заезда в метрах
+        avg_heart_rate:
+          type: integer
+          nullable: true
+          description: Средний пульс, уд/мин
+        max_heart_rate:
+          type: integer
+          nullable: true
+          description: Максимальный пульс, уд/мин
+        peak_speed_kmh:
+          type: number
+          format: double
+          nullable: true
+          description: Пиковая скорость, км/ч
+        avg_cadence:
+          type: integer
+          nullable: true
+          description: Средний каденс, об/мин
+        calories:
+          type: integer
+          nullable: true
+          description: Калории, ккал
+        ride_date:
+          type: string
+          nullable: true
+          description: "Вычисляется на сервере: дата проезда (день старта), YYYY-MM-DD"
+        idle_time_sec:
+          type: integer
+          nullable: true
+          description: "Вычисляется на сервере: простой = общее − движение, в секундах"
+        idle_time:
+          type: string
+          nullable: true
+          description: "Вычисляется на сервере: простой в формате ЧЧ:ММ:СС"
+        avg_speed_kmh:
+          type: number
+          format: double
+          nullable: true
+          description: "Вычисляется на сервере: средняя скорость = дистанция / общее время, км/ч"
+        avg_moving_speed_kmh:
+          type: number
+          format: double
+          nullable: true
+          description: "Вычисляется на сервере: средняя скорость в движении = дистанция / время движения, км/ч"
 
     CreateManualResultRequest:
       type: object
-      required:
-        - elapsed_time_sec
+      description: >-
+        Общее время задаётся одним из способов: либо elapsed_time_sec, либо пара
+        started_at + finished_at (тогда общее время = финиш − старт). Все поля метрик опциональны.
       properties:
         elapsed_time_sec:
           type: integer
           minimum: 1
-          description: Общее время в секундах
+          description: Общее время в секундах. Требуется, если не заданы started_at и finished_at.
         moving_time_sec:
           type: integer
           minimum: 0
-          description: Чистое время в секундах. Не может быть больше elapsed_time_sec.
+          description: Чистое время в секундах. Не может быть больше общего времени.
+        started_at:
+          type: string
+          format: date-time
+          description: Время старта (ISO 8601 / RFC3339, зона Минск UTC+3)
+          example: "2025-06-15T09:06:14+03:00"
+        finished_at:
+          type: string
+          format: date-time
+          description: Время финиша (ISO 8601 / RFC3339, зона Минск UTC+3)
+          example: "2025-06-15T23:38:30+03:00"
+        distance_meters:
+          type: integer
+          minimum: 0
+          description: Дистанция заезда в метрах (конвертация км↔м выполняется на фронтенде)
+        avg_heart_rate:
+          type: integer
+          minimum: 0
+          description: Средний пульс, уд/мин
+        max_heart_rate:
+          type: integer
+          minimum: 0
+          description: Максимальный пульс, уд/мин
+        peak_speed_kmh:
+          type: number
+          format: double
+          minimum: 0
+          description: Пиковая скорость, км/ч
+        avg_cadence:
+          type: integer
+          minimum: 0
+          description: Средний каденс, об/мин
+        calories:
+          type: integer
+          minimum: 0
+          description: Калории, ккал
         result_link:
           type: string
           description: Опциональная ссылка на активность Strava
           example: https://www.strava.com/activities/123456789
+
+    UpdateResultRequest:
+      type: object
+      description: >-
+        Обновление результата — полная замена метрик (отсутствующее поле очищается).
+        Общее время — через elapsed_time_sec либо пару started_at + finished_at.
+      properties:
+        elapsed_time_sec:
+          type: integer
+          minimum: 1
+          description: Общее время в секундах. Требуется, если не заданы started_at и finished_at.
+        moving_time_sec:
+          type: integer
+          minimum: 0
+          description: Чистое время в секундах. Не может быть больше общего времени.
+        started_at:
+          type: string
+          format: date-time
+          description: Время старта (ISO 8601 / RFC3339, зона Минск UTC+3)
+        finished_at:
+          type: string
+          format: date-time
+          description: Время финиша (ISO 8601 / RFC3339, зона Минск UTC+3)
+        distance_meters:
+          type: integer
+          minimum: 0
+          description: Дистанция заезда в метрах
+        avg_heart_rate:
+          type: integer
+          minimum: 0
+          description: Средний пульс, уд/мин
+        max_heart_rate:
+          type: integer
+          minimum: 0
+          description: Максимальный пульс, уд/мин
+        peak_speed_kmh:
+          type: number
+          format: double
+          minimum: 0
+          description: Пиковая скорость, км/ч
+        avg_cadence:
+          type: integer
+          minimum: 0
+          description: Средний каденс, об/мин
+        calories:
+          type: integer
+          minimum: 0
+          description: Калории, ккал
 
     Gift:
       type: object

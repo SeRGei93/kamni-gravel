@@ -10,8 +10,12 @@ import Button from '@/components/ui/button/Button';
 import Input from '@/components/form/input/InputField';
 import TextArea from '@/components/form/input/TextArea';
 import TimeInput from '@/components/participants/TimeInput';
+import Label from '@/components/form/Label';
 import ResultCriteriaManager from '@/components/participants/ResultCriteriaManager';
 import { getCriteriaColor } from '@/utils/criteria';
+import { fromMinskDateTimeInput, toMinskDateTimeInput } from '@/utils/minskTime';
+import { secondsToTimeString } from '@/utils/time';
+import { formatSpeed, formatDistanceKm, metersToKm, kmToMeters } from '@/utils/format';
 import { ChevronLeftIcon, PencilIcon, CheckLineIcon, CloseLineIcon, PlusIcon, TrashIcon } from '@/icons';
 import Link from 'next/link';
 
@@ -41,6 +45,32 @@ function formatPrizeAssignment(assignment: PrizeGiftAssignment): string {
   return target === 'без привязки к месту' ? assigned : target;
 }
 
+// Ячейка «подпись + значение» для блока результата. Скрывается, если значение пустое.
+function Metric({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div>
+      <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="text-sm font-medium text-gray-800 dark:text-white/90">{value}</p>
+    </div>
+  );
+}
+
+// Парсит необязательное числовое поле формы (поддерживает запятую как десятичный разделитель).
+function parseOptionalNumber(value: string): number | undefined {
+  const normalized = value.trim().replace(',', '.');
+  if (normalized === '') return undefined;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+// То же, но округляет до целого — для полей, которые на бэкенде имеют тип int
+// (пульс, каденс, калории): дробное значение иначе вызвало бы 400 при декодировании.
+function parseOptionalInt(value: string): number | undefined {
+  const parsed = parseOptionalNumber(value);
+  return parsed === undefined ? undefined : Math.round(parsed);
+}
+
 export default function ParticipantDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -65,6 +95,31 @@ export default function ParticipantDetailPage() {
   const [isEditingResult, setIsEditingResult] = useState(false);
   const [isSavingResult, setIsSavingResult] = useState(false);
 
+  // Метрики заезда из Стравы (строки полей формы)
+  const [startedAt, setStartedAt] = useState('');
+  const [finishedAt, setFinishedAt] = useState('');
+  const [distanceKm, setDistanceKm] = useState('');
+  const [avgHeartRate, setAvgHeartRate] = useState('');
+  const [maxHeartRate, setMaxHeartRate] = useState('');
+  const [avgCadence, setAvgCadence] = useState('');
+  const [calories, setCalories] = useState('');
+  const [peakSpeedKmh, setPeakSpeedKmh] = useState('');
+
+  // Инициализирует поля метрик из текущего результата (или очищает их).
+  // Новые поля берутся из результата (resultsApi), а не из участника —
+  // ParticipantDTO их не зеркалит.
+  const fillMetricFieldsFromResult = useCallback((result: Result | null) => {
+    setStartedAt(result?.started_at ? toMinskDateTimeInput(result.started_at) : '');
+    setFinishedAt(result?.finished_at ? toMinskDateTimeInput(result.finished_at) : '');
+    const km = metersToKm(result?.distance_meters);
+    setDistanceKm(km !== undefined ? String(km) : '');
+    setAvgHeartRate(result?.avg_heart_rate !== undefined ? String(result.avg_heart_rate) : '');
+    setMaxHeartRate(result?.max_heart_rate !== undefined ? String(result.max_heart_rate) : '');
+    setAvgCadence(result?.avg_cadence !== undefined ? String(result.avg_cadence) : '');
+    setCalories(result?.calories !== undefined ? String(result.calories) : '');
+    setPeakSpeedKmh(result?.peak_speed_kmh !== undefined ? String(result.peak_speed_kmh) : '');
+  }, []);
+
   const loadParticipant = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -81,12 +136,13 @@ export default function ParticipantDetailPage() {
       setGifts(giftsData.gifts);
       
       // Находим текущий результат
-      const current = resultsData.results.find((r) => r.is_current);
-      setCurrentResult(current || null);
-      
+      const current = resultsData.results.find((r) => r.is_current) || null;
+      setCurrentResult(current);
+
       setElapsedTimeSec(participantData.elapsed_time_sec);
       setMovingTimeSec(participantData.moving_time_sec);
       setResultLink(participantData.result_link || '');
+      fillMetricFieldsFromResult(current);
       setNotes(participantData.notes || '');
     } catch (err) {
       setError('Ошибка загрузки данных участника');
@@ -94,7 +150,7 @@ export default function ParticipantDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [participantId]);
+  }, [participantId, fillMetricFieldsFromResult]);
 
   useEffect(() => {
     loadParticipant();
@@ -161,6 +217,7 @@ export default function ParticipantDetailPage() {
     setElapsedTimeSec(participant.elapsed_time_sec);
     setMovingTimeSec(participant.moving_time_sec);
     setResultLink(participant.result_link || '');
+    fillMetricFieldsFromResult(currentResult);
     setIsEditingResult(true);
   };
 
@@ -168,39 +225,74 @@ export default function ParticipantDetailPage() {
     setElapsedTimeSec(undefined);
     setMovingTimeSec(undefined);
     setResultLink('');
+    fillMetricFieldsFromResult(null);
     setIsEditingResult(true);
   };
 
   const handleSaveResult = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!participant) return;
-    if (elapsedTimeSec === undefined || elapsedTimeSec <= 0) {
-      setError('Введите общее время результата');
+
+    const startedAtIso = startedAt ? fromMinskDateTimeInput(startedAt) : undefined;
+    const finishedAtIso = finishedAt ? fromMinskDateTimeInput(finishedAt) : undefined;
+    const hasStartFinish = Boolean(startedAtIso && finishedAtIso);
+
+    // Общее время: либо из старт/финиш, либо из «Общего времени».
+    if (!hasStartFinish && (elapsedTimeSec === undefined || elapsedTimeSec <= 0)) {
+      setError('Укажите общее время или обе метки: время старта и финиша');
       return;
     }
-    if (movingTimeSec !== undefined && movingTimeSec > elapsedTimeSec) {
-      setError('Чистое время не может быть больше общего времени');
+
+    let totalSec = elapsedTimeSec;
+    if (hasStartFinish) {
+      const diffSec = Math.round(
+        (new Date(finishedAtIso as string).getTime() -
+          new Date(startedAtIso as string).getTime()) /
+          1000
+      );
+      if (diffSec <= 0) {
+        setError('Время финиша должно быть позже времени старта');
+        return;
+      }
+      totalSec = diffSec;
+    }
+
+    if (
+      movingTimeSec !== undefined &&
+      totalSec !== undefined &&
+      movingTimeSec > totalSec
+    ) {
+      setError('Время в движении не может быть больше общего времени');
       return;
     }
+
+    const metrics = {
+      elapsed_time_sec: hasStartFinish ? undefined : elapsedTimeSec,
+      moving_time_sec: movingTimeSec,
+      started_at: startedAtIso,
+      finished_at: finishedAtIso,
+      distance_meters: kmToMeters(parseOptionalNumber(distanceKm)),
+      avg_heart_rate: parseOptionalInt(avgHeartRate),
+      max_heart_rate: parseOptionalInt(maxHeartRate),
+      peak_speed_kmh: parseOptionalNumber(peakSpeedKmh),
+      avg_cadence: parseOptionalInt(avgCadence),
+      calories: parseOptionalInt(calories),
+    };
 
     try {
       setIsSavingResult(true);
       setError(null);
       const resultId = await getCurrentResultId();
-      
+
       if (resultId) {
-        await resultsApi.update(resultId, {
-          elapsed_time_sec: elapsedTimeSec,
-          moving_time_sec: movingTimeSec,
-        });
+        await resultsApi.update(resultId, metrics);
       } else {
         await resultsApi.create(participant.id, {
-          elapsed_time_sec: elapsedTimeSec,
-          moving_time_sec: movingTimeSec,
+          ...metrics,
           result_link: resultLink.trim() || undefined,
         });
       }
-      
+
       setIsEditingResult(false);
       await loadParticipant();
     } catch (err) {
@@ -220,6 +312,7 @@ export default function ParticipantDetailPage() {
     setElapsedTimeSec(participant.elapsed_time_sec);
     setMovingTimeSec(participant.moving_time_sec);
     setResultLink(participant.result_link || '');
+    fillMetricFieldsFromResult(currentResult);
     setIsEditingResult(false);
   };
 
@@ -282,6 +375,26 @@ export default function ParticipantDetailPage() {
   if (participant.gender === 'male') categories.push('Мужской зачёт');
   if (participant.gender === 'female') categories.push('Женский зачёт');
   categories.push(BIKE_TYPE_LABELS[participant.bike_type] || participant.bike_type);
+
+  // Живой предпросмотр вычисляемых полей в форме редактирования.
+  const previewStartedIso = startedAt ? fromMinskDateTimeInput(startedAt) : undefined;
+  const previewFinishedIso = finishedAt ? fromMinskDateTimeInput(finishedAt) : undefined;
+  let previewTotalSec: number | undefined = elapsedTimeSec;
+  if (previewStartedIso && previewFinishedIso) {
+    const diff = Math.round(
+      (new Date(previewFinishedIso).getTime() - new Date(previewStartedIso).getTime()) / 1000
+    );
+    previewTotalSec = diff > 0 ? diff : undefined;
+  }
+  const previewDistanceMeters = kmToMeters(parseOptionalNumber(distanceKm));
+  const previewIdleSec =
+    previewTotalSec !== undefined && movingTimeSec !== undefined && previewTotalSec >= movingTimeSec
+      ? previewTotalSec - movingTimeSec
+      : undefined;
+  const computeSpeed = (meters?: number, sec?: number) =>
+    meters && meters > 0 && sec && sec > 0 ? (meters / 1000) / (sec / 3600) : undefined;
+  const previewAvgSpeed = computeSpeed(previewDistanceMeters, previewTotalSec);
+  const previewAvgMovingSpeed = computeSpeed(previewDistanceMeters, movingTimeSec);
 
   return (
     <div className="space-y-6">
@@ -559,19 +672,123 @@ export default function ParticipantDetailPage() {
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                   {isEditingResult ? (
                     <div className="space-y-4">
+                      {/* Старт / финиш заезда */}
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <Label>Время старта</Label>
+                          <Input
+                            type="datetime-local"
+                            value={startedAt}
+                            onChange={(event) => setStartedAt(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Время финиша</Label>
+                          <Input
+                            type="datetime-local"
+                            value={finishedAt}
+                            onChange={(event) => setFinishedAt(event.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Время: общее (если не заданы старт/финиш) и в движении */}
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <TimeInput
-                          label="Общее время"
+                          label="Общее время (если не заданы старт/финиш)"
                           value={elapsedTimeSec}
                           onChange={setElapsedTimeSec}
-                          required
                         />
                         <TimeInput
-                          label="Чистое время"
+                          label="Время в движении"
                           value={movingTimeSec}
                           onChange={setMovingTimeSec}
                         />
                       </div>
+
+                      {/* Метрики из Стравы */}
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                          <Label>Дистанция, км</Label>
+                          <Input
+                            type="number"
+                            step={0.1}
+                            min="0"
+                            placeholder="например 202.3"
+                            value={distanceKm}
+                            onChange={(event) => setDistanceKm(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Пиковая скорость, км/ч</Label>
+                          <Input
+                            type="number"
+                            step={0.1}
+                            min="0"
+                            value={peakSpeedKmh}
+                            onChange={(event) => setPeakSpeedKmh(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Калории, ккал</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={calories}
+                            onChange={(event) => setCalories(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Средний пульс, уд/мин</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={avgHeartRate}
+                            onChange={(event) => setAvgHeartRate(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Максимальный пульс, уд/мин</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={maxHeartRate}
+                            onChange={(event) => setMaxHeartRate(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Средний каденс, об/мин</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={avgCadence}
+                            onChange={(event) => setAvgCadence(event.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Живой предпросмотр расчётов */}
+                      <div className="rounded-lg bg-gray-50 p-3 dark:bg-white/[0.03]">
+                        <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Рассчитывается автоматически
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          <Metric
+                            label="Общее время"
+                            value={previewTotalSec !== undefined ? secondsToTimeString(previewTotalSec) : '-'}
+                          />
+                          <Metric
+                            label="Простой"
+                            value={previewIdleSec !== undefined ? secondsToTimeString(previewIdleSec) : '-'}
+                          />
+                          <Metric label="Ср. скорость" value={formatSpeed(previewAvgSpeed) || '-'} />
+                          <Metric
+                            label="Ср. скорость в движении"
+                            value={formatSpeed(previewAvgMovingSpeed) || '-'}
+                          />
+                        </div>
+                      </div>
+
                       {!currentResult && (
                         <div>
                           <p className="mb-1.5 text-sm font-medium text-gray-700 dark:text-gray-400">
@@ -587,23 +804,40 @@ export default function ParticipantDetailPage() {
                       )}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
-                          Общее время
-                        </p>
-                        <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                          {participant.elapsed_time || '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
-                          Чистое время
-                        </p>
-                        <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                          {participant.moving_time || '-'}
-                        </p>
-                      </div>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                      <Metric
+                        label="Общее время"
+                        value={currentResult?.elapsed_time || participant.elapsed_time || '-'}
+                      />
+                      <Metric
+                        label="Время в движении"
+                        value={currentResult?.moving_time || participant.moving_time || '-'}
+                      />
+                      <Metric label="Простой" value={currentResult?.idle_time || '-'} />
+                      <Metric label="Ср. скорость" value={formatSpeed(currentResult?.avg_speed_kmh) || '-'} />
+                      <Metric
+                        label="Ср. скорость в движении"
+                        value={formatSpeed(currentResult?.avg_moving_speed_kmh) || '-'}
+                      />
+                      <Metric label="Дата проезда" value={currentResult?.ride_date} />
+                      <Metric label="Дистанция" value={formatDistanceKm(currentResult?.distance_meters)} />
+                      <Metric label="Пиковая скорость" value={formatSpeed(currentResult?.peak_speed_kmh)} />
+                      <Metric
+                        label="Средний пульс"
+                        value={currentResult?.avg_heart_rate !== undefined ? `${currentResult.avg_heart_rate} уд/мин` : undefined}
+                      />
+                      <Metric
+                        label="Максимальный пульс"
+                        value={currentResult?.max_heart_rate !== undefined ? `${currentResult.max_heart_rate} уд/мин` : undefined}
+                      />
+                      <Metric
+                        label="Средний каденс"
+                        value={currentResult?.avg_cadence !== undefined ? `${currentResult.avg_cadence} об/мин` : undefined}
+                      />
+                      <Metric
+                        label="Калории"
+                        value={currentResult?.calories !== undefined ? `${currentResult.calories} ккал` : undefined}
+                      />
                     </div>
                   )}
                 </div>
