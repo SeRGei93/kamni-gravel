@@ -868,7 +868,39 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 			b.logDebug("Unsupported gift confirmation callback: user_id=%d data=%s", userID, data)
 		}
 
+	case session.StateAwaitingResultReplaceConfirmation:
+		resultHandler := handler.NewResultHandler(
+			b.sessionManager,
+			b.eventRepo,
+			b.participantRepo,
+			b.submitResultHandler,
+		)
+		switch data {
+		case "confirm_replace_result":
+			text, participant := resultHandler.ConfirmReplacement(ctx, userID)
+			if err := b.AnswerCallback(ctx, callback.ID, ""); err != nil {
+				return
+			}
+			if participant != nil {
+				b.notifyAdminAboutResult(ctx, &callback.From, participant)
+			}
+			_ = b.editMessageWithKeyboard(ctx, msgRef.ChatID, msgRef.MessageID, text, b.getStartKeyboard(ctx, userID))
+		case "cancel_replace_result":
+			text := resultHandler.CancelReplacement(userID)
+			if err := b.AnswerCallback(ctx, callback.ID, "Отменено"); err != nil {
+				return
+			}
+			_ = b.editMessageWithKeyboard(ctx, msgRef.ChatID, msgRef.MessageID, text, b.getStartKeyboard(ctx, userID))
+		default:
+			b.logDebug("Unsupported result replace callback: user_id=%d data=%s", userID, data)
+		}
+
 	default:
+		if isResultReplaceCallback(data) {
+			log.Printf("INFO Result replace stale callback ignored: user_id=%d callback_data=%s state=%s", userID, data, state)
+			_ = b.AnswerCallback(ctx, callback.ID, "Запрос устарел. Отправьте результат заново.")
+			return
+		}
 		if isGiftFlowCallback(data) {
 			giftHandler := handler.NewGiftHandler(
 				b.sessionManager,
@@ -881,6 +913,10 @@ func (b *Bot) handleStatefulCallback(ctx context.Context, callback *models.Callb
 		}
 		b.logDebug("Unsupported Telegram callback state: user_id=%d state=%s data=%s", userID, state, data)
 	}
+}
+
+func isResultReplaceCallback(data string) bool {
+	return data == "confirm_replace_result" || data == "cancel_replace_result"
 }
 
 func (b *Bot) handleGiftFinishCallback(ctx context.Context, callback *models.CallbackQuery, msgRef callbackMessageRef, userID int64, giftHandler *handler.GiftHandler) {
@@ -998,6 +1034,13 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 		_, _ = b.SendMessage(ctx, msg.Chat.ID, text)
 
 	default:
+		// Ссылку на результат Strava принимаем как отправку результата, даже если
+		// пользователь прислал её вне сценария «Я уже проехал».
+		if resultLink, ok := detectStravaResultLink(msg); ok {
+			b.handleDirectResultLink(ctx, msg, sender, resultLink)
+			return
+		}
+
 		// Если нет активного состояния, передаём сообщение менеджерам или показываем меню.
 		if b.botMessagesChatID != 0 {
 			b.forwardUserMessageToProxy(ctx, msg, sender)
@@ -1008,6 +1051,35 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 				_, _ = b.SendMessage(ctx, msg.Chat.ID, "Используйте /start для начала работы с ботом.")
 			}
 		}
+	}
+}
+
+// handleDirectResultLink обрабатывает ссылку Strava, присланную пользователем вне
+// сценария отправки результата. Если результат уже есть — показывает подтверждение
+// замены, иначе сразу сохраняет результат.
+func (b *Bot) handleDirectResultLink(ctx context.Context, msg *models.Message, sender *models.User, resultLink string) {
+	resultHandler := handler.NewResultHandler(
+		b.sessionManager,
+		b.eventRepo,
+		b.participantRepo,
+		b.submitResultHandler,
+	)
+
+	text, markup, participant := resultHandler.SubmitOrConfirm(ctx, sender.ID, resultLink)
+
+	// Требуется подтверждение замены — показываем диалог и остаёмся в сценарии.
+	if markup != nil {
+		_, _ = b.SendMessageWithKeyboard(ctx, msg.Chat.ID, text, *markup)
+		return
+	}
+
+	// Результат сохранён — уведомляем админов.
+	if participant != nil {
+		b.notifyAdminAboutResult(ctx, sender, participant)
+	}
+
+	if !b.sendMainMenu(ctx, msg.Chat.ID, sender.ID, text) {
+		_, _ = b.SendMessage(ctx, msg.Chat.ID, text)
 	}
 }
 

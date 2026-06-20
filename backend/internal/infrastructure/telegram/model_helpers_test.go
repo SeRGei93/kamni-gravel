@@ -291,6 +291,60 @@ func TestMessageTextOrCaption(t *testing.T) {
 	}
 }
 
+func TestDetectStravaResultLink(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      *models.Message
+		wantLink string
+		wantOK   bool
+	}{
+		{
+			name:     "strava activity link",
+			msg:      &models.Message{Text: "https://www.strava.com/activities/18929617181"},
+			wantLink: "https://www.strava.com/activities/18929617181",
+			wantOK:   true,
+		},
+		{
+			name:     "strava app link",
+			msg:      &models.Message{Text: "  https://strava.app.link/luP9ipxj13b  "},
+			wantLink: "https://strava.app.link/luP9ipxj13b",
+			wantOK:   true,
+		},
+		{
+			name:   "non strava url",
+			msg:    &models.Message{Text: "https://example.com/activities/1"},
+			wantOK: false,
+		},
+		{
+			name:   "plain text",
+			msg:    &models.Message{Text: "привет"},
+			wantOK: false,
+		},
+		{
+			name:   "link with extra text",
+			msg:    &models.Message{Text: "мой результат https://www.strava.com/activities/18929617181"},
+			wantOK: false,
+		},
+		{
+			name:   "photo ignored",
+			msg:    &models.Message{Text: "https://www.strava.com/activities/18929617181", Photo: []models.PhotoSize{{FileID: "f"}}},
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotLink, gotOK := detectStravaResultLink(tt.msg)
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok mismatch: got %v, want %v", gotOK, tt.wantOK)
+			}
+			if gotOK && gotLink != tt.wantLink {
+				t.Fatalf("link mismatch: got %q, want %q", gotLink, tt.wantLink)
+			}
+		})
+	}
+}
+
 func TestLargestPhotoFileID(t *testing.T) {
 	tests := []struct {
 		name string

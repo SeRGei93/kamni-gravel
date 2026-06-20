@@ -224,6 +224,16 @@ func GiftConfirmationMenu() models.InlineKeyboardMarkup {
 		Build()
 }
 
+// ResultReplaceConfirmMenu создаёт меню подтверждения замены ранее отправленного результата.
+func ResultReplaceConfirmMenu() models.InlineKeyboardMarkup {
+	return NewBuilder().
+		AddRow(
+			Button("✅ Подтвердить", "confirm_replace_result"),
+			Button("❌ Отмена", "cancel_replace_result"),
+		).
+		Build()
+}
+
 // ConfirmMenu создаёт меню подтверждения
 func ConfirmMenu(confirmData, cancelData string) models.InlineKeyboardMarkup {
 	return NewBuilder().

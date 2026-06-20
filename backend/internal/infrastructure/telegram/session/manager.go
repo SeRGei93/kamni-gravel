@@ -20,6 +20,9 @@ const (
 	StateAwaitingGiftPhoto           SessionState = "awaiting_gift_photo"
 	StateAwaitingGiftConfirmation    SessionState = "awaiting_gift_confirmation"
 	StateAwaitingResultLink          SessionState = "awaiting_result_link"
+	// StateAwaitingResultReplaceConfirmation — пользователь прислал новую ссылку
+	// на результат, имея уже отправленный результат, и подтверждает замену.
+	StateAwaitingResultReplaceConfirmation SessionState = "awaiting_result_replace_confirmation"
 )
 
 // Session представляет сессию пользователя

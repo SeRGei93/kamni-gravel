@@ -7,10 +7,154 @@ import (
 	"testing"
 	"time"
 
+	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/domain/valueobject"
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
+
+const (
+	stravaActivityLink = "https://www.strava.com/activities/18929617181"
+	stravaAppLink      = "https://strava.app.link/luP9ipxj13b"
+)
+
+func newResultHandlerWithSubmit(manager *session.Manager, participant *entity.Participant, event *entity.Event, resultRepo *resultResultRepoFake, now time.Time) *ResultHandler {
+	participantRepo := &resultParticipantRepoFake{participant: participant}
+	eventRepo := &resultEventRepoFake{event: event}
+	submitHandler := command.NewSubmitResultHandler(
+		participantRepo,
+		eventRepo,
+		resultRepo,
+		command.WithSubmitResultClock(func() time.Time { return now }),
+	)
+	return NewResultHandler(
+		manager,
+		eventRepo,
+		participantRepo,
+		submitHandler,
+		WithResultHandlerClock(func() time.Time { return now }),
+	)
+}
+
+func mustResultLink(t *testing.T, raw string) *valueobject.ResultLink {
+	t.Helper()
+	link, err := valueobject.NewResultLink(raw)
+	if err != nil {
+		t.Fatalf("NewResultLink(%q) failed: %v", raw, err)
+	}
+	return link
+}
+
+func TestResultHandlerSubmitOrConfirmSavesWhenNoResult(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
+	start := now.Add(-time.Minute)
+	texts := entity.DefaultEventTelegramTexts()
+	texts.ResultSuccess = "saved {result_link}"
+	resultRepo := &resultResultRepoFake{}
+	h := newResultHandlerWithSubmit(
+		manager,
+		&entity.Participant{ID: 11, EventID: 77},
+		&entity.Event{ID: 77, Active: true, StartDate: &start, TelegramTexts: texts},
+		resultRepo,
+		now,
+	)
+
+	text, markup, participant := h.SubmitOrConfirm(context.Background(), 123, stravaActivityLink)
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if participant == nil {
+		t.Fatal("participant mismatch: got nil, want submitted participant")
+	}
+	if text != "saved "+stravaActivityLink {
+		t.Fatalf("text mismatch: got %q", text)
+	}
+	if resultRepo.created == nil {
+		t.Fatal("result was not created")
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestResultHandlerSubmitOrConfirmRequestsConfirmationThenReplaces(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
+	start := now.Add(-time.Minute)
+	texts := entity.DefaultEventTelegramTexts()
+	texts.ResultSuccess = "saved {result_link}"
+	resultRepo := &resultResultRepoFake{}
+	participant := &entity.Participant{
+		ID:      11,
+		EventID: 77,
+		Result:  &entity.Result{ResultLink: mustResultLink(t, stravaActivityLink)},
+	}
+	h := newResultHandlerWithSubmit(
+		manager,
+		participant,
+		&entity.Event{ID: 77, Active: true, StartDate: &start, TelegramTexts: texts},
+		resultRepo,
+		now,
+	)
+
+	text, markup, submitted := h.SubmitOrConfirm(context.Background(), 123, stravaAppLink)
+
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil, want confirmation keyboard")
+	}
+	if submitted != nil {
+		t.Fatalf("participant mismatch: got %#v, want nil before confirmation", submitted)
+	}
+	if resultRepo.created != nil {
+		t.Fatal("result must not be created before confirmation")
+	}
+	if !strings.Contains(text, stravaAppLink) {
+		t.Fatalf("confirmation text should mention new link: got %q", text)
+	}
+	if got := manager.GetState(123); got != session.StateAwaitingResultReplaceConfirmation {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingResultReplaceConfirmation)
+	}
+
+	confirmText, confirmed := h.ConfirmReplacement(context.Background(), 123)
+
+	if confirmed == nil {
+		t.Fatal("confirmed participant mismatch: got nil")
+	}
+	if resultRepo.created == nil {
+		t.Fatal("result was not created after confirmation")
+	}
+	if got := resultRepo.created.ResultLink.String(); got != stravaAppLink {
+		t.Fatalf("stored link mismatch: got %q, want %q", got, stravaAppLink)
+	}
+	if confirmText != "saved "+stravaAppLink {
+		t.Fatalf("confirm text mismatch: got %q", confirmText)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch after confirmation: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestResultHandlerCancelReplacementResetsState(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	manager.SetState(123, session.StateAwaitingResultReplaceConfirmation)
+	manager.SetData(123, "pending_result_link", stravaAppLink)
+	h := NewResultHandler(manager, &resultEventRepoFake{}, &resultParticipantRepoFake{}, nil)
+
+	text := h.CancelReplacement(123)
+
+	if text != resultReplaceCancelText {
+		t.Fatalf("text mismatch: got %q, want %q", text, resultReplaceCancelText)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+	if _, ok := manager.GetData(123, "pending_result_link"); ok {
+		t.Fatal("pending link should be cleared after cancel")
+	}
+}
 
 func TestResultHandlerStartSubmitResultUsesEditablePromptAfterStart(t *testing.T) {
 	manager := session.NewManager(time.Minute)
@@ -166,5 +310,43 @@ func (r *resultParticipantRepoFake) DeleteWithResultCriteria(ctx context.Context
 	return nil
 }
 func (r *resultParticipantRepoFake) GetFinishedByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
+	return nil, nil
+}
+
+type resultResultRepoFake struct {
+	created *entity.Result
+}
+
+func (r *resultResultRepoFake) Create(ctx context.Context, result *entity.Result) error {
+	r.created = result
+	return nil
+}
+func (r *resultResultRepoFake) FindByID(ctx context.Context, id uint) (*entity.Result, error) {
+	return nil, nil
+}
+func (r *resultResultRepoFake) FindCurrentByParticipant(ctx context.Context, participantID uint) (*entity.Result, error) {
+	return nil, nil
+}
+func (r *resultResultRepoFake) FindByParticipant(ctx context.Context, participantID uint) ([]*entity.Result, error) {
+	return nil, nil
+}
+func (r *resultResultRepoFake) UpdateTime(ctx context.Context, id uint, elapsedSec, movingSec *int) error {
+	return nil
+}
+func (r *resultResultRepoFake) UpdateMetrics(ctx context.Context, result *entity.Result) error {
+	return nil
+}
+func (r *resultResultRepoFake) MarkAsNotCurrent(ctx context.Context, id uint) error { return nil }
+func (r *resultResultRepoFake) Delete(ctx context.Context, id uint) error           { return nil }
+func (r *resultResultRepoFake) AddCriteria(ctx context.Context, resultID, criteriaID uint) error {
+	return nil
+}
+func (r *resultResultRepoFake) RemoveCriteria(ctx context.Context, resultID, criteriaID uint) error {
+	return nil
+}
+func (r *resultResultRepoFake) FindWithCriteria(ctx context.Context, resultID uint) (*entity.Result, error) {
+	return nil, nil
+}
+func (r *resultResultRepoFake) FindByEventWithPlaces(ctx context.Context, eventID uint) ([]*repository.ResultWithPlace, error) {
 	return nil, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
+	"gravel_bot/internal/domain/valueobject"
 	"gravel_bot/internal/infrastructure/telegram/session"
 )
 
@@ -312,6 +313,23 @@ func resultLinkText(msg *models.Message) (string, bool) {
 
 	text := strings.TrimSpace(msg.Text)
 	return text, text != ""
+}
+
+// detectStravaResultLink распознаёт сообщение, состоящее из ссылки Strava на
+// результат (формата https://www.strava.com/activities/<id> или
+// https://strava.app.link/<token>), чтобы принять его как отправку результата.
+func detectStravaResultLink(msg *models.Message) (string, bool) {
+	text, ok := resultLinkText(msg)
+	if !ok {
+		return "", false
+	}
+
+	link, err := valueobject.NewResultLink(text)
+	if err != nil || !link.IsStrava() {
+		return "", false
+	}
+
+	return text, true
 }
 
 func largestPhotoFileID(msg *models.Message) (string, bool) {
