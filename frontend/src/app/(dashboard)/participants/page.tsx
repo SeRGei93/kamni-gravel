@@ -1,17 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { participantsApi } from '@/api/participants';
 import { eventsApi } from '@/api/events';
 import { extractActiveEvent } from '@/utils/events';
 import { type HasGiftFilter } from '@/utils/participants';
 import type { Participant } from '@/types';
 import ParticipantsTable from '@/components/participants/ParticipantsTable';
+import ColumnSettings from '@/components/participants/ColumnSettings';
+import {
+  PARTICIPANT_COLUMNS,
+  PARTICIPANT_COLUMNS_STORAGE_KEY,
+  TOGGLEABLE_COLUMN_KEYS,
+  DEFAULT_VISIBLE_KEYS,
+} from '@/components/participants/participantColumns';
+import { useColumnPreferences } from '@/hooks/useColumnPreferences';
+import ParticipantsFilter, {
+  type ParticipantFilters,
+} from '@/components/participants/ParticipantsFilter';
 import PaginationControls from '@/components/tables/PaginationControls';
 import { usePaginationParams } from '@/hooks/usePaginationParams';
-import Select from '@/components/form/Select';
-import Input from '@/components/form/input/InputField';
-import Label from '@/components/form/Label';
 
 function hasGiftFilterToParam(value: HasGiftFilter): boolean | undefined {
   if (value === 'yes') return true;
@@ -36,7 +44,39 @@ export default function ParticipantsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // Дебаунс поискового запроса (поиск выполняется на сервере).
+  // Настраиваемые колонки (набор сохраняется в localStorage).
+  const { isVisible, toggle, reset } = useColumnPreferences(
+    PARTICIPANT_COLUMNS_STORAGE_KEY,
+    TOGGLEABLE_COLUMN_KEYS,
+    DEFAULT_VISIBLE_KEYS,
+  );
+  const visibleColumns = useMemo(
+    () =>
+      PARTICIPANT_COLUMNS.filter(
+        (column) => column.alwaysVisible || isVisible(column.key),
+      ),
+    [isVisible],
+  );
+
+  // Применённые фильтры для поповера «Фильтр».
+  const appliedFilters = useMemo<ParticipantFilters>(
+    () => ({
+      gender: genderFilter,
+      bikeType: bikeTypeFilter,
+      isFinished: isFinishedFilter,
+      hasGift: hasGiftFilter,
+    }),
+    [genderFilter, bikeTypeFilter, isFinishedFilter, hasGiftFilter],
+  );
+
+  const handleApplyFilters = useCallback((next: ParticipantFilters) => {
+    setGenderFilter(next.gender);
+    setBikeTypeFilter(next.bikeType);
+    setIsFinishedFilter(next.isFinished);
+    setHasGiftFilter(next.hasGift as HasGiftFilter);
+  }, []);
+
+  // Дебаунс поискового запроса (поиск выполняется на сервере, по всему списку).
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
     return () => clearTimeout(timer);
@@ -152,83 +192,57 @@ export default function ParticipantsPage() {
         </div>
       )}
 
-      {/* Фильтры */}
-      <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <div>
-            <Label>Пол</Label>
-            <Select
-              options={[
-                { value: '', label: 'Все' },
-                { value: 'male', label: 'Мужской' },
-                { value: 'female', label: 'Женский' },
-              ]}
-              placeholder="Все"
-              defaultValue={genderFilter}
-              onChange={setGenderFilter}
-            />
-          </div>
+      {/* Панель инструментов: поиск слева, колонки и фильтр справа */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Поиск работает как фильтр по всему списку (server-side, по всем
+            страницам): запрос уходит на бэкенд, total и пагинация считаются
+            по совпадениям. */}
+        <div className="relative w-full sm:max-w-xs">
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+            <svg
+              className="fill-gray-500 dark:fill-gray-400"
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M3.04175 9.37363C3.04175 5.87693 5.87711 3.04199 9.37508 3.04199C12.8731 3.04199 15.7084 5.87693 15.7084 9.37363C15.7084 12.8703 12.8731 15.7053 9.37508 15.7053C5.87711 15.7053 3.04175 12.8703 3.04175 9.37363ZM9.37508 1.54199C5.04902 1.54199 1.54175 5.04817 1.54175 9.37363C1.54175 13.6991 5.04902 17.2053 9.37508 17.2053C11.2674 17.2053 13.003 16.5344 14.357 15.4176L17.177 18.238C17.4699 18.5309 17.9448 18.5309 18.2377 18.238C18.5306 17.9451 18.5306 17.4703 18.2377 17.1774L15.418 14.3573C16.5365 13.0033 17.2084 11.2669 17.2084 9.37363C17.2084 5.04817 13.7011 1.54199 9.37508 1.54199Z"
+                fill=""
+              />
+            </svg>
+          </span>
+          <input
+            type="text"
+            placeholder="Поиск по имени или username..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-4 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
+          />
+        </div>
 
-          <div>
-            <Label>Тип велосипеда</Label>
-            <Select
-              options={[
-                { value: '', label: 'Все' },
-                { value: 'gravel', label: 'Гравийник' },
-                { value: 'mtb', label: 'МТБ' },
-                { value: 'road', label: 'Шоссе' },
-                { value: 'single_speed', label: 'Фикс' },
-                { value: 'tandem', label: 'Тандем' },
-              ]}
-              placeholder="Все"
-              defaultValue={bikeTypeFilter}
-              onChange={setBikeTypeFilter}
-            />
-          </div>
-
-          <div>
-            <Label>Статус</Label>
-            <Select
-              options={[
-                { value: '', label: 'Все' },
-                { value: 'true', label: 'Проехал' },
-                { value: 'false', label: 'Не проехал' },
-              ]}
-              placeholder="Все"
-              defaultValue={isFinishedFilter}
-              onChange={setIsFinishedFilter}
-            />
-          </div>
-
-          <div>
-            <Label>Добавил приз</Label>
-            <Select
-              options={[
-                { value: 'all', label: 'Все' },
-                { value: 'yes', label: 'Да' },
-                { value: 'no', label: 'Нет' },
-              ]}
-              placeholder="Все"
-              defaultValue={hasGiftFilter}
-              onChange={(value) => setHasGiftFilter(value as HasGiftFilter)}
-            />
-          </div>
-
-          <div>
-            <Label>Поиск</Label>
-            <Input
-              type="text"
-              placeholder="Поиск по имени или username"
-              defaultValue={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
+        <div className="flex items-center gap-3">
+          <ColumnSettings
+            columns={PARTICIPANT_COLUMNS}
+            isVisible={isVisible}
+            toggle={toggle}
+            reset={reset}
+          />
+          <ParticipantsFilter
+            filters={appliedFilters}
+            onApply={handleApplyFilters}
+          />
         </div>
       </div>
 
       {/* Таблица */}
       <ParticipantsTable
         participants={participants}
+        columns={visibleColumns}
         isLoading={isLoading}
       />
 

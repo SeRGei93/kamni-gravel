@@ -1,31 +1,26 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
-import Badge from '../ui/badge/Badge';
 import type { Participant } from '@/types';
+import type { ParticipantColumn } from './participantColumns';
 
 interface ParticipantsTableProps {
   participants: Participant[];
+  /** Разрешённые видимые колонки (в порядке отображения). */
+  columns: ParticipantColumn[];
   isLoading?: boolean;
 }
 
-const GENDER_LABELS: Record<string, string> = {
-  male: 'М',
-  female: 'Ж',
-};
-
-const BIKE_TYPE_LABELS: Record<string, string> = {
-  gravel: 'Гравийник',
-  mtb: 'МТБ',
-  road: 'Шоссе',
-  single_speed: 'Фикс',
-  tandem: 'Тандем',
-};
+function alignClass(align?: ParticipantColumn['align']): string {
+  if (align === 'end') return 'text-end';
+  if (align === 'center') return 'text-center';
+  return 'text-start';
+}
 
 export default function ParticipantsTable({
   participants,
+  columns,
   isLoading,
 }: ParticipantsTableProps) {
   if (isLoading) {
@@ -48,160 +43,49 @@ export default function ParticipantsTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+      {/* Натуральная ширина + горизонтальный скролл: число колонок переменное. */}
       <div className="max-w-full overflow-x-auto">
-        <div className="min-w-[1320px]">
-          <Table>
-            <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
-              <TableRow>
+        <Table>
+          <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+            <TableRow>
+              {columns.map((column) => (
                 <TableCell
+                  key={column.key}
                   isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
+                  className={`whitespace-nowrap px-5 py-3 font-medium text-gray-500 ${alignClass(
+                    column.align,
+                  )} text-theme-xs dark:text-gray-400`}
                 >
-                  Telegram ID
+                  {column.label}
                 </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Место
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Username
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Имя
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Пол
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Велосипед
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Общее время
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Чистое время
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Добавил приз
-                </TableCell>
-                <TableCell
-                  isHeader
-                  className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400"
-                >
-                  Получит приз
-                </TableCell>
-              </TableRow>
-            </TableHeader>
-
-            <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-              {participants.map((participant) => (
-                <TableRow
-                  key={participant.id}
-                  className={`${
-                    participant.is_finished
-                      ? 'bg-green-50/50 dark:bg-green-900/10'
-                      : ''
-                  } hover:bg-gray-50 dark:hover:bg-white/5`}
-                >
-                  <TableCell className="px-5 py-4 text-start">
-                    <span className="text-gray-500 text-theme-sm dark:text-gray-400">
-                      {participant.user_id}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    <span className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-                      {participant.place && participant.place > 0
-                        ? participant.place
-                        : '-'}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    <Link
-                      href={`/participants/${participant.id}`}
-                      className="font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300"
-                    >
-                      {participant.username || `@user${participant.user_id}`}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    <span className="text-gray-800 text-theme-sm dark:text-white/90">
-                      {participant.first_name} {participant.last_name}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    <Badge
-                      color={participant.gender === 'male' ? 'info' : 'warning'}
-                      size="sm"
-                    >
-                      {GENDER_LABELS[participant.gender] || participant.gender}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    <Badge color="light" size="sm">
-                      {BIKE_TYPE_LABELS[participant.bike_type] ||
-                        participant.bike_type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    <span className="text-gray-800 text-theme-sm dark:text-white/90">
-                      {participant.elapsed_time || '-'}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    <span className="text-gray-800 text-theme-sm dark:text-white/90">
-                      {participant.moving_time || '-'}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    {participant.has_gift ? (
-                      <Badge color="success" size="sm">
-                        Да
-                      </Badge>
-                    ) : (
-                      <Badge color="light" size="sm">
-                        Нет
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-start">
-                    {participant.prizes_count > 0 ? (
-                      <Badge color="warning" size="sm">
-                        {participant.prizes_count}
-                      </Badge>
-                    ) : (
-                      <span className="text-gray-500 text-theme-sm dark:text-gray-400">
-                        -
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
               ))}
-            </TableBody>
-          </Table>
-        </div>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+            {participants.map((participant) => (
+              <TableRow
+                key={participant.id}
+                className={`${
+                  participant.is_finished
+                    ? 'bg-green-50/50 dark:bg-green-900/10'
+                    : ''
+                } hover:bg-gray-50 dark:hover:bg-white/5`}
+              >
+                {columns.map((column) => (
+                  <TableCell
+                    key={column.key}
+                    className={`whitespace-nowrap px-5 py-4 ${alignClass(
+                      column.align,
+                    )}`}
+                  >
+                    {column.render(participant)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

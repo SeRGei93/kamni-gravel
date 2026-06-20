@@ -92,7 +92,8 @@ func (r *participantRepository) FindByEvent(ctx context.Context, eventID uint) (
 	query := `
 		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.notes, p.registered_at,
 		       u.username, u.first_name, u.last_name,
-		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at
+		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at,
+		       r.started_at, r.finished_at, r.distance_meters, r.avg_heart_rate, r.max_heart_rate, r.peak_speed_kmh, r.avg_cadence, r.calories
 		FROM participants p
 		JOIN users u ON u.id = p.user_id
 		LEFT JOIN results r ON r.participant_id = p.id AND r.is_current = true
@@ -107,14 +108,19 @@ func (r *participantRepository) FindByEvent(ctx context.Context, eventID uint) (
 	defer rows.Close()
 
 	var participants []*entity.Participant
+	withMetrics := 0
 	for rows.Next() {
 		p, err := r.scanParticipantFromRows(rows)
 		if err != nil {
 			return nil, err
 		}
+		if p.Result != nil && p.Result.DistanceMeters != nil {
+			withMetrics++
+		}
 		participants = append(participants, p)
 	}
 
+	log.Printf("Participants loaded by event: event_id=%d count=%d with_ride_metrics=%d", eventID, len(participants), withMetrics)
 	return participants, rows.Err()
 }
 
@@ -122,7 +128,8 @@ func (r *participantRepository) GetFinishedByEvent(ctx context.Context, eventID 
 	query := `
 		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.notes, p.registered_at,
 		       u.username, u.first_name, u.last_name,
-		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at
+		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at,
+		       r.started_at, r.finished_at, r.distance_meters, r.avg_heart_rate, r.max_heart_rate, r.peak_speed_kmh, r.avg_cadence, r.calories
 		FROM participants p
 		JOIN users u ON u.id = p.user_id
 		JOIN results r ON r.participant_id = p.id AND r.is_current = true
@@ -306,6 +313,10 @@ func (r *participantRepository) scanParticipant(row *sql.Row) (*entity.Participa
 	return p, nil
 }
 
+// scanParticipantFromRows сканирует одну строку списка участников.
+// ВНИМАНИЕ: помощник общий для FindByEvent и GetFinishedByEvent — оба SELECT
+// ДОЛЖНЫ выбирать одни и те же 24 колонки в этом же порядке. Изменение списка
+// колонок в одном запросе без второго сломает сканирование другого.
 func (r *participantRepository) scanParticipantFromRows(rows *sql.Rows) (*entity.Participant, error) {
 	p := &entity.Participant{User: &entity.User{}}
 	var bikeType, gender string
@@ -317,6 +328,11 @@ func (r *participantRepository) scanParticipantFromRows(rows *sql.Rows) (*entity
 	var movingTimeSec sql.NullInt64
 	var isCurrent sql.NullBool
 	var submittedAt sql.NullTime
+
+	// Метрики заезда — nullable; сканируем напрямую в указатели (как в result_repo).
+	var startedAt, finishedAt *time.Time
+	var distanceMeters, avgHeartRate, maxHeartRate, avgCadence, calories *int
+	var peakSpeedKmh *float64
 
 	err := rows.Scan(
 		&p.ID,
@@ -335,6 +351,14 @@ func (r *participantRepository) scanParticipantFromRows(rows *sql.Rows) (*entity
 		&movingTimeSec,
 		&isCurrent,
 		&submittedAt,
+		&startedAt,
+		&finishedAt,
+		&distanceMeters,
+		&avgHeartRate,
+		&maxHeartRate,
+		&peakSpeedKmh,
+		&avgCadence,
+		&calories,
 	)
 
 	if err != nil {
@@ -366,6 +390,16 @@ func (r *participantRepository) scanParticipantFromRows(rows *sql.Rows) (*entity
 		if resultLink.Valid && resultLink.String != "" {
 			p.Result.ResultLink, _ = valueobject.NewResultLink(resultLink.String)
 		}
+
+		// Метрики заезда (опциональны)
+		p.Result.StartedAt = startedAt
+		p.Result.FinishedAt = finishedAt
+		p.Result.DistanceMeters = distanceMeters
+		p.Result.AvgHeartRate = avgHeartRate
+		p.Result.MaxHeartRate = maxHeartRate
+		p.Result.PeakSpeedKmh = peakSpeedKmh
+		p.Result.AvgCadence = avgCadence
+		p.Result.Calories = calories
 	}
 
 	return p, nil

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -237,5 +238,117 @@ func TestParticipantsHandlerSearchFilter(t *testing.T) {
 	}
 	if got.Participants[0].Username != "carol" {
 		t.Fatalf("search returned wrong participant: %s", got.Participants[0].Username)
+	}
+}
+
+// Список участников должен отдавать метрики заезда и вычисляемые поля для
+// участника с результатом и опускать их для участника без результата.
+func TestParticipantsHandlerListIncludesRideMetrics(t *testing.T) {
+	started := time.Date(2026, 6, 21, 8, 0, 0, 0, time.UTC)
+	finished := started.Add(2 * time.Hour)
+	elapsed := 7200
+	moving := 6600
+	distance := 50000
+	avgHR := 150
+	maxHR := 180
+	cadence := 85
+	calories := 1200
+	peak := 45.5
+
+	withResult := &entity.Participant{
+		ID:       1,
+		UserID:   111,
+		EventID:  77,
+		BikeType: valueobject.BikeTypeGravel,
+		Gender:   valueobject.GenderMale,
+		User:     &entity.User{ID: 111, Username: "rider_with_result"},
+		Result: &entity.Result{
+			ID:             5,
+			ParticipantID:  1,
+			IsCurrent:      true,
+			ElapsedTimeSec: &elapsed,
+			MovingTimeSec:  &moving,
+			StartedAt:      &started,
+			FinishedAt:     &finished,
+			DistanceMeters: &distance,
+			AvgHeartRate:   &avgHR,
+			MaxHeartRate:   &maxHR,
+			PeakSpeedKmh:   &peak,
+			AvgCadence:     &cadence,
+			Calories:       &calories,
+		},
+	}
+	withoutResult := &entity.Participant{
+		ID:       2,
+		UserID:   222,
+		EventID:  77,
+		BikeType: valueobject.BikeTypeMTB,
+		Gender:   valueobject.GenderFemale,
+		User:     &entity.User{ID: 222, Username: "rider_without_result"},
+	}
+
+	participantRepo := &participantListParticipantRepoFake{
+		participants: []*entity.Participant{withResult, withoutResult},
+	}
+	h := &ParticipantsHandler{
+		participantRepo:        participantRepo,
+		resultRepo:             &participantListResultRepoFake{},
+		giftRepo:               &participantListGiftRepoFake{},
+		getParticipantsHandler: query.NewGetParticipantsHandler(participantRepo),
+	}
+
+	got := getParticipantsList(t, h, "/api/events/77/participants")
+
+	byID := make(map[uint]*dto.ParticipantDTO, len(got.Participants))
+	for _, p := range got.Participants {
+		byID[p.ID] = p
+	}
+
+	wr := byID[1]
+	if wr == nil {
+		t.Fatal("participant with result missing from response")
+	}
+	if wr.StartedAt == nil {
+		t.Error("started_at should be set for participant with result")
+	}
+	if wr.RideFinishedAt == nil {
+		t.Error("ride_finished_at should be set for participant with result")
+	}
+	if wr.DistanceMeters == nil || *wr.DistanceMeters != distance {
+		t.Errorf("distance_meters mismatch: got %v, want %d", wr.DistanceMeters, distance)
+	}
+	if wr.AvgHeartRate == nil || *wr.AvgHeartRate != avgHR {
+		t.Errorf("avg_heart_rate mismatch: got %v, want %d", wr.AvgHeartRate, avgHR)
+	}
+	if wr.MaxHeartRate == nil || *wr.MaxHeartRate != maxHR {
+		t.Errorf("max_heart_rate mismatch: got %v, want %d", wr.MaxHeartRate, maxHR)
+	}
+	if wr.PeakSpeedKmh == nil || *wr.PeakSpeedKmh != peak {
+		t.Errorf("peak_speed_kmh mismatch: got %v, want %g", wr.PeakSpeedKmh, peak)
+	}
+	if wr.AvgCadence == nil || *wr.AvgCadence != cadence {
+		t.Errorf("avg_cadence mismatch: got %v, want %d", wr.AvgCadence, cadence)
+	}
+	if wr.Calories == nil || *wr.Calories != calories {
+		t.Errorf("calories mismatch: got %v, want %d", wr.Calories, calories)
+	}
+	if wr.RideDate == nil || *wr.RideDate != "2026-06-21" {
+		t.Errorf("ride_date mismatch: got %v, want 2026-06-21", wr.RideDate)
+	}
+	if wr.AvgSpeedKmh == nil {
+		t.Error("avg_speed_kmh should be computed for participant with result")
+	}
+	if wr.AvgMovingSpeedKmh == nil {
+		t.Error("avg_moving_speed_kmh should be computed for participant with result")
+	}
+
+	wo := byID[2]
+	if wo == nil {
+		t.Fatal("participant without result missing from response")
+	}
+	if wo.StartedAt != nil || wo.RideFinishedAt != nil || wo.DistanceMeters != nil ||
+		wo.AvgHeartRate != nil || wo.PeakSpeedKmh != nil || wo.RideDate != nil ||
+		wo.AvgSpeedKmh != nil || wo.AvgMovingSpeedKmh != nil {
+		t.Error("participant without result should have nil ride metrics and computed fields")
 	}
 }

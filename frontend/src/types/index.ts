@@ -79,6 +79,23 @@ export interface Participant {
   prizes_count: number;
   matched_gifts?: Gift[]; // все подобранные призы
   matched_gift_assignments?: PrizeGiftAssignment[];
+
+  // Метрики заезда из текущего результата (опциональны).
+  // ВНИМАНИЕ: finished_at выше — дата отправки результата; время финиша
+  // заезда приходит как ride_finished_at (см. backend ParticipantDTO).
+  started_at?: string; // ISO 8601 — время старта заезда
+  ride_finished_at?: string; // ISO 8601 — время финиша заезда
+  distance_meters?: number;
+  avg_heart_rate?: number;
+  max_heart_rate?: number;
+  peak_speed_kmh?: number;
+  avg_cadence?: number;
+  calories?: number;
+  ride_date?: string; // YYYY-MM-DD
+  idle_time_sec?: number;
+  idle_time?: string; // ЧЧ:ММ:СС
+  avg_speed_kmh?: number;
+  avg_moving_speed_kmh?: number;
 }
 
 export interface ParticipantDetail extends Participant {
