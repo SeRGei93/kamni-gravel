@@ -227,9 +227,8 @@ export default function NominationsTable({
                         variant="outline"
                         startIcon={<PencilIcon />}
                         onClick={() => onEdit(nomination)}
-                      >
-                        Редактировать
-                      </Button>
+                        title="Редактировать"
+                      />
                     )}
                     {onDelete && (
                       <Button
@@ -238,9 +237,8 @@ export default function NominationsTable({
                         startIcon={<TrashBinIcon />}
                         onClick={() => handleDelete(nomination.id)}
                         disabled={deletingId === nomination.id}
-                      >
-                        {deletingId === nomination.id ? '...' : 'Удалить'}
-                      </Button>
+                        title="Удалить"
+                      />
                     )}
                   </div>
                 </TableCell>

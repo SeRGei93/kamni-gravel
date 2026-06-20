@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
 import Badge from '../ui/badge/Badge';
 import Button from '../ui/button/Button';
-import { TrashBinIcon, CheckLineIcon } from '@/icons';
+import { CheckLineIcon, PencilIcon } from '@/icons';
 import { getCriteriaColor } from '@/utils/criteria';
 import { formatGiftPlaceRule } from '@/utils/giftPlaceRule';
 import type { Gift } from '@/types';
@@ -17,7 +17,6 @@ interface GiftsTableProps {
   assignedGiftIds?: Set<number>;
   isLoading?: boolean;
   onApprove?: (gift: Gift) => Promise<void>;
-  onDelete?: (giftId: number) => void;
   editQueryString?: string;
 }
 
@@ -26,26 +25,9 @@ export default function GiftsTable({
   assignedGiftIds,
   isLoading,
   onApprove,
-  onDelete,
   editQueryString,
 }: GiftsTableProps) {
-  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [approvingId, setApprovingId] = useState<number | null>(null);
-
-  const handleDelete = async (giftId: number) => {
-    if (!confirm('Вы уверены, что хотите удалить этот приз?')) {
-      return;
-    }
-
-    setDeletingId(giftId);
-    try {
-      if (onDelete) {
-        await onDelete(giftId);
-      }
-    } finally {
-      setDeletingId(null);
-    }
-  };
 
   const handleApprove = async (gift: Gift) => {
     if (!onApprove) {
@@ -291,29 +273,19 @@ export default function GiftsTable({
                             startIcon={<CheckLineIcon />}
                             onClick={() => handleApprove(gift)}
                             disabled={approvingId === gift.id}
-                          >
-                            {approvingId === gift.id ? '...' : 'Проверить'}
-                          </Button>
+                            title="Проверить"
+                          />
                         )}
                         <Link
                           href={`/gifts/${gift.id}${
                             editQueryString ? `?${editQueryString}` : ''
                           }`}
+                          title="Редактировать"
+                          aria-label="Редактировать"
                           className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 transition hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700 dark:hover:bg-white/[0.03] dark:hover:text-gray-300"
                         >
-                            Редактировать
+                          <PencilIcon />
                         </Link>
-                        {onDelete && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            startIcon={<TrashBinIcon />}
-                            onClick={() => handleDelete(gift.id)}
-                            disabled={deletingId === gift.id}
-                          >
-                            {deletingId === gift.id ? '...' : 'Удалить'}
-                          </Button>
-                        )}
                       </div>
                     </TableCell>
                   </TableRow>

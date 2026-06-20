@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
 import Badge from '../ui/badge/Badge';
 import Button from '../ui/button/Button';
-import { TrashBinIcon } from '@/icons';
+import { PencilIcon, TrashBinIcon } from '@/icons';
 import type { Event } from '@/types';
 import { formatMinskDateTime } from '@/utils/minskTime';
 
@@ -186,9 +186,11 @@ export default function EventsTable({
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/events/${event.id}`}
+                      title="Редактировать"
+                      aria-label="Редактировать"
                       className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 transition hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700 dark:hover:bg-white/[0.03] dark:hover:text-gray-300"
                     >
-                      Редактировать
+                      <PencilIcon />
                     </Link>
                     {onDelete && (
                       <Button
@@ -197,9 +199,8 @@ export default function EventsTable({
                         startIcon={<TrashBinIcon />}
                         onClick={() => handleDelete(event.id)}
                         disabled={deletingId === event.id}
-                      >
-                        {deletingId === event.id ? '...' : 'Удалить'}
-                      </Button>
+                        title="Удалить"
+                      />
                     )}
                   </div>
                 </TableCell>

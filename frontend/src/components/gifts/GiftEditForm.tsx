@@ -10,7 +10,7 @@ import Badge from '@/components/ui/badge/Badge';
 import { Modal } from '@/components/ui/modal';
 import { useModal } from '@/hooks/useModal';
 import CriteriaForm from '@/components/criteria/CriteriaForm';
-import { PlusIcon } from '@/icons';
+import { PlusIcon, TrashBinIcon } from '@/icons';
 import { addSelectedCriterionId, getCriteriaColor } from '@/utils/criteria';
 import type {
   BikeTypeFilter,
@@ -40,6 +40,7 @@ interface GiftEditFormProps {
   criteria: Criteria[];
   onSubmit: (data: UpdateGiftRequest) => Promise<void>;
   onCancel: () => void;
+  onDelete?: () => Promise<void>;
   onCreateCriteria?: (data: CreateCriteriaRequest) => Promise<Criteria>;
 }
 
@@ -48,6 +49,7 @@ export default function GiftEditForm({
   criteria,
   onSubmit,
   onCancel,
+  onDelete,
   onCreateCriteria,
 }: GiftEditFormProps) {
   const [description, setDescription] = useState(gift.description);
@@ -74,6 +76,7 @@ export default function GiftEditForm({
     gift.criteria?.map((item) => item.id) || []
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const {
     isOpen: isCriteriaModalOpen,
@@ -180,6 +183,30 @@ export default function GiftEditForm({
       setError('Ошибка обновления приза');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete) {
+      return;
+    }
+    if (!window.confirm('Вы уверены, что хотите удалить этот приз?')) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      setError(null);
+      // При успехе родитель уводит со страницы — состояние сбрасывать не нужно.
+      await onDelete();
+    } catch (err) {
+      console.error('Failed to delete gift:', {
+        gift_id: gift.id,
+        operation: 'delete_gift',
+        error: err,
+      });
+      setError('Ошибка удаления приза');
+      setIsDeleting(false);
     }
   };
 
@@ -320,18 +347,33 @@ export default function GiftEditForm({
         )}
       </div>
 
-      <div className="flex flex-col-reverse gap-3 border-t border-gray-100 pt-5 dark:border-white/[0.05] sm:flex-row sm:justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          disabled={isSubmitting}
-        >
-          Отмена
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Сохранение...' : 'Сохранить'}
-        </Button>
+      <div className="flex flex-col-reverse gap-3 border-t border-gray-100 pt-5 dark:border-white/[0.05] sm:flex-row sm:items-center sm:justify-between">
+        {onDelete ? (
+          <Button
+            type="button"
+            variant="outline"
+            startIcon={<TrashBinIcon />}
+            onClick={handleDelete}
+            disabled={isSubmitting || isDeleting}
+          >
+            {isDeleting ? 'Удаление...' : 'Удалить приз'}
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isSubmitting || isDeleting}
+          >
+            Отмена
+          </Button>
+          <Button type="submit" disabled={isSubmitting || isDeleting}>
+            {isSubmitting ? 'Сохранение...' : 'Сохранить'}
+          </Button>
+        </div>
       </div>
     </form>
 

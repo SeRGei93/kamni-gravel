@@ -144,9 +144,8 @@ export default function CriteriaTable({
                         variant="outline"
                         startIcon={<PencilIcon />}
                         onClick={() => onEdit(criterion)}
-                      >
-                        Редактировать
-                      </Button>
+                        title="Редактировать"
+                      />
                     )}
                     {onDelete && (
                       <Button
@@ -155,9 +154,8 @@ export default function CriteriaTable({
                         startIcon={<TrashBinIcon />}
                         onClick={() => handleDelete(criterion.id)}
                         disabled={deletingId === criterion.id}
-                      >
-                        {deletingId === criterion.id ? '...' : 'Удалить'}
-                      </Button>
+                        title="Удалить"
+                      />
                     )}
                   </div>
                 </TableCell>

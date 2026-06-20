@@ -81,6 +81,11 @@ export default function GiftEditPage() {
     router.push(returnHref);
   };
 
+  const handleDelete = useCallback(async () => {
+    await giftsApi.delete(giftId);
+    router.push(returnHref);
+  }, [giftId, returnHref, router]);
+
   const handleCreateCriteria = useCallback(
     async (data: CreateCriteriaRequest): Promise<Criteria> => {
       try {
@@ -165,6 +170,7 @@ export default function GiftEditPage() {
               criteria={criteria}
               onSubmit={handleSubmit}
               onCancel={() => router.push(returnHref)}
+              onDelete={handleDelete}
               onCreateCriteria={handleCreateCriteria}
             />
           </div>

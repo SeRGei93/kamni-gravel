@@ -1,7 +1,7 @@
 import React, { ReactNode } from "react";
 
 interface ButtonProps {
-  children: ReactNode; // Button text or content
+  children?: ReactNode; // Button text or content (optional for icon-only buttons)
   size?: "xs" | "sm" | "md"; // Button size
   variant?: "primary" | "outline"; // Button variant
   startIcon?: ReactNode; // Icon before the text
@@ -10,6 +10,7 @@ interface ButtonProps {
   disabled?: boolean; // Disabled state
   className?: string; // Additional CSS classes
   type?: "button" | "submit" | "reset"; // Button type
+  title?: string; // Native tooltip / accessible label (useful for icon-only buttons)
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -22,6 +23,7 @@ const Button: React.FC<ButtonProps> = ({
   className = "",
   disabled = false,
   type = "button",
+  title,
 }) => {
   // Size Classes
   const sizeClasses = {
@@ -41,6 +43,8 @@ const Button: React.FC<ButtonProps> = ({
   return (
     <button
       type={type}
+      title={title}
+      aria-label={title}
       className={`inline-flex items-center justify-center font-medium gap-2 rounded-lg transition ${className} ${
         sizeClasses[size]
       } ${variantClasses[variant]} ${

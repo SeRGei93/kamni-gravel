@@ -26,7 +26,6 @@ export default function ParticipantsPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [deletingParticipantId, setDeletingParticipantId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Фильтры
@@ -136,34 +135,6 @@ export default function ParticipantsPage() {
     loadParticipants();
   }, [loadParticipants]);
 
-  const handleDeleteParticipant = async (participant: Participant) => {
-    if (!activeEventId) return;
-    if (
-      !window.confirm(
-        `Удалить участника ${participant.first_name || participant.username || participant.user_id}?`
-      )
-    ) {
-      return;
-    }
-
-    try {
-      setDeletingParticipantId(participant.id);
-      setError(null);
-      await participantsApi.delete(participant.id);
-      await loadParticipants();
-    } catch (err) {
-      setError('Ошибка удаления участника');
-      console.error('Failed to delete participant:', {
-        operation: 'delete_participant',
-        participant_id: participant.id,
-        event_id: activeEventId,
-        error: err,
-      });
-    } finally {
-      setDeletingParticipantId(null);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -259,8 +230,6 @@ export default function ParticipantsPage() {
       <ParticipantsTable
         participants={participants}
         isLoading={isLoading}
-        deletingParticipantId={deletingParticipantId}
-        onDelete={handleDeleteParticipant}
       />
 
       {/* Управление пагинацией */}

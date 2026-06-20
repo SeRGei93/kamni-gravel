@@ -190,23 +190,6 @@ export default function GiftsPage() {
     }
   }, [activeEventId, loadGifts]);
 
-  const handleDelete = async (giftId: number) => {
-    try {
-      await giftsApi.delete(giftId);
-      // Перезагружаем список призов
-      await loadGifts();
-    } catch (err) {
-      setError('Ошибка удаления приза');
-      console.error('Failed to delete gift:', {
-        gift_id: giftId,
-        event_id: activeEventId,
-        operation: 'delete_gift',
-        error: err,
-      });
-      throw err;
-    }
-  };
-
   const handleApprove = async (gift: Gift) => {
     try {
       await giftsApi.update(gift.id, {
@@ -440,7 +423,6 @@ export default function GiftsPage() {
         assignedGiftIds={assignedGiftIds}
         isLoading={isLoading}
         onApprove={handleApprove}
-        onDelete={handleDelete}
         editQueryString={listQueryString}
       />
 
