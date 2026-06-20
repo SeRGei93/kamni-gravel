@@ -106,9 +106,14 @@ func FromGiftPlaceRule(rule valueobject.GiftPlaceRule) *GiftPlaceRuleDTO {
 	}
 }
 
-// GiftListResponse представляет ответ со списком подарков
+// GiftListResponse представляет ответ со списком подарков.
+// Total — полное количество с учётом фильтра (не размер страницы).
+// StatusCounts — количество подарков по статусам проверки (+ ключ "all") для бейджей вкладок.
 type GiftListResponse struct {
-	Gifts            []*GiftDTO `json:"gifts"`
-	Total            int        `json:"total"`
-	ParticipantCount *int       `json:"participant_count,omitempty"`
+	Gifts            []*GiftDTO     `json:"gifts"`
+	Total            int            `json:"total"`
+	Page             int            `json:"page"`
+	PageSize         int            `json:"page_size"`
+	StatusCounts     map[string]int `json:"status_counts,omitempty"`
+	ParticipantCount *int           `json:"participant_count,omitempty"`
 }

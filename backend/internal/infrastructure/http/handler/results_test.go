@@ -313,6 +313,9 @@ func (r *resultsCriteriaRepoFake) FindAll(ctx context.Context) ([]*entity.Criter
 func (r *resultsCriteriaRepoFake) FindByType(ctx context.Context, criteriaType valueobject.CriteriaType) ([]*entity.Criteria, error) {
 	return nil, nil
 }
+func (r *resultsCriteriaRepoFake) ListPaged(ctx context.Context, criteriaType *valueobject.CriteriaType, limit, offset int) ([]*entity.Criteria, int, error) {
+	return nil, 0, nil
+}
 func (r *resultsCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error) {
 	return nil, nil
 }

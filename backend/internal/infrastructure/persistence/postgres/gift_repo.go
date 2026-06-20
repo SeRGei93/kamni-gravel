@@ -320,6 +320,106 @@ func (r *giftRepository) FindByEventAndReviewStatus(ctx context.Context, eventID
 	return gifts, nil
 }
 
+func (r *giftRepository) ListByEventPaged(ctx context.Context, eventID uint, reviewStatus *entity.GiftReviewStatus, limit, offset int) ([]*entity.Gift, int, error) {
+	where := "WHERE g.event_id = $1"
+	args := []interface{}{eventID}
+	if reviewStatus != nil {
+		if !reviewStatus.IsValid() {
+			return nil, 0, fmt.Errorf("invalid gift review status: %s", reviewStatus)
+		}
+		where += " AND g.review_status = $2"
+		args = append(args, reviewStatus.String())
+	}
+
+	// Общее количество с учётом фильтра.
+	var total int
+	countQuery := "SELECT COUNT(*) FROM gifts g " + where
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Страница. limit <= 0 — все строки.
+	listArgs := append([]interface{}{}, args...)
+	limitClause := ""
+	if limit > 0 {
+		listArgs = append(listArgs, limit, offset)
+		limitClause = fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	}
+	listQuery := fmt.Sprintf(`
+		SELECT g.id, g.user_id, g.event_id, g.description,
+		       g.gender_filter, g.bike_type_filter, g.review_status, g.place, g.created_at,
+		       u.username, u.first_name, u.last_name
+		FROM gifts g
+		JOIN users u ON u.id = g.user_id
+		%s
+		ORDER BY g.created_at DESC%s
+	`, where, limitClause)
+
+	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	gifts := make([]*entity.Gift, 0, limit)
+	for rows.Next() {
+		gift := &entity.Gift{User: &entity.User{}}
+		var genderFilter, bikeTypeFilter, scannedReviewStatus sql.NullString
+		var place sql.NullInt32
+		if err := rows.Scan(
+			&gift.ID, &gift.UserID, &gift.EventID, &gift.Description,
+			&genderFilter, &bikeTypeFilter, &scannedReviewStatus, &place, &gift.CreatedAt,
+			&gift.User.Username, &gift.User.FirstName, &gift.User.LastName,
+		); err != nil {
+			return nil, 0, err
+		}
+		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, scannedReviewStatus, place); err != nil {
+			return nil, 0, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
+		}
+		gift.User.ID = gift.UserID
+		gifts = append(gifts, gift)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
+		return nil, 0, err
+	}
+	return gifts, total, nil
+}
+
+func (r *giftRepository) CountsByReviewStatus(ctx context.Context, eventID uint) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT review_status, COUNT(*) FROM gifts WHERE event_id = $1 GROUP BY review_status`,
+		eventID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Гарантируем наличие известных ключей даже при нулевом количестве.
+	counts := map[string]int{
+		entity.GiftReviewStatusPendingReview.String(): 0,
+		entity.GiftReviewStatusApproved.String():      0,
+	}
+	total := 0
+	for rows.Next() {
+		var status sql.NullString
+		var c int
+		if err := rows.Scan(&status, &c); err != nil {
+			return nil, err
+		}
+		if status.Valid {
+			counts[status.String] = c
+		}
+		total += c
+	}
+	counts["all"] = total
+	return counts, rows.Err()
+}
+
 func (r *giftRepository) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
 	query := `
 		SELECT id, user_id, event_id, description, gender_filter, bike_type_filter, review_status, place, created_at

@@ -329,6 +329,17 @@ func (r *miniappHandlerGiftRepoFake) FindByEventAndReviewStatus(ctx context.Cont
 	r.reviewStatus = reviewStatus
 	return r.gifts, nil
 }
+func (r *miniappHandlerGiftRepoFake) ListByEventPaged(ctx context.Context, eventID uint, reviewStatus *entity.GiftReviewStatus, limit, offset int) ([]*entity.Gift, int, error) {
+	r.findByStatusCalled = true
+	r.eventID = eventID
+	if reviewStatus != nil {
+		r.reviewStatus = *reviewStatus
+	}
+	return r.gifts, len(r.gifts), nil
+}
+func (r *miniappHandlerGiftRepoFake) CountsByReviewStatus(ctx context.Context, eventID uint) (map[string]int, error) {
+	return nil, nil
+}
 func (r *miniappHandlerGiftRepoFake) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
 	return nil, nil
 }
@@ -364,6 +375,9 @@ func (r *miniappHandlerCriteriaRepoFake) FindAll(ctx context.Context) ([]*entity
 }
 func (r *miniappHandlerCriteriaRepoFake) FindByType(ctx context.Context, criteriaType valueobject.CriteriaType) ([]*entity.Criteria, error) {
 	return nil, nil
+}
+func (r *miniappHandlerCriteriaRepoFake) ListPaged(ctx context.Context, criteriaType *valueobject.CriteriaType, limit, offset int) ([]*entity.Criteria, int, error) {
+	return nil, 0, nil
 }
 func (r *miniappHandlerCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error) {
 	if r.criteriaByGift == nil {

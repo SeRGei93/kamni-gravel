@@ -88,6 +88,8 @@ export interface ParticipantDetail extends Participant {
 export interface ParticipantListResponse {
   participants: Participant[];
   total: number;
+  page?: number;
+  page_size?: number;
 }
 
 export interface UserBlacklistEntry {
@@ -200,6 +202,9 @@ export interface Gift {
 export interface GiftListResponse {
   gifts: Gift[];
   total: number;
+  page?: number;
+  page_size?: number;
+  status_counts?: Record<string, number>;
   participant_count?: number;
 }
 
@@ -399,6 +404,8 @@ export interface Criteria {
 export interface CriteriaListResponse {
   criteria: Criteria[];
   total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface CreateCriteriaRequest {
@@ -457,10 +464,20 @@ export interface UnassignedPrizeSlot {
   fallback_reason?: string;
 }
 
+export interface PrizeDistributionStats {
+  total_participants: number;
+  with_prizes: number;
+  without_prizes: number;
+  prize_slots: number;
+}
+
 export interface PrizeDistributionListResponse {
   distribution: PrizeDistribution[];
   unassigned_slots?: UnassignedPrizeSlot[];
   total: number;
+  page?: number;
+  page_size?: number;
+  stats?: PrizeDistributionStats;
 }
 
 export interface ApiError {

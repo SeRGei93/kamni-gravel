@@ -12,6 +12,8 @@ import (
 // GetCriteriaQuery представляет запрос на получение критериев
 type GetCriteriaQuery struct {
 	CriteriaType *string // фильтр по типу (опционально)
+	Limit        int     // размер страницы
+	Offset       int     // смещение страницы
 }
 
 // GetCriteriaHandler обрабатывает запрос на получение критериев
@@ -28,29 +30,23 @@ func NewGetCriteriaHandler(
 	}
 }
 
-// Handle выполняет запрос на получение критериев
-func (h *GetCriteriaHandler) Handle(ctx context.Context, query GetCriteriaQuery) ([]*entity.Criteria, error) {
-	// Если указан фильтр по типу
+// Handle выполняет запрос на получение страницы критериев и общего количества.
+func (h *GetCriteriaHandler) Handle(ctx context.Context, query GetCriteriaQuery) ([]*entity.Criteria, int, error) {
+	var typeFilter *valueobject.CriteriaType
 	if query.CriteriaType != nil {
 		criteriaType, err := valueobject.NewCriteriaType(*query.CriteriaType)
 		if err != nil {
-			return nil, fmt.Errorf("invalid criteria type: %w", err)
+			return nil, 0, fmt.Errorf("invalid criteria type: %w", err)
 		}
-		
-		criteria, err := h.criteriaRepo.FindByType(ctx, criteriaType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find criteria by type: %w", err)
-		}
-		return criteria, nil
+		typeFilter = &criteriaType
 	}
-	
-	// Иначе возвращаем все критерии
-	criteria, err := h.criteriaRepo.FindAll(ctx)
+
+	criteria, total, err := h.criteriaRepo.ListPaged(ctx, typeFilter, query.Limit, query.Offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find all criteria: %w", err)
+		return nil, 0, fmt.Errorf("failed to list criteria: %w", err)
 	}
-	
-	return criteria, nil
+
+	return criteria, total, nil
 }
 
 // GetCriteriaByIDQuery представляет запрос на получение критерия по ID

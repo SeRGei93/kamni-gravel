@@ -84,8 +84,11 @@ type ParticipantDetailDTO struct {
 	Prizes []*PrizeAssignmentDTO `json:"prizes"` // полученные призы
 }
 
-// ParticipantListResponse представляет ответ со списком участников
+// ParticipantListResponse представляет ответ со списком участников.
+// Total — полное количество с учётом всех фильтров (не размер страницы).
 type ParticipantListResponse struct {
 	Participants []*ParticipantDTO `json:"participants"`
 	Total        int               `json:"total"`
+	Page         int               `json:"page,omitempty"`
+	PageSize     int               `json:"page_size,omitempty"`
 }

@@ -38,6 +38,12 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 		return
 	}
 
+	// Пагинация включается только если переданы page/page_size. Без них возвращаем
+	// всё распределение (нужно для страницы призов: подсветка назначенных подарков).
+	paginate := r.URL.Query().Has("page") || r.URL.Query().Has("page_size")
+	page := ParsePageParams(r)
+	matchReasonFilter := r.URL.Query().Get("match_reason")
+
 	// Вызываем query handler
 	distributionOutput, err := h.getPrizeDistributionHandler.HandleDetailed(r.Context(), query.GetPrizeDistributionQuery{
 		EventID: uint(eventID),
@@ -48,8 +54,22 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 		return
 	}
 
-	// Конвертируем в DTO
+	// Считаем агрегаты по всему распределению (для карточек статистики).
 	distribution := distributionOutput.Results
+	stats := &dto.PrizeDistributionStatsDTO{TotalParticipants: len(distribution)}
+	for _, dist := range distribution {
+		slots := len(dist.MatchedGiftAssignments)
+		if slots == 0 {
+			slots = len(dist.MatchedGifts)
+		}
+		if slots > 0 {
+			stats.WithPrizes++
+			stats.PrizeSlots += slots
+		}
+	}
+	stats.WithoutPrizes = stats.TotalParticipants - stats.WithPrizes
+
+	// Конвертируем в DTO
 	distributionDTOs := make([]*dto.PrizeDistributionDTO, 0, len(distribution))
 	for _, dist := range distribution {
 		dtoObj := &dto.PrizeDistributionDTO{
@@ -87,16 +107,54 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 
 		distributionDTOs = append(distributionDTOs, dtoObj)
 	}
+
+	// Фильтр по типу совпадения (server-side, до пагинации).
+	if matchReasonFilter != "" {
+		filtered := make([]*dto.PrizeDistributionDTO, 0, len(distributionDTOs))
+		for _, d := range distributionDTOs {
+			if d.MatchReason == matchReasonFilter {
+				filtered = append(filtered, d)
+			}
+		}
+		distributionDTOs = filtered
+	}
+
+	total := len(distributionDTOs)
+
+	// Пагинация (срез страницы) поверх отфильтрованного набора.
+	pageItems := distributionDTOs
+	if paginate {
+		start := page.Offset
+		if start > total {
+			start = total
+		}
+		end := start + page.Limit
+		if end > total {
+			end = total
+		}
+		pageItems = distributionDTOs[start:end]
+	}
+
 	unassignedSlots := make([]*dto.UnassignedPrizeSlotDTO, 0, len(distributionOutput.UnassignedSlots))
 	for _, slot := range distributionOutput.UnassignedSlots {
 		unassignedSlots = append(unassignedSlots, dto.FromUnassignedPrizeSlot(slot))
 	}
 
-	response.Success(w, dto.PrizeDistributionListResponse{
-		Distribution:    distributionDTOs,
+	resp := dto.PrizeDistributionListResponse{
+		Distribution:    pageItems,
 		UnassignedSlots: unassignedSlots,
-		Total:           len(distributionDTOs),
-	})
+		Total:           total,
+		Stats:           stats,
+	}
+	if paginate {
+		resp.Page = page.Page
+		resp.PageSize = page.PageSize
+	}
+
+	log.Printf("DEBUG Prize distribution served: event_id=%d paginated=%t match_reason=%q total=%d page=%d page_size=%d returned=%d",
+		eventID, paginate, matchReasonFilter, total, page.Page, page.PageSize, len(pageItems))
+
+	response.Success(w, resp)
 }
 
 // GetResultsWithPlaces обрабатывает GET /api/events/:id/results

@@ -500,6 +500,12 @@ func (r *giftConfirmGiftRepoFake) FindByEvent(ctx context.Context, eventID uint)
 func (r *giftConfirmGiftRepoFake) FindByEventAndReviewStatus(ctx context.Context, eventID uint, reviewStatus entity.GiftReviewStatus) ([]*entity.Gift, error) {
 	return nil, nil
 }
+func (r *giftConfirmGiftRepoFake) ListByEventPaged(ctx context.Context, eventID uint, reviewStatus *entity.GiftReviewStatus, limit, offset int) ([]*entity.Gift, int, error) {
+	return nil, 0, nil
+}
+func (r *giftConfirmGiftRepoFake) CountsByReviewStatus(ctx context.Context, eventID uint) (map[string]int, error) {
+	return nil, nil
+}
 func (r *giftConfirmGiftRepoFake) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
 	return nil, nil
 }

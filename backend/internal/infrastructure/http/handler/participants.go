@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -71,6 +72,11 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Пагинация включается только если переданы page/page_size. Без них возвращаем
+	// всех участников (нужно для номинаций и глобального поиска).
+	paginate := r.URL.Query().Has("page") || r.URL.Query().Has("page_size")
+	page := ParsePageParams(r)
+
 	// Парсим query параметры для фильтров
 	queryParams := query.GetParticipantsQuery{
 		EventID: uint(eventID),
@@ -89,7 +95,16 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		queryParams.IsFinished = &isFinished
 	}
 
-	// Вызываем query handler
+	// Доп. фильтры, применяемые на уровне обработчика (server-side, чтобы пагинация
+	// была корректной): наличие подарка и текстовый поиск.
+	var hasGiftFilter *bool
+	if hasGiftStr := r.URL.Query().Get("has_gift"); hasGiftStr != "" {
+		hg := hasGiftStr == "true"
+		hasGiftFilter = &hg
+	}
+	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+
+	// Вызываем query handler (фильтры по велосипеду/полу/финишу + расчёт мест)
 	participantsWithPlace, err := h.getParticipantsHandler.Handle(r.Context(), queryParams)
 	if err != nil {
 		log.Printf("Error getting participants: %v", err)
@@ -104,53 +119,91 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем результаты с местами
-	resultsWithPlaces, err := h.resultRepo.FindByEventWithPlaces(r.Context(), uint(eventID))
-	if err != nil {
-		log.Printf("Error getting results with places: %v", err)
-		// Fallback на старую логику
-		participantDTOs := make([]*dto.ParticipantDTO, 0, len(participantsWithPlace))
-		for _, pwp := range participantsWithPlace {
-			participantDTO := dto.FromParticipant(pwp.Participant)
-			participantDTO.Place = pwp.Place
-			_, participantDTO.HasGift = giftUserIDs[pwp.Participant.UserID]
-			participantDTOs = append(participantDTOs, participantDTO)
-		}
-		response.Success(w, dto.ParticipantListResponse{
-			Participants: participantDTOs,
-			Total:        len(participantDTOs),
-		})
-		return
-	}
-
-	// Создаём мапу результатов по participant_id
+	// Получаем результаты с глобальными местами (по всему событию, не зависят от фильтра).
 	resultMap := make(map[uint]*repository.ResultWithPlace)
-	for _, rwp := range resultsWithPlaces {
-		resultMap[rwp.Result.ParticipantID] = rwp
+	if resultsWithPlaces, err := h.resultRepo.FindByEventWithPlaces(r.Context(), uint(eventID)); err != nil {
+		log.Printf("Error getting results with places (places omitted): event_id=%d error=%v", eventID, err)
+	} else {
+		for _, rwp := range resultsWithPlaces {
+			resultMap[rwp.Result.ParticipantID] = rwp
+		}
 	}
 
-	// Конвертируем в DTO с местами
-	participantDTOs := make([]*dto.ParticipantDTO, 0, len(participantsWithPlace))
+	// Конвертируем в DTO с местами и флагом has_gift.
+	allDTOs := make([]*dto.ParticipantDTO, 0, len(participantsWithPlace))
 	for _, pwp := range participantsWithPlace {
 		participantDTO := dto.FromParticipant(pwp.Participant)
 		participantDTO.Place = pwp.Place
 		_, participantDTO.HasGift = giftUserIDs[pwp.Participant.UserID]
 
-		// Добавляем места из результатов
 		if rwp, ok := resultMap[pwp.Participant.ID]; ok {
 			participantDTO.PlaceAbsolute = &rwp.PlaceAbsolute
 			participantDTO.PlaceByGender = &rwp.PlaceByGender
 			participantDTO.PlaceByGenderBike = &rwp.PlaceByGenderBike
 		}
 
-		participantDTOs = append(participantDTOs, participantDTO)
+		allDTOs = append(allDTOs, participantDTO)
 	}
 
-	// Возвращаем ответ
-	response.Success(w, dto.ParticipantListResponse{
-		Participants: participantDTOs,
-		Total:        len(participantDTOs),
-	})
+	// Применяем фильтры has_gift и поиск (server-side, до пагинации).
+	filtered := make([]*dto.ParticipantDTO, 0, len(allDTOs))
+	for _, d := range allDTOs {
+		if hasGiftFilter != nil && d.HasGift != *hasGiftFilter {
+			continue
+		}
+		if searchQuery != "" && !participantMatchesSearch(d, searchQuery) {
+			continue
+		}
+		filtered = append(filtered, d)
+	}
+
+	total := len(filtered)
+
+	// Пагинация (срез страницы) поверх отфильтрованного набора.
+	pageItems := filtered
+	if paginate {
+		start := page.Offset
+		if start > total {
+			start = total
+		}
+		end := start + page.Limit
+		if end > total {
+			end = total
+		}
+		pageItems = filtered[start:end]
+	}
+
+	resp := dto.ParticipantListResponse{
+		Participants: pageItems,
+		Total:        total,
+	}
+	if paginate {
+		resp.Page = page.Page
+		resp.PageSize = page.PageSize
+	}
+
+	log.Printf("DEBUG Participants list served: event_id=%d paginated=%t total=%d page=%d page_size=%d returned=%d has_gift=%v q=%q",
+		eventID, paginate, total, page.Page, page.PageSize, len(pageItems), hasGiftFilter, searchQuery)
+
+	response.Success(w, resp)
+}
+
+// participantMatchesSearch проверяет совпадение участника с поисковым запросом
+// (без учёта регистра) по нику, имени, фамилии и Telegram ID.
+func participantMatchesSearch(d *dto.ParticipantDTO, queryLower string) bool {
+	if strings.Contains(strings.ToLower(d.Username), queryLower) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(d.FirstName), queryLower) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(d.LastName), queryLower) {
+		return true
+	}
+	if strings.Contains(strconv.FormatInt(d.UserID, 10), queryLower) {
+		return true
+	}
+	return false
 }
 
 func (h *ParticipantsHandler) getGiftUserIDsByEvent(ctx context.Context, eventID uint) (map[int64]struct{}, error) {

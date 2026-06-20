@@ -15,6 +15,8 @@ var ErrInvalidGiftReviewStatusFilter = errors.New("invalid gift review status fi
 type GetGiftsQuery struct {
 	EventID      uint
 	ReviewStatus *entity.GiftReviewStatus
+	Limit        int // размер страницы; <= 0 — все подарки
+	Offset       int // смещение страницы
 }
 
 // GetGiftsHandler обрабатывает запрос на получение подарков
@@ -34,39 +36,34 @@ func NewGetGiftsHandler(
 	}
 }
 
-// Handle выполняет запрос на получение подарков
-func (h *GetGiftsHandler) Handle(ctx context.Context, query GetGiftsQuery) ([]*entity.Gift, error) {
-	// Получаем все подарки события
-	var gifts []*entity.Gift
-	var err error
-	if query.ReviewStatus != nil {
-		if !query.ReviewStatus.IsValid() {
-			return nil, ErrInvalidGiftReviewStatusFilter
-		}
-		gifts, err = h.giftRepo.FindByEventAndReviewStatus(ctx, query.EventID, *query.ReviewStatus)
-	} else {
-		gifts, err = h.giftRepo.FindByEvent(ctx, query.EventID)
+// Handle выполняет запрос на получение страницы подарков и общего количества
+// (с учётом фильтра по статусу). Total — полное количество, не размер страницы.
+func (h *GetGiftsHandler) Handle(ctx context.Context, query GetGiftsQuery) ([]*entity.Gift, int, error) {
+	if query.ReviewStatus != nil && !query.ReviewStatus.IsValid() {
+		return nil, 0, ErrInvalidGiftReviewStatusFilter
 	}
+
+	gifts, total, err := h.giftRepo.ListByEventPaged(ctx, query.EventID, query.ReviewStatus, query.Limit, query.Offset)
 	if err != nil {
 		reviewStatus := ""
 		if query.ReviewStatus != nil {
 			reviewStatus = query.ReviewStatus.String()
 		}
-		return nil, fmt.Errorf("failed to find gifts for event %d review_status=%s: %w", query.EventID, reviewStatus, err)
+		return nil, 0, fmt.Errorf("failed to find gifts for event %d review_status=%s: %w", query.EventID, reviewStatus, err)
 	}
 
 	// Загружаем критерии для каждого подарка
 	for _, gift := range gifts {
 		criteria, err := h.criteriaRepo.FindByGift(ctx, gift.ID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get criteria for gift %d: %w", gift.ID, err)
+			return nil, 0, fmt.Errorf("failed to get criteria for gift %d: %w", gift.ID, err)
 		}
 		gift.Criteria = criteria
 
 		// Загружаем прикреплённые файлы
 		attachments, err := h.giftRepo.GetAttachments(ctx, gift.ID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get attachments for gift %d: %w", gift.ID, err)
+			return nil, 0, fmt.Errorf("failed to get attachments for gift %d: %w", gift.ID, err)
 		}
 		gift.Attachments = make([]entity.GiftAttachment, len(attachments))
 		for i, a := range attachments {
@@ -74,7 +71,7 @@ func (h *GetGiftsHandler) Handle(ctx context.Context, query GetGiftsQuery) ([]*e
 		}
 	}
 
-	return gifts, nil
+	return gifts, total, nil
 }
 
 // GetGiftByIDQuery представляет запрос на получение подарка по ID

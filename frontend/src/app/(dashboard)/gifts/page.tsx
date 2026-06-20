@@ -8,6 +8,8 @@ import { prizeDistributionApi } from '@/api/prizeDistribution';
 import { extractActiveEvent } from '@/utils/events';
 import type { BikeTypeFilter, Gift, GenderFilter, GiftReviewStatus } from '@/types';
 import GiftsTable from '@/components/gifts/GiftsTable';
+import PaginationControls from '@/components/tables/PaginationControls';
+import { usePaginationParams } from '@/hooks/usePaginationParams';
 import Button from '@/components/ui/button/Button';
 import Input from '@/components/form/input/InputField';
 import Select from '@/components/form/Select';
@@ -29,9 +31,12 @@ export default function GiftsPage() {
   const searchParams = useSearchParams();
   const reviewStatusParam = searchParams.get('review_status');
 
+  const { page, pageSize, setPage, setPageSize } = usePaginationParams();
+
   const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
-  const [allGifts, setAllGifts] = useState<Gift[]>([]);
+  const [total, setTotal] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [reviewStatusFilter, setReviewStatusFilter] =
     useState<GiftReviewStatusFilter>(
       parseReviewStatusFilter(reviewStatusParam)
@@ -68,6 +73,8 @@ export default function GiftsPage() {
         } else {
           params.delete('review_status');
         }
+        // Смена фильтра сбрасывает на первую страницу.
+        params.delete('page');
       }
 
       const query = params.toString();
@@ -85,7 +92,8 @@ export default function GiftsPage() {
       setActiveEventId(activeEvent?.id ?? null);
       if (!activeEvent) {
         setGifts([]);
-        setAllGifts([]);
+        setTotal(0);
+        setStatusCounts({});
         setAssignedGiftIds(new Set());
         setError('Нет активного события');
       }
@@ -118,19 +126,23 @@ export default function GiftsPage() {
       setIsLoading(true);
       setError(null);
 
-      // Загружаем полный список для счётчиков и выбранный фильтр для таблицы.
-      const allResponse = await giftsApi.getByEvent(activeEventId);
-      setAllGifts(allResponse.gifts);
-
-      if (reviewStatusFilter === 'all') {
-        setGifts(allResponse.gifts);
-      } else {
-        const response = await giftsApi.getByEvent(
-          activeEventId,
-          reviewStatusFilter
-        );
-        setGifts(response.gifts);
-      }
+      // Серверная пагинация + счётчики по статусам приходят в одном ответе.
+      const response = await giftsApi.listByEvent({
+        eventId: activeEventId,
+        review_status:
+          reviewStatusFilter === 'all' ? undefined : reviewStatusFilter,
+        page,
+        page_size: pageSize,
+      });
+      console.debug('[gifts] loaded', {
+        page,
+        pageSize,
+        total: response.total,
+        statusCounts: response.status_counts,
+      });
+      setGifts(response.gifts);
+      setTotal(response.total);
+      setStatusCounts(response.status_counts ?? {});
 
       // Загружаем распределение призов
       try {
@@ -165,15 +177,16 @@ export default function GiftsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeEventId, reviewStatusFilter]);
+  }, [activeEventId, reviewStatusFilter, page, pageSize]);
 
-  // Загрузка призов при изменении фильтров
+  // Загрузка призов при изменении фильтров/страницы
   useEffect(() => {
     if (activeEventId) {
       loadGifts();
     } else {
       setGifts([]);
-      setAllGifts([]);
+      setTotal(0);
+      setStatusCounts({});
     }
   }, [activeEventId, loadGifts]);
 
@@ -276,12 +289,9 @@ export default function GiftsPage() {
     }
   };
 
-  const pendingReviewCount = gifts.filter(
-    (gift) => gift.review_status === 'pending_review'
-  ).length;
-  const totalPendingReviewCount = allGifts.filter(
-    (gift) => gift.review_status === 'pending_review'
-  ).length;
+  // Счётчики по статусам приходят с сервера (по всему событию, не по странице).
+  const totalGiftsCount = statusCounts.all ?? 0;
+  const totalPendingReviewCount = statusCounts.pending_review ?? 0;
 
   return (
     <div className="space-y-6">
@@ -420,15 +430,9 @@ export default function GiftsPage() {
       </div>
 
       {/* Информация о количестве */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Показано призов: {gifts.length}
-        </p>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Всего: {allGifts.length} · На проверке: {totalPendingReviewCount}
-          {reviewStatusFilter !== 'all' && ` · В фильтре: ${pendingReviewCount}`}
-        </p>
-      </div>
+      <p className="text-sm text-gray-600 dark:text-gray-400">
+        Всего призов: {totalGiftsCount} · На проверке: {totalPendingReviewCount}
+      </p>
 
       {/* Таблица */}
       <GiftsTable
@@ -438,6 +442,15 @@ export default function GiftsPage() {
         onApprove={handleApprove}
         onDelete={handleDelete}
         editQueryString={listQueryString}
+      />
+
+      {/* Управление пагинацией */}
+      <PaginationControls
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
       />
     </div>
   );

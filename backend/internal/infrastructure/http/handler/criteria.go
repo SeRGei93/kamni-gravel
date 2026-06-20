@@ -43,32 +43,50 @@ func NewCriteriaHandler(
 
 // GetAll обрабатывает GET /api/criteria - список критериев
 func (h *CriteriaHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	// Пагинация включается только если переданы page/page_size. Без них возвращаем
+	// все критерии (нужно для селекторов критериев на других страницах).
+	paginate := q.Has("page") || q.Has("page_size")
+	page := ParsePageParams(r)
+
 	queryParams := query.GetCriteriaQuery{}
-	
+	if paginate {
+		queryParams.Limit = page.Limit
+		queryParams.Offset = page.Offset
+	}
+
 	// Парсим query параметры
-	if criteriaType := r.URL.Query().Get("type"); criteriaType != "" {
+	if criteriaType := q.Get("type"); criteriaType != "" {
 		queryParams.CriteriaType = &criteriaType
 	}
-	
+
 	// Вызываем query handler
-	criteria, err := h.getCriteriaHandler.Handle(r.Context(), queryParams)
+	criteria, total, err := h.getCriteriaHandler.Handle(r.Context(), queryParams)
 	if err != nil {
 		log.Printf("Error getting criteria: %v", err)
 		response.InternalServerError(w, "Failed to get criteria")
 		return
 	}
-	
+
 	// Конвертируем в DTO
 	criteriaDTOs := make([]*dto.CriteriaDTO, 0, len(criteria))
 	for _, c := range criteria {
 		criteriaDTOs = append(criteriaDTOs, dto.FromCriteria(c))
 	}
-	
-	// Возвращаем ответ
-	response.Success(w, dto.CriteriaListResponse{
+
+	resp := dto.CriteriaListResponse{
 		Criteria: criteriaDTOs,
-		Total:    len(criteriaDTOs),
-	})
+		Total:    total,
+	}
+	if paginate {
+		resp.Page = page.Page
+		resp.PageSize = page.PageSize
+		log.Printf("DEBUG Criteria list served (paged): total=%d page=%d page_size=%d returned=%d", total, page.Page, page.PageSize, len(criteriaDTOs))
+	} else {
+		log.Printf("DEBUG Criteria list served (all): total=%d returned=%d", total, len(criteriaDTOs))
+	}
+
+	response.Success(w, resp)
 }
 
 // GetByID обрабатывает GET /api/criteria/:id - детали критерия

@@ -26,6 +26,10 @@ type CriteriaRepository interface {
 	
 	// FindByType возвращает критерии по типу
 	FindByType(ctx context.Context, criteriaType valueobject.CriteriaType) ([]*entity.Criteria, error)
+
+	// ListPaged возвращает страницу критериев и общее количество (с учётом фильтра по типу).
+	// criteriaType == nil — без фильтра по типу.
+	ListPaged(ctx context.Context, criteriaType *valueobject.CriteriaType, limit, offset int) ([]*entity.Criteria, int, error)
 	
 	// FindByGift возвращает критерии, привязанные к подарку
 	FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error)

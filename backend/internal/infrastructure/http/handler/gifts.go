@@ -83,14 +83,23 @@ func (h *GiftsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		reviewStatus = &status
 	}
 
+	// Пагинация включается только если переданы page/page_size. Без них возвращаем
+	// все подарки (нужно для модалок выбора приза и подсчёта назначений).
+	paginate := r.URL.Query().Has("page") || r.URL.Query().Has("page_size")
+	page := ParsePageParams(r)
+
 	// Парсим query параметры для фильтров
 	queryParams := query.GetGiftsQuery{
 		EventID:      uint(eventID),
 		ReviewStatus: reviewStatus,
 	}
+	if paginate {
+		queryParams.Limit = page.Limit
+		queryParams.Offset = page.Offset
+	}
 
 	// Вызываем query handler
-	gifts, err := h.getGiftsHandler.Handle(r.Context(), queryParams)
+	gifts, total, err := h.getGiftsHandler.Handle(r.Context(), queryParams)
 	if err != nil {
 		log.Printf("Error getting gifts: event_id=%d review_status=%s error=%v", eventID, reviewStatusParam, err)
 		if errors.Is(err, query.ErrInvalidGiftReviewStatusFilter) {
@@ -101,17 +110,35 @@ func (h *GiftsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Считаем количество подарков по статусам для бейджей вкладок (по всему событию).
+	statusCounts, err := h.giftRepo.CountsByReviewStatus(r.Context(), uint(eventID))
+	if err != nil {
+		log.Printf("Error counting gifts by review status: event_id=%d error=%v", eventID, err)
+		response.InternalServerError(w, "Failed to get gifts")
+		return
+	}
+
 	// Конвертируем в DTO
 	giftDTOs := make([]*dto.GiftDTO, 0, len(gifts))
 	for _, gift := range gifts {
 		giftDTOs = append(giftDTOs, dto.FromGift(gift))
 	}
 
+	resp := dto.GiftListResponse{
+		Gifts:        giftDTOs,
+		Total:        total,
+		StatusCounts: statusCounts,
+	}
+	if paginate {
+		resp.Page = page.Page
+		resp.PageSize = page.PageSize
+	}
+
+	log.Printf("DEBUG Gifts list served: event_id=%d review_status=%s paginated=%t total=%d page=%d page_size=%d returned=%d status_counts=%v",
+		eventID, reviewStatusParam, paginate, total, page.Page, page.PageSize, len(giftDTOs), statusCounts)
+
 	// Возвращаем ответ
-	response.Success(w, dto.GiftListResponse{
-		Gifts: giftDTOs,
-		Total: len(giftDTOs),
-	})
+	response.Success(w, resp)
 }
 
 // GetByID обрабатывает GET /api/gifts/:id - детали подарка

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { criteriaApi } from '@/api/criteria';
 import type {
   Criteria,
@@ -9,39 +9,46 @@ import type {
 } from '@/types';
 import CriteriaTable from '@/components/criteria/CriteriaTable';
 import CriteriaForm from '@/components/criteria/CriteriaForm';
+import PaginationControls from '@/components/tables/PaginationControls';
 import Button from '@/components/ui/button/Button';
 import { Modal } from '@/components/ui/modal';
 import { useModal } from '@/hooks/useModal';
+import { usePaginationParams } from '@/hooks/usePaginationParams';
 import { PlusIcon } from '@/icons';
 
 export default function CriteriaPage() {
   const [criteria, setCriteria] = useState<Criteria[]>([]);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingCriteria, setEditingCriteria] = useState<Criteria | null>(null);
+
+  const { page, pageSize, setPage, setPageSize } = usePaginationParams();
 
   const { isOpen: isCreateOpen, openModal: openCreateModal, closeModal: closeCreateModal } =
     useModal();
   const { isOpen: isEditOpen, openModal: openEditModal, closeModal: closeEditModal } = useModal();
 
-  // Загрузка критериев
-  useEffect(() => {
-    loadCriteria();
-  }, []);
-
-  const loadCriteria = async () => {
+  const loadCriteria = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await criteriaApi.getAll();
+      const response = await criteriaApi.list({ page, page_size: pageSize });
+      console.debug('[criteria] loaded', { page, pageSize, total: response.total });
       setCriteria(response.criteria);
+      setTotal(response.total);
     } catch (err) {
       setError('Ошибка загрузки критериев');
       console.error('Failed to load criteria:', err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, pageSize]);
+
+  // Загрузка критериев при смене страницы/размера страницы
+  useEffect(() => {
+    loadCriteria();
+  }, [loadCriteria]);
 
   const handleCreate = async (data: CreateCriteriaRequest | UpdateCriteriaRequest) => {
     try {
@@ -111,19 +118,21 @@ export default function CriteriaPage() {
         </div>
       )}
 
-      {/* Информация о количестве */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Найдено критериев: {criteria.length}
-        </p>
-      </div>
-
       {/* Таблица критериев */}
       <CriteriaTable
         criteria={criteria}
         isLoading={isLoading}
         onEdit={handleEdit}
         onDelete={handleDelete}
+      />
+
+      {/* Управление пагинацией */}
+      <PaginationControls
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
       />
 
       {/* Модальное окно создания */}

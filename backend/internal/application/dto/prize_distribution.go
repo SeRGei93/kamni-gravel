@@ -39,11 +39,24 @@ type UnassignedPrizeSlotDTO struct {
 	FallbackReason string   `json:"fallback_reason,omitempty"`
 }
 
-// PrizeDistributionListResponse представляет ответ со списком распределения призов
+// PrizeDistributionStatsDTO — агрегаты по всему распределению (не по странице),
+// чтобы карточки статистики оставались корректными при серверной пагинации.
+type PrizeDistributionStatsDTO struct {
+	TotalParticipants int `json:"total_participants"`
+	WithPrizes        int `json:"with_prizes"`
+	WithoutPrizes     int `json:"without_prizes"`
+	PrizeSlots        int `json:"prize_slots"`
+}
+
+// PrizeDistributionListResponse представляет ответ со списком распределения призов.
+// Total — полное количество с учётом фильтра (не размер страницы).
 type PrizeDistributionListResponse struct {
-	Distribution    []*PrizeDistributionDTO   `json:"distribution"`
-	UnassignedSlots []*UnassignedPrizeSlotDTO `json:"unassigned_slots,omitempty"`
-	Total           int                       `json:"total"`
+	Distribution    []*PrizeDistributionDTO    `json:"distribution"`
+	UnassignedSlots []*UnassignedPrizeSlotDTO  `json:"unassigned_slots,omitempty"`
+	Total           int                        `json:"total"`
+	Page            int                        `json:"page,omitempty"`
+	PageSize        int                        `json:"page_size,omitempty"`
+	Stats           *PrizeDistributionStatsDTO `json:"stats,omitempty"`
 }
 
 // FromPrizeGiftAssignment создаёт DTO назначения слота подарка.

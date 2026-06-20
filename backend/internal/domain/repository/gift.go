@@ -28,6 +28,14 @@ type GiftRepository interface {
 	// FindByEventAndReviewStatus находит подарки события по статусу проверки
 	FindByEventAndReviewStatus(ctx context.Context, eventID uint, reviewStatus entity.GiftReviewStatus) ([]*entity.Gift, error)
 
+	// ListByEventPaged возвращает страницу подарков события (с опц. фильтром по статусу)
+	// и общее количество с учётом фильтра. limit <= 0 — вернуть все строки.
+	ListByEventPaged(ctx context.Context, eventID uint, reviewStatus *entity.GiftReviewStatus, limit, offset int) ([]*entity.Gift, int, error)
+
+	// CountsByReviewStatus возвращает количество подарков события по статусам проверки
+	// (ключи статусов + ключ "all" с общим количеством).
+	CountsByReviewStatus(ctx context.Context, eventID uint) (map[string]int, error)
+
 	// FindByUser находит все подарки пользователя
 	FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error)
 

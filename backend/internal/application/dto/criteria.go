@@ -26,8 +26,11 @@ func FromCriteria(c *entity.Criteria) *CriteriaDTO {
 	}
 }
 
-// CriteriaListResponse представляет ответ со списком критериев
+// CriteriaListResponse представляет ответ со списком критериев.
+// Total — полное количество с учётом фильтра (не размер текущей страницы).
 type CriteriaListResponse struct {
 	Criteria []*CriteriaDTO `json:"criteria"`
 	Total    int            `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
 }

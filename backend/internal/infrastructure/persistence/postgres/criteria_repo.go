@@ -108,6 +108,65 @@ func (r *criteriaRepository) FindAll(ctx context.Context) ([]*entity.Criteria, e
 	return criteriaList, rows.Err()
 }
 
+func (r *criteriaRepository) ListPaged(ctx context.Context, criteriaType *valueobject.CriteriaType, limit, offset int) ([]*entity.Criteria, int, error) {
+	where := ""
+	args := []interface{}{}
+	if criteriaType != nil {
+		where = " WHERE criteria_type = $1"
+		args = append(args, criteriaType.String())
+	}
+
+	// Общее количество с учётом фильтра.
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM criteria"+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Страница. limit <= 0 — вернуть все строки (без LIMIT/OFFSET), напр. для селекторов.
+	listArgs := append([]interface{}{}, args...)
+	limitClause := ""
+	if limit > 0 {
+		listArgs = append(listArgs, limit, offset)
+		limitClause = fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	}
+	listQuery := fmt.Sprintf(
+		"SELECT id, name, description, criteria_type, created_at FROM criteria%s ORDER BY created_at DESC%s",
+		where, limitClause,
+	)
+
+	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	criteriaList := make([]*entity.Criteria, 0, limit)
+	for rows.Next() {
+		criteria := &entity.Criteria{}
+		var criteriaTypeStr string
+
+		if err := rows.Scan(
+			&criteria.ID,
+			&criteria.Name,
+			&criteria.Description,
+			&criteriaTypeStr,
+			&criteria.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+
+		ct, err := valueobject.NewCriteriaType(criteriaTypeStr)
+		if err != nil {
+			return nil, 0, err
+		}
+		criteria.CriteriaType = ct
+
+		criteriaList = append(criteriaList, criteria)
+	}
+
+	return criteriaList, total, rows.Err()
+}
+
 func (r *criteriaRepository) FindByResult(ctx context.Context, resultID uint) ([]*entity.Criteria, error) {
 	query := `
 		SELECT c.id, c.name, c.description, c.criteria_type, c.created_at

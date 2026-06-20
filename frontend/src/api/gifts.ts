@@ -5,6 +5,8 @@ const GIFTS_PREFIX = '/api/gifts';
 const EVENTS_PREFIX = '/api/events';
 
 export const giftsApi = {
+  // getByEvent возвращает ВСЕ подарки события (без пагинации) — для модалок выбора
+  // приза и т.п. Не передавайте page/page_size.
   async getByEvent(
     eventId: number,
     reviewStatus?: GiftReviewStatus
@@ -16,6 +18,24 @@ export const giftsApi = {
     const query = params.toString();
     return get<GiftListResponse>(
       `${EVENTS_PREFIX}/${eventId}/gifts${query ? `?${query}` : ''}`
+    );
+  },
+
+  // listByEvent возвращает страницу подарков (серверная пагинация) + status_counts.
+  async listByEvent(params: {
+    eventId: number;
+    review_status?: GiftReviewStatus;
+    page: number;
+    page_size: number;
+  }): Promise<GiftListResponse> {
+    const search = new URLSearchParams();
+    if (params.review_status) {
+      search.set('review_status', params.review_status);
+    }
+    search.set('page', String(params.page));
+    search.set('page_size', String(params.page_size));
+    return get<GiftListResponse>(
+      `${EVENTS_PREFIX}/${params.eventId}/gifts?${search.toString()}`
     );
   },
 

@@ -49,7 +49,8 @@ func (h *GetMiniappGiftsHandler) Handle(ctx context.Context, query GetMiniappGif
 	}
 
 	approvedStatus := entity.GiftReviewStatusApproved
-	gifts, err := h.getGiftsHandler.Handle(ctx, GetGiftsQuery{
+	// Мини-приложению нужны все одобренные подарки (Limit=0 — без пагинации).
+	gifts, _, err := h.getGiftsHandler.Handle(ctx, GetGiftsQuery{
 		EventID:      query.EventID,
 		ReviewStatus: &approvedStatus,
 	})

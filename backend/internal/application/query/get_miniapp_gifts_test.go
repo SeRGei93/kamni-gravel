@@ -225,6 +225,8 @@ type miniappGiftRepoFake struct {
 	reviewStatus       entity.GiftReviewStatus
 	gifts              []*entity.Gift
 	attachments        map[uint][]*entity.GiftAttachment
+	gotLimit           int
+	gotOffset          int
 }
 
 func (r *miniappGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error { return nil }
@@ -253,6 +255,18 @@ func (r *miniappGiftRepoFake) FindByEventAndReviewStatus(ctx context.Context, ev
 		}
 	}
 	return filtered, nil
+}
+func (r *miniappGiftRepoFake) ListByEventPaged(ctx context.Context, eventID uint, reviewStatus *entity.GiftReviewStatus, limit, offset int) ([]*entity.Gift, int, error) {
+	r.gotLimit = limit
+	r.gotOffset = offset
+	if reviewStatus != nil {
+		filtered, err := r.FindByEventAndReviewStatus(ctx, eventID, *reviewStatus)
+		return filtered, len(filtered), err
+	}
+	return r.gifts, len(r.gifts), nil
+}
+func (r *miniappGiftRepoFake) CountsByReviewStatus(ctx context.Context, eventID uint) (map[string]int, error) {
+	return nil, nil
 }
 func (r *miniappGiftRepoFake) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
 	return nil, nil
@@ -287,6 +301,9 @@ func (r *miniappCriteriaRepoFake) FindAll(ctx context.Context) ([]*entity.Criter
 }
 func (r *miniappCriteriaRepoFake) FindByType(ctx context.Context, criteriaType valueobject.CriteriaType) ([]*entity.Criteria, error) {
 	return nil, nil
+}
+func (r *miniappCriteriaRepoFake) ListPaged(ctx context.Context, criteriaType *valueobject.CriteriaType, limit, offset int) ([]*entity.Criteria, int, error) {
+	return nil, 0, nil
 }
 func (r *miniappCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error) {
 	if r.criteriaByGift == nil {

@@ -1,20 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
 import { extractActiveEvent } from '@/utils/events';
-import type { PrizeDistribution, UnassignedPrizeSlot } from '@/types';
+import type {
+  PrizeDistribution,
+  PrizeDistributionStats,
+  UnassignedPrizeSlot,
+} from '@/types';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
 import Badge from '@/components/ui/badge/Badge';
+import PaginationControls from '@/components/tables/PaginationControls';
+import { usePaginationParams } from '@/hooks/usePaginationParams';
 import { getCriteriaColor } from '@/utils/criteria';
 import { formatPrizeAssignment } from '@/utils/giftPlaceRule';
-import {
-  countParticipantsWithPrizes,
-  countPrizeAssignmentSlots,
-  formatUnassignedPrizeSlot,
-} from '@/utils/prizeDistribution';
+import { formatUnassignedPrizeSlot } from '@/utils/prizeDistribution';
 import Link from 'next/link';
 
 const GENDER_LABELS: Record<string, string> = {
@@ -45,9 +47,13 @@ const MATCH_REASON_COLORS: Record<string, 'success' | 'info' | 'warning' | 'ligh
 };
 
 export default function PrizeDistributionPage() {
+  const { page, pageSize, setPage, setPageSize } = usePaginationParams();
+
   const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [distribution, setDistribution] = useState<PrizeDistribution[]>([]);
   const [unassignedSlots, setUnassignedSlots] = useState<UnassignedPrizeSlot[]>([]);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<PrizeDistributionStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,12 +68,16 @@ export default function PrizeDistributionPage() {
       if (!activeEvent) {
         setDistribution([]);
         setUnassignedSlots([]);
+        setTotal(0);
+        setStats(null);
         setError('Нет активного события');
       }
     } catch (err) {
       setActiveEventId(null);
       setDistribution([]);
       setUnassignedSlots([]);
+      setTotal(0);
+      setStats(null);
       setError('Ошибка загрузки активного события');
       console.error('Failed to load active event:', {
         operation: 'load_active_event',
@@ -83,10 +93,22 @@ export default function PrizeDistributionPage() {
       setIsLoading(true);
       setError(null);
       const response = await prizeDistributionApi.getPrizeDistribution(
-        activeEventId
+        activeEventId,
+        {
+          match_reason: matchReasonFilter || undefined,
+          page,
+          page_size: pageSize,
+        }
       );
+      console.debug('[prize-distribution] loaded', {
+        page,
+        pageSize,
+        total: response.total,
+      });
       setDistribution(response.distribution);
       setUnassignedSlots(response.unassigned_slots ?? []);
+      setTotal(response.total);
+      setStats(response.stats ?? null);
     } catch (err) {
       setError('Ошибка загрузки распределения призов');
       console.error('Failed to load prize distribution:', {
@@ -97,7 +119,7 @@ export default function PrizeDistributionPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeEventId]);
+  }, [activeEventId, matchReasonFilter, page, pageSize]);
 
   useEffect(() => {
     loadActiveEvent();
@@ -109,21 +131,30 @@ export default function PrizeDistributionPage() {
     } else {
       setDistribution([]);
       setUnassignedSlots([]);
+      setTotal(0);
+      setStats(null);
     }
   }, [loadDistribution, activeEventId]);
 
-  // Фильтрация
-  const filteredDistribution = distribution.filter((d) => {
-    if (matchReasonFilter && d.match_reason !== matchReasonFilter) {
-      return false;
+  // Сброс на первую страницу при смене фильтра (но не на первом рендере).
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
     }
-    return true;
-  });
+    if (page !== 1) setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchReasonFilter]);
 
-  // Статистика
-  const withPrizes = countParticipantsWithPrizes(distribution);
-  const withoutPrizes = distribution.length - withPrizes;
-  const totalPrizeAssignments = countPrizeAssignmentSlots(distribution);
+  // Распределение уже отфильтровано и постранично разбито на сервере.
+  const filteredDistribution = distribution;
+
+  // Статистика приходит с сервера (по всему распределению, не по странице).
+  const totalParticipants = stats?.total_participants ?? 0;
+  const withPrizes = stats?.with_prizes ?? 0;
+  const withoutPrizes = stats?.without_prizes ?? 0;
+  const totalPrizeAssignments = stats?.prize_slots ?? 0;
 
   return (
     <div className="space-y-6">
@@ -170,7 +201,7 @@ export default function PrizeDistributionPage() {
             Всего участников
           </p>
           <p className="mt-1 text-2xl font-semibold text-gray-800 dark:text-white">
-            {distribution.length}
+            {totalParticipants}
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
@@ -398,6 +429,15 @@ export default function PrizeDistributionPage() {
           </table>
         </div>
       </div>
+
+      {/* Управление пагинацией */}
+      <PaginationControls
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
     </div>
   );
 }

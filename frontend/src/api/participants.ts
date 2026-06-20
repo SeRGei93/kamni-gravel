@@ -12,6 +12,8 @@ const PARTICIPANTS_PREFIX = '/api/participants';
 const EVENTS_PREFIX = '/api/events';
 
 export const participantsApi = {
+  // getByEvent возвращает ВСЕХ участников события (без пагинации) — для номинаций и
+  // глобального поиска. Не передавайте page/page_size.
   async getByEvent(
     eventId: number,
     filters?: {
@@ -29,6 +31,34 @@ export const participantsApi = {
     const query = params.toString();
     return get<ParticipantListResponse>(
       `${EVENTS_PREFIX}/${eventId}/participants${query ? `?${query}` : ''}`
+    );
+  },
+
+  // listByEvent возвращает страницу участников (серверная пагинация + все фильтры/поиск).
+  async listByEvent(
+    eventId: number,
+    params: {
+      bike_type?: string;
+      gender?: string;
+      is_finished?: boolean;
+      has_gift?: boolean;
+      q?: string;
+      page: number;
+      page_size: number;
+    }
+  ): Promise<ParticipantListResponse> {
+    const search = new URLSearchParams();
+    if (params.bike_type) search.append('bike_type', params.bike_type);
+    if (params.gender) search.append('gender', params.gender);
+    if (params.is_finished !== undefined)
+      search.append('is_finished', String(params.is_finished));
+    if (params.has_gift !== undefined)
+      search.append('has_gift', String(params.has_gift));
+    if (params.q) search.append('q', params.q);
+    search.append('page', String(params.page));
+    search.append('page_size', String(params.page_size));
+    return get<ParticipantListResponse>(
+      `${EVENTS_PREFIX}/${eventId}/participants?${search.toString()}`
     );
   },
 

@@ -1,19 +1,30 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { participantsApi } from '@/api/participants';
 import { eventsApi } from '@/api/events';
 import { extractActiveEvent } from '@/utils/events';
-import { filterParticipants, type HasGiftFilter } from '@/utils/participants';
+import { type HasGiftFilter } from '@/utils/participants';
 import type { Participant } from '@/types';
 import ParticipantsTable from '@/components/participants/ParticipantsTable';
+import PaginationControls from '@/components/tables/PaginationControls';
+import { usePaginationParams } from '@/hooks/usePaginationParams';
 import Select from '@/components/form/Select';
 import Input from '@/components/form/input/InputField';
 import Label from '@/components/form/Label';
 
+function hasGiftFilterToParam(value: HasGiftFilter): boolean | undefined {
+  if (value === 'yes') return true;
+  if (value === 'no') return false;
+  return undefined;
+}
+
 export default function ParticipantsPage() {
+  const { page, pageSize, setPage, setPageSize } = usePaginationParams();
+
   const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingParticipantId, setDeletingParticipantId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +35,13 @@ export default function ParticipantsPage() {
   const [isFinishedFilter, setIsFinishedFilter] = useState<string>('');
   const [hasGiftFilter, setHasGiftFilter] = useState<HasGiftFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Дебаунс поискового запроса (поиск выполняется на сервере).
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const loadActiveEvent = useCallback(async () => {
     try {
@@ -32,11 +50,13 @@ export default function ParticipantsPage() {
       setActiveEventId(activeEvent?.id ?? null);
       if (!activeEvent) {
         setParticipants([]);
+        setTotal(0);
         setError('Нет активного события');
       }
     } catch (err) {
       setActiveEventId(null);
       setParticipants([]);
+      setTotal(0);
       setError('Ошибка загрузки активного события');
       console.error('Failed to load active event:', {
         operation: 'load_active_event',
@@ -48,6 +68,7 @@ export default function ParticipantsPage() {
   const loadParticipants = useCallback(async () => {
     if (!activeEventId) {
       setParticipants([]);
+      setTotal(0);
       return;
     }
 
@@ -55,19 +76,23 @@ export default function ParticipantsPage() {
       setIsLoading(true);
       setError(null);
 
-      const filters: {
-        bike_type?: string;
-        gender?: string;
-        is_finished?: boolean;
-      } = {};
-
-      if (genderFilter) filters.gender = genderFilter;
-      if (bikeTypeFilter) filters.bike_type = bikeTypeFilter;
-      if (isFinishedFilter !== '')
-        filters.is_finished = isFinishedFilter === 'true';
-
-      const response = await participantsApi.getByEvent(activeEventId, filters);
+      const response = await participantsApi.listByEvent(activeEventId, {
+        gender: genderFilter || undefined,
+        bike_type: bikeTypeFilter || undefined,
+        is_finished:
+          isFinishedFilter === '' ? undefined : isFinishedFilter === 'true',
+        has_gift: hasGiftFilterToParam(hasGiftFilter),
+        q: debouncedSearch || undefined,
+        page,
+        page_size: pageSize,
+      });
+      console.debug('[participants] loaded', {
+        page,
+        pageSize,
+        total: response.total,
+      });
       setParticipants(response.participants);
+      setTotal(response.total);
     } catch (err) {
       setError('Ошибка загрузки участников');
       console.error('Failed to load participants:', {
@@ -78,14 +103,35 @@ export default function ParticipantsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [bikeTypeFilter, genderFilter, isFinishedFilter, activeEventId]);
+  }, [
+    bikeTypeFilter,
+    genderFilter,
+    isFinishedFilter,
+    hasGiftFilter,
+    debouncedSearch,
+    activeEventId,
+    page,
+    pageSize,
+  ]);
 
   // Загрузка активного события
   useEffect(() => {
     loadActiveEvent();
   }, [loadActiveEvent]);
 
-  // Загрузка участников при изменении фильтров
+  // Сброс на первую страницу при изменении любого фильтра/поиска
+  // (но не на первом рендере, чтобы не сбивать deep-link на страницу).
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (page !== 1) setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genderFilter, bikeTypeFilter, isFinishedFilter, hasGiftFilter, debouncedSearch]);
+
+  // Загрузка участников при изменении фильтров/страницы
   useEffect(() => {
     loadParticipants();
   }, [loadParticipants]);
@@ -117,11 +163,6 @@ export default function ParticipantsPage() {
       setDeletingParticipantId(null);
     }
   };
-
-  const filteredParticipants = filterParticipants(participants, {
-    searchQuery,
-    hasGiftFilter,
-  });
 
   return (
     <div className="space-y-6">
@@ -214,19 +255,21 @@ export default function ParticipantsPage() {
         </div>
       </div>
 
-      {/* Информация о количестве */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Найдено участников: {filteredParticipants.length}
-        </p>
-      </div>
-
       {/* Таблица */}
       <ParticipantsTable
-        participants={filteredParticipants}
+        participants={participants}
         isLoading={isLoading}
         deletingParticipantId={deletingParticipantId}
         onDelete={handleDeleteParticipant}
+      />
+
+      {/* Управление пагинацией */}
+      <PaginationControls
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
       />
     </div>
   );
