@@ -300,6 +300,19 @@ export interface StatsListResponse {
   total: number;
 }
 
+export interface DailyCount {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+export interface EventDailyStats {
+  event_id: number;
+  event_name: string;
+  start_date: string | null;
+  registrations: DailyCount[]; // новые участники по дате регистрации
+  finishes: DailyCount[]; // проехавшие по дате отправки результата
+}
+
 export interface CreateEventRequest {
   name: string;
   description: string;

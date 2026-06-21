@@ -2,10 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { statsApi } from '@/api/stats';
-import type { Stats } from '@/types';
+import { eventsApi } from '@/api/events';
+import { extractActiveEvent } from '@/utils/events';
+import type { Stats, EventDailyStats } from '@/types';
 import StatCard from '@/components/dashboard/StatCard';
 import BreakdownCard from '@/components/dashboard/BreakdownCard';
+import EventDailyChart from '@/components/charts/EventDailyChart';
 import { GroupIcon, CheckCircleIcon, BoxIcon, ShootingStarIcon } from '@/icons';
+
+// formatDay превращает "YYYY-MM-DD" в короткую подпись "dd.MM" (без date-библиотек).
+function formatDay(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
 
 const GENDER_LABELS: Record<string, string> = {
   male: 'Мужчины',
@@ -22,11 +32,13 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats[]>([]);
+  const [dailyStats, setDailyStats] = useState<EventDailyStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadStats();
+    loadDailyStats();
   }, []);
 
   const loadStats = async () => {
@@ -40,6 +52,24 @@ export default function DashboardPage() {
       console.error('Failed to load stats:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Грузим посуточную статистику активного события независимо от основной
+  // статистики: ошибка здесь не должна ломать остальной дашборд.
+  const loadDailyStats = async () => {
+    try {
+      const eventsResponse = await eventsApi.getActive();
+      const activeEvent = extractActiveEvent(eventsResponse);
+      if (!activeEvent) {
+        setDailyStats(null);
+        return;
+      }
+      const daily = await statsApi.getDailyByEvent(activeEvent.id);
+      setDailyStats(daily);
+    } catch (err) {
+      console.error('Failed to load daily stats:', err);
+      setDailyStats(null);
     }
   };
 
@@ -171,6 +201,29 @@ export default function DashboardPage() {
           />
         )}
       </div>
+
+      {/* Активное событие — посуточные графики */}
+      {dailyStats && (
+        <div>
+          <h2 className="mb-4 text-xl font-semibold text-gray-800 dark:text-white">
+            Активное событие: {dailyStats.event_name}
+          </h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 md:gap-6">
+            <EventDailyChart
+              title="Проехавшие по дням"
+              categories={dailyStats.finishes.map((p) => formatDay(p.date))}
+              data={dailyStats.finishes.map((p) => p.count)}
+              color="#12b76a"
+            />
+            <EventDailyChart
+              title="Новые участники по дням"
+              categories={dailyStats.registrations.map((p) => formatDay(p.date))}
+              data={dailyStats.registrations.map((p) => p.count)}
+              color="#465fff"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Статистика по событиям */}
       {stats.length > 0 && (

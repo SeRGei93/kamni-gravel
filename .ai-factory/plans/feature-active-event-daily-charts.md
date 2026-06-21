@@ -75,20 +75,20 @@ Add two per-day charts for the **active event** to the main admin dashboard (`/`
 
 ### Phase 2 — Frontend: types, API, chart component, dashboard integration
 
-- **Task 5 — Types + API client.**
+- [x] **Task 5 — Types + API client.**
   - `frontend/src/types/index.ts`: add `export interface DailyCount { date: string; count: number; }` and `export interface EventDailyStats { event_id: number; event_name: string; start_date: string | null; registrations: DailyCount[]; finishes: DailyCount[]; }`.
   - `frontend/src/api/stats.ts`: add `async getDailyByEvent(eventId: number): Promise<EventDailyStats> { return get<EventDailyStats>(`${EVENTS_PREFIX}/${eventId}/stats/daily`); }`.
   - Files: `frontend/src/types/index.ts`, `frontend/src/api/stats.ts`.
   - **Depends on Task 3** (response contract).
 
-- **Task 6 — Reusable daily bar-chart component.** New file `frontend/src/components/charts/EventDailyChart.tsx`.
+- [x] **Task 6 — Reusable daily bar-chart component.** New file `frontend/src/components/charts/EventDailyChart.tsx`.
   - Props: `{ title: string; categories: string[]; data: number[]; color?: string }`.
   - Dynamic `react-apexcharts` import with `ssr: false`, `ApexOptions`, `type: "bar"` column chart following `BarChartOne` styling (borderRadius, columnWidth, hidden toolbar, Outfit font).
   - Wrap the chart in a horizontal-scroll container like `BarChartOne` (`<div className="max-w-full overflow-x-auto custom-scrollbar"><div className="min-w-[...]">`) so multi-week events don't crush x-axis labels. Wrap that in a titled card consistent with the dashboard's card styling (`rounded-lg border ... dark:...`). Show an empty-state message when `data` is empty.
   - Files: `frontend/src/components/charts/EventDailyChart.tsx`.
   - **Independent** (no backend dependency).
 
-- **Task 7 — Dashboard integration.** Edit `frontend/src/app/(dashboard)/page.tsx`.
+- [x] **Task 7 — Dashboard integration.** Edit `frontend/src/app/(dashboard)/page.tsx`.
   - Resolve the active event: `extractActiveEvent(await eventsApi.getActive())` (`@/utils/events`, returns `Event | null`) → `activeEventId`; then `statsApi.getDailyByEvent(activeEventId)` → `EventDailyStats`. Use its own state/effect, independent of the existing `loadStats`, so one failure doesn't blank the page.
   - Add a new **"Активное событие"** section (above or below the existing per-event stats) rendering two `EventDailyChart`s: "Проехавшие по дням" (from `finishes`) and "Новые участники по дням" (from `registrations`).
   - Map each series: `data` = counts; `categories` = short date labels formatted with **plain JS** (no date lib exists — e.g. `new Date(p.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })`, or slice the `YYYY-MM-DD`). Do not add a dependency.
