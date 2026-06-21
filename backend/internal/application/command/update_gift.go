@@ -38,8 +38,9 @@ type UpdateGiftCommand struct {
 
 // UpdateGiftResult представляет результат административного обновления подарка.
 type UpdateGiftResult struct {
-	Gift           *entity.Gift
-	BecameApproved bool
+	Gift                 *entity.Gift
+	BecameApproved       bool
+	PreviousReviewStatus entity.GiftReviewStatus
 }
 
 // UpdateGiftHandler обрабатывает административное обновление подарка.
@@ -123,8 +124,9 @@ func (h *UpdateGiftHandler) Handle(ctx context.Context, cmd UpdateGiftCommand) (
 			return nil, fmt.Errorf("failed to update gift %d with criteria: %w", cmd.GiftID, err)
 		}
 		return &UpdateGiftResult{
-			Gift:           gift,
-			BecameApproved: previousReviewStatus != entity.GiftReviewStatusApproved && gift.ReviewStatus == entity.GiftReviewStatusApproved,
+			Gift:                 gift,
+			BecameApproved:       previousReviewStatus != entity.GiftReviewStatusApproved && gift.ReviewStatus == entity.GiftReviewStatusApproved,
+			PreviousReviewStatus: previousReviewStatus,
 		}, nil
 	}
 
@@ -134,7 +136,8 @@ func (h *UpdateGiftHandler) Handle(ctx context.Context, cmd UpdateGiftCommand) (
 	}
 
 	return &UpdateGiftResult{
-		Gift:           gift,
-		BecameApproved: previousReviewStatus != entity.GiftReviewStatusApproved && gift.ReviewStatus == entity.GiftReviewStatusApproved,
+		Gift:                 gift,
+		BecameApproved:       previousReviewStatus != entity.GiftReviewStatusApproved && gift.ReviewStatus == entity.GiftReviewStatusApproved,
+		PreviousReviewStatus: previousReviewStatus,
 	}, nil
 }

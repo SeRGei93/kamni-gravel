@@ -77,6 +77,10 @@ API_PORT=8080
 NEXT_PUBLIC_API_URL=https://gravel.example.com
 ALLOWED_ORIGINS=https://gravel.example.com
 
+# Miniapp first-screen cache (backend, file-backed)
+MINIAPP_CACHE_DIR=/app/cache/miniapp
+MINIAPP_GIFTS_CACHE_TTL=1h
+
 # Production nginx and SSL
 PUBLIC_DOMAIN=gravel.example.com
 CERTBOT_EMAIL=admin@example.com
@@ -98,6 +102,15 @@ ALLOWED_ORIGINS=https://gravel.example.com
 ```
 
 Miniapp-запросы отправляют заголовок `X-Telegram-Init-Data` со значением из `Telegram.WebApp.initData`; backend валидирует этот заголовок перед доступом к `/api/miniapp/*`.
+
+#### Кеш первого экрана Mini App
+
+Каталог одобренных подарков (`GET /api/miniapp/gifts`) кешируется на стороне backend в файлах на диске, чтобы ускорить первый экран Mini App (в дефолтном состоянии фронтенд шлёт три параллельных запроса). Параметры:
+
+- `MINIAPP_CACHE_DIR` — каталог файлового кеша. По умолчанию `./data/miniapp-cache`; в контейнере `/app/cache/miniapp`, смонтирован как Docker volume `miniapp_cache`, чтобы кеш переживал пересоздание контейнера.
+- `MINIAPP_GIFTS_CACHE_TTL` — страховочный TTL записей (по умолчанию `1h`; `0` отключает истечение по времени).
+
+Кеш события сбрасывается сразу при одобрении, правке или удалении одобренного подарка через админ-эндпоинты `PUT`/`DELETE /api/gifts/{id}`; TTL служит лишь подстраховкой. Сессия (`GET /api/miniapp/session`) и счётчик участников не кешируются и остаются актуальными.
 
 ### Production nginx и SSL
 
@@ -212,6 +225,7 @@ backend/
 │   │   ├── http/        # HTTP handlers
 │   │   ├── persistence/ # Database implementations
 │   │   │   └── postgres/  # PostgreSQL repositories
+│   │   ├── cache/       # File-backed caches (miniapp gift catalog)
 │   │   ├── telegram/    # Telegram bot handlers
 │   │   └── migrations/  # SQL migrations
 │   └── config/          # Configuration

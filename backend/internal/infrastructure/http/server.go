@@ -12,6 +12,7 @@ import (
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/repository"
+	"gravel_bot/internal/infrastructure/cache"
 	"gravel_bot/internal/infrastructure/http/handler"
 	"gravel_bot/internal/infrastructure/http/middleware"
 	"gravel_bot/internal/infrastructure/security"
@@ -84,16 +85,18 @@ type Server struct {
 
 // Config представляет конфигурацию сервера
 type Config struct {
-	Host            string
-	Port            int
-	AllowedOrigins  []string
-	JWTSecret       string
-	JWTAccessTTL    time.Duration
-	JWTRefreshTTL   time.Duration
-	BotToken        string // Токен Telegram бота для получения файлов
-	PublicChatID    int64
-	MiniappURL      string
-	FileStoragePath string
+	Host                 string
+	Port                 int
+	AllowedOrigins       []string
+	JWTSecret            string
+	JWTAccessTTL         time.Duration
+	JWTRefreshTTL        time.Duration
+	BotToken             string // Токен Telegram бота для получения файлов
+	PublicChatID         int64
+	MiniappURL           string
+	FileStoragePath      string
+	MiniappCacheDir      string        // Каталог файлового кеша каталога подарков мини-приложения
+	MiniappGiftsCacheTTL time.Duration // Страховочный TTL записей кеша подарков мини-приложения
 }
 
 // NewServer создаёт новый HTTP сервер
@@ -141,6 +144,17 @@ func NewServer(
 	getGiftByIDHandler := query.NewGetGiftByIDHandler(giftRepo, criteriaRepo)
 	getMiniappGiftsHandler := query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo)
 	getMiniappParticipantCountHandler := query.NewGetMiniappParticipantCountHandler(participantRepo)
+
+	// Файловый кеш каталога подарков мини-приложения (первый экран). Один общий инстанс
+	// используют и чтение (MiniappHandler), и инвалидация при одобрении (GiftsHandler).
+	// При ошибке создания каталога кеш остаётся nil — кеширование просто отключается.
+	var miniappGiftsCache *cache.MiniappGiftsCache
+	if c, err := cache.NewMiniappGiftsCache(cfg.MiniappCacheDir, cfg.MiniappGiftsCacheTTL); err != nil {
+		log.Printf("WARN Miniapp gifts cache disabled: dir=%q error=%v", cfg.MiniappCacheDir, err)
+	} else {
+		miniappGiftsCache = c
+		log.Printf("INFO Miniapp gifts cache enabled: dir=%q ttl=%s", cfg.MiniappCacheDir, cfg.MiniappGiftsCacheTTL)
+	}
 	getEventsHandler := query.NewGetEventsHandler(eventRepo)
 	getEventByIDHandler := query.NewGetEventByIDHandler(eventRepo)
 	getPrizeAssignmentsHandler := query.NewGetPrizeAssignmentsHandler(prizeAssignmentRepo)
@@ -254,6 +268,7 @@ func NewServer(
 		getGiftByIDHandler,
 		addGiftHandler,
 		updateGiftHandler,
+		miniappGiftsCache,
 		giftPublicationNotifiers...,
 	)
 	criteriaHandler := handler.NewCriteriaHandler(
@@ -277,6 +292,7 @@ func NewServer(
 		getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler,
 		cfg.BotToken,
+		miniappGiftsCache,
 	)
 	userBlacklistHandler := handler.NewUserBlacklistHandler(
 		listUserBlacklistHandler,

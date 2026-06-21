@@ -78,8 +78,12 @@ services:
       - JWT_REFRESH_TTL=${JWT_REFRESH_TTL:-168h}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
       - FILE_STORAGE_PATH=${FILE_STORAGE_PATH:-/app/storage}
+      - MINIAPP_CACHE_DIR=${MINIAPP_CACHE_DIR:-/app/cache/miniapp}
+      - MINIAPP_GIFTS_CACHE_TTL=${MINIAPP_GIFTS_CACHE_TTL:-1h}
     volumes:
       - event_files:/app/storage
+      # Persist the miniapp first-screen cache across container recreation.
+      - miniapp_cache:/app/cache/miniapp
     ports:
       - "${API_PUBLIC_PORT:-8080}:8080"
     depends_on:
@@ -124,3 +128,4 @@ services:
 volumes:
   postgres_data:
   event_files:
+  miniapp_cache:

@@ -17,6 +17,15 @@ type Config struct {
 	Bot   BotConfig
 	API   APIConfig
 	Files FileStorageConfig
+	Cache CacheConfig
+}
+
+// CacheConfig представляет конфигурацию файловых кешей.
+type CacheConfig struct {
+	// MiniappGiftsDir — каталог файлового кеша каталога подарков мини-приложения.
+	MiniappGiftsDir string
+	// MiniappGiftsTTL — страховочный TTL записей кеша (основная инвалидация — по событию).
+	MiniappGiftsTTL time.Duration
 }
 
 // DBConfig представляет конфигурацию подключения к базе данных
@@ -91,6 +100,12 @@ func MustLoad(_ string) *Config {
 
 		Files: FileStorageConfig{
 			Path: getEnv("FILE_STORAGE_PATH", "storage"),
+		},
+
+		Cache: CacheConfig{
+			MiniappGiftsDir: getEnv("MINIAPP_CACHE_DIR", "./data/miniapp-cache"),
+			// По умолчанию 1 час (зеркалит cache.DefaultMiniappGiftsCacheTTL).
+			MiniappGiftsTTL: getEnvDuration("MINIAPP_GIFTS_CACHE_TTL", time.Hour),
 		},
 	}
 

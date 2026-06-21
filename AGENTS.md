@@ -42,7 +42,7 @@ Use these project architecture and workflow boundaries:
 │       ├── application/             # commands, queries, DTOs
 │       ├── config/                  # environment-backed config
 │       ├── domain/                  # entities, value objects, repository interfaces
-│       ├── infrastructure/          # HTTP, Telegram, Postgres, security, migrations
+│       ├── infrastructure/          # HTTP, Telegram, Postgres, security, cache, migrations
 │       └── pkg/                     # internal shared packages
 ├── frontend/                        # Next.js admin dashboard
 │   ├── public/                      # static assets

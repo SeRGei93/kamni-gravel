@@ -253,6 +253,7 @@ func newMiniappTestHandler(
 		miniappFileFetcherFunc(func(ctx context.Context, fileID string) (*http.Response, error) {
 			return nil, fmt.Errorf("unexpected file fetch: %s", fileID)
 		}),
+		nil,
 	)
 }
 

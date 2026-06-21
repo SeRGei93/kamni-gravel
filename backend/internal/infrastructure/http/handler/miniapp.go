@@ -25,10 +25,18 @@ type MiniappHandler struct {
 	getMiniappGiftsHandler            *query.GetMiniappGiftsHandler
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler
 	fileFetcher                       miniappFileFetcher
+	giftsCache                        miniappGiftsCache
 }
 
 type miniappFileFetcher interface {
 	Fetch(ctx context.Context, fileID string) (*http.Response, error)
+}
+
+// miniappGiftsCache кеширует каталог одобренных подарков первого экрана мини-приложения.
+// Реализация может быть nil — тогда кеширование выключено и каталог всегда читается из БД.
+type miniappGiftsCache interface {
+	Get(eventID uint, gender, bikeType string) ([]*dto.GiftDTO, bool)
+	Set(eventID uint, gender, bikeType string, gifts []*dto.GiftDTO)
 }
 
 type telegramFileFetcher struct {
@@ -41,11 +49,13 @@ type httpDoer interface {
 }
 
 // NewMiniappHandler создаёт handler для Telegram Mini App.
+// giftsCache может быть nil — тогда каталог подарков не кешируется.
 func NewMiniappHandler(
 	eventRepo repository.EventRepository,
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	botToken string,
+	giftsCache miniappGiftsCache,
 ) *MiniappHandler {
 	return newMiniappHandlerWithFileFetcher(
 		eventRepo,
@@ -55,6 +65,7 @@ func NewMiniappHandler(
 			botToken:   botToken,
 			httpClient: http.DefaultClient,
 		},
+		giftsCache,
 	)
 }
 
@@ -63,12 +74,14 @@ func newMiniappHandlerWithFileFetcher(
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	fileFetcher miniappFileFetcher,
+	giftsCache miniappGiftsCache,
 ) *MiniappHandler {
 	return &MiniappHandler{
 		eventRepo:                         eventRepo,
 		getMiniappGiftsHandler:            getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler: getMiniappParticipantCountHandler,
 		fileFetcher:                       fileFetcher,
+		giftsCache:                        giftsCache,
 	}
 }
 
@@ -148,27 +161,37 @@ func (h *MiniappHandler) Gifts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gifts, err := h.getMiniappGiftsHandler.Handle(r.Context(), query.GetMiniappGiftsQuery{
-		EventID:  event.ID,
-		Gender:   gender,
-		BikeType: bikeType,
-	})
-	if err != nil {
-		if errors.Is(err, query.ErrInvalidMiniappGiftGenderFilter) ||
-			errors.Is(err, query.ErrInvalidMiniappGiftBikeTypeFilter) {
-			log.Printf("WARN Miniapp gifts rejected invalid filters: telegram_user_id=%d event_id=%d gender=%q bike_type=%q error=%v", user.ID, event.ID, gender, bikeType, err)
-			response.BadRequest(w, err.Error())
+	// Каталог одобренных подарков — тяжёлая часть первого экрана, поэтому читаем его
+	// через файловый кеш. Фильтры уже провалидированы вызовом participant count выше,
+	// поэтому попадание в кеш безопасно отдаёт результат без повторной валидации.
+	giftDTOs, cached := h.cachedMiniappGifts(event.ID, gender, bikeType)
+	if !cached {
+		gifts, err := h.getMiniappGiftsHandler.Handle(r.Context(), query.GetMiniappGiftsQuery{
+			EventID:  event.ID,
+			Gender:   gender,
+			BikeType: bikeType,
+		})
+		if err != nil {
+			if errors.Is(err, query.ErrInvalidMiniappGiftGenderFilter) ||
+				errors.Is(err, query.ErrInvalidMiniappGiftBikeTypeFilter) {
+				log.Printf("WARN Miniapp gifts rejected invalid filters: telegram_user_id=%d event_id=%d gender=%q bike_type=%q error=%v", user.ID, event.ID, gender, bikeType, err)
+				response.BadRequest(w, err.Error())
+				return
+			}
+
+			log.Printf("ERROR Miniapp gifts failed: telegram_user_id=%d event_id=%d gender=%q bike_type=%q error=%v", user.ID, event.ID, gender, bikeType, err)
+			response.InternalServerError(w, "Failed to get gifts")
 			return
 		}
 
-		log.Printf("ERROR Miniapp gifts failed: telegram_user_id=%d event_id=%d gender=%q bike_type=%q error=%v", user.ID, event.ID, gender, bikeType, err)
-		response.InternalServerError(w, "Failed to get gifts")
-		return
-	}
+		giftDTOs = make([]*dto.GiftDTO, 0, len(gifts))
+		for _, gift := range gifts {
+			giftDTOs = append(giftDTOs, dto.FromGift(gift))
+		}
 
-	giftDTOs := make([]*dto.GiftDTO, 0, len(gifts))
-	for _, gift := range gifts {
-		giftDTOs = append(giftDTOs, dto.FromGift(gift))
+		if h.giftsCache != nil {
+			h.giftsCache.Set(event.ID, gender, bikeType, giftDTOs)
+		}
 	}
 
 	log.Printf("INFO Miniapp gifts requested: telegram_user_id=%d event_id=%d gender=%q bike_type=%q result_count=%d participant_count=%d", user.ID, event.ID, gender, bikeType, len(giftDTOs), participantCount)
@@ -223,6 +246,15 @@ func (h *MiniappHandler) TelegramFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("INFO Miniapp file proxied: telegram_user_id=%d file_id=%s", user.ID, fileID)
+}
+
+// cachedMiniappGifts возвращает закешированный каталог DTO для ключа, если кеш включён
+// и есть попадание. Второй результат false означает, что нужно сходить в БД.
+func (h *MiniappHandler) cachedMiniappGifts(eventID uint, gender, bikeType string) ([]*dto.GiftDTO, bool) {
+	if h.giftsCache == nil {
+		return nil, false
+	}
+	return h.giftsCache.Get(eventID, gender, bikeType)
 }
 
 func (h *MiniappHandler) activeEvent(w http.ResponseWriter, r *http.Request, telegramUserID int64) (*entity.Event, bool) {

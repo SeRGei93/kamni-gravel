@@ -30,6 +30,7 @@ type GiftsHandler struct {
 	addGiftHandler     *command.AddGiftHandler
 	updateGiftHandler  *command.UpdateGiftHandler
 	publicGiftNotifier GiftPublicationNotifier
+	giftsCache         miniappGiftsCacheInvalidator
 }
 
 // GiftPublicationNotifier отправляет опубликованный приз в Telegram-чат.
@@ -37,13 +38,21 @@ type GiftPublicationNotifier interface {
 	NotifyWithRetry(ctx context.Context, gift *entity.Gift) error
 }
 
-// NewGiftsHandler создаёт новый handler
+// miniappGiftsCacheInvalidator сбрасывает кеш каталога подарков мини-приложения для события.
+// Реализация может быть nil — тогда инвалидация пропускается.
+type miniappGiftsCacheInvalidator interface {
+	InvalidateEvent(eventID uint)
+}
+
+// NewGiftsHandler создаёт новый handler.
+// giftsCache может быть nil — тогда кеш каталога мини-приложения не инвалидируется.
 func NewGiftsHandler(
 	giftRepo repository.GiftRepository,
 	getGiftsHandler *query.GetGiftsHandler,
 	getGiftByIDHandler *query.GetGiftByIDHandler,
 	addGiftHandler *command.AddGiftHandler,
 	updateGiftHandler *command.UpdateGiftHandler,
+	giftsCache miniappGiftsCacheInvalidator,
 	publicGiftNotifier ...GiftPublicationNotifier,
 ) *GiftsHandler {
 	var notifier GiftPublicationNotifier
@@ -58,6 +67,7 @@ func NewGiftsHandler(
 		addGiftHandler:     addGiftHandler,
 		updateGiftHandler:  updateGiftHandler,
 		publicGiftNotifier: notifier,
+		giftsCache:         giftsCache,
 	}
 }
 
@@ -331,11 +341,28 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Сбрасываем кеш каталога мини-приложения, если подарок одобрен на любом конце
+	// перехода: одобрение (pending→approved), правка уже одобренного (approved→approved)
+	// и снятие одобрения (approved→pending). Иначе кеш отдавал бы устаревший каталог.
+	if updatedGift != nil && updateResult != nil &&
+		(updatedGift.ReviewStatus == entity.GiftReviewStatusApproved ||
+			updateResult.PreviousReviewStatus == entity.GiftReviewStatusApproved) {
+		h.invalidateMiniappGiftsCache(updatedGift.EventID)
+	}
+
 	if updateResult != nil && updateResult.BecameApproved {
 		h.notifyPublicGiftApproved(r.Context(), updatedGift)
 	}
 
 	response.Success(w, dto.FromGift(updatedGift))
+}
+
+// invalidateMiniappGiftsCache сбрасывает кеш каталога мини-приложения для события, если кеш включён.
+func (h *GiftsHandler) invalidateMiniappGiftsCache(eventID uint) {
+	if h.giftsCache == nil {
+		return
+	}
+	h.giftsCache.InvalidateEvent(eventID)
 }
 
 func (h *GiftsHandler) notifyPublicGiftApproved(ctx context.Context, gift *entity.Gift) {
@@ -481,7 +508,7 @@ func (h *GiftsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Проверяем существование подарка
-	_, err = h.giftRepo.FindByID(r.Context(), uint(id))
+	gift, err := h.giftRepo.FindByID(r.Context(), uint(id))
 	if err != nil {
 		log.Printf("Gift not found: %v", err)
 		response.NotFound(w, "Gift not found")
@@ -493,6 +520,11 @@ func (h *GiftsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error deleting gift: %v", err)
 		response.InternalServerError(w, "Failed to delete gift")
 		return
+	}
+
+	// Удаление одобренного подарка меняет публичный каталог — сбрасываем кеш события.
+	if gift != nil && gift.ReviewStatus == entity.GiftReviewStatusApproved {
+		h.invalidateMiniappGiftsCache(gift.EventID)
 	}
 
 	// Возвращаем успешный ответ без содержимого
