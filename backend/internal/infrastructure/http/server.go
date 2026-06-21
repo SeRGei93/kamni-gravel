@@ -59,6 +59,7 @@ type Server struct {
 	getPrizeAssignmentsHandler    *query.GetPrizeAssignmentsHandler
 	getPrizeAssignmentByIDHandler *query.GetPrizeAssignmentByIDHandler
 	getStatsHandler               *query.GetStatsHandler
+	getDailyStatsHandler          *query.GetDailyStatsHandler
 	listUserBlacklistHandler      *query.ListUserBlacklistHandler
 	isUserBlacklistedHandler      *query.IsUserBlacklistedHandler
 	listAdminUsersHandler         *query.ListAdminUsersHandler
@@ -168,6 +169,7 @@ func NewServer(
 		resultRepo,
 		criteriaRepo,
 	)
+	getDailyStatsHandler := query.NewGetDailyStatsHandler(eventRepo, participantRepo)
 
 	// Создаём command handlers для events
 	createEventHandler := command.NewCreateEventHandler(eventRepo)
@@ -285,7 +287,7 @@ func NewServer(
 		assignPrizeHandler,
 	)
 	resultsHandler := handler.NewResultsHandler(resultRepo, participantRepo, criteriaRepo, submitResultHandler, createManualResultHandler, updateResultHandler)
-	statsHandler := handler.NewStatsHandler(getStatsHandler)
+	statsHandler := handler.NewStatsHandler(getStatsHandler, getDailyStatsHandler)
 	telegramHandler := handler.NewTelegramHandler(cfg.BotToken)
 	miniappHandler := handler.NewMiniappHandler(
 		eventRepo,
@@ -349,6 +351,7 @@ func NewServer(
 		getPrizeAssignmentsHandler:       getPrizeAssignmentsHandler,
 		getPrizeAssignmentByIDHandler:    getPrizeAssignmentByIDHandler,
 		getStatsHandler:                  getStatsHandler,
+		getDailyStatsHandler:             getDailyStatsHandler,
 		listUserBlacklistHandler:         listUserBlacklistHandler,
 		isUserBlacklistedHandler:         isUserBlacklistedHandler,
 		listAdminUsersHandler:            listAdminUsersHandler,
@@ -451,6 +454,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 		// Stats routes (public read)
 		r.Get("/stats", s.statsHandler.GetAll)
 		r.Get("/events/{eventId}/stats", s.statsHandler.GetByEventID)
+		r.Get("/events/{eventId}/stats/daily", s.statsHandler.GetDailyByEventID)
 
 		// Telegram file routes (public read)
 		r.Get("/telegram/files/{fileId}", s.telegramHandler.GetFileURL)

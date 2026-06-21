@@ -14,15 +14,18 @@ import (
 
 // StatsHandler обрабатывает запросы для статистики
 type StatsHandler struct {
-	getStatsHandler *query.GetStatsHandler
+	getStatsHandler      *query.GetStatsHandler
+	getDailyStatsHandler *query.GetDailyStatsHandler
 }
 
 // NewStatsHandler создаёт новый handler
 func NewStatsHandler(
 	getStatsHandler *query.GetStatsHandler,
+	getDailyStatsHandler *query.GetDailyStatsHandler,
 ) *StatsHandler {
 	return &StatsHandler{
-		getStatsHandler: getStatsHandler,
+		getStatsHandler:      getStatsHandler,
+		getDailyStatsHandler: getDailyStatsHandler,
 	}
 }
 
@@ -82,4 +85,32 @@ func (h *StatsHandler) GetByEventID(w http.ResponseWriter, r *http.Request) {
 
 	// Возвращаем статистику первого (и единственного) события
 	response.Success(w, dto.FromEventStats(stats[0]))
+}
+
+// GetDailyByEventID обрабатывает GET /api/events/:eventId/stats/daily —
+// посуточная статистика события (новые участники и финиши по дням).
+func (h *StatsHandler) GetDailyByEventID(w http.ResponseWriter, r *http.Request) {
+	// Извлекаем eventID из URL
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := strconv.ParseUint(eventIDStr, 10, 32)
+	if err != nil {
+		response.BadRequest(w, "Invalid event ID")
+		return
+	}
+
+	// Вызываем query handler
+	stats, err := h.getDailyStatsHandler.Handle(r.Context(), query.GetDailyStatsQuery{
+		EventID: uint(eventID),
+	})
+	if err != nil {
+		log.Printf("Error getting daily stats: %v", err)
+		if err.Error() == "event not found" {
+			response.NotFound(w, err.Error())
+		} else {
+			response.InternalServerError(w, "Failed to get daily stats")
+		}
+		return
+	}
+
+	response.Success(w, dto.FromEventDailyStats(stats))
 }
