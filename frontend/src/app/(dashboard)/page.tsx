@@ -31,88 +31,42 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [dailyStats, setDailyStats] = useState<EventDailyStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadStats();
-    loadDailyStats();
+    loadDashboard();
   }, []);
 
-  const loadStats = async () => {
+  // Грузим статистику и посуточные данные только по активному событию.
+  const loadDashboard = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await statsApi.getAll();
-      setStats(response.stats);
+
+      const eventsResponse = await eventsApi.getActive();
+      const activeEvent = extractActiveEvent(eventsResponse);
+      if (!activeEvent) {
+        setStats(null);
+        setDailyStats(null);
+        return;
+      }
+
+      const [eventStats, daily] = await Promise.all([
+        statsApi.getByEvent(activeEvent.id),
+        statsApi.getDailyByEvent(activeEvent.id),
+      ]);
+      setStats(eventStats);
+      setDailyStats(daily);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки статистики');
-      console.error('Failed to load stats:', err);
+      console.error('Failed to load dashboard:', err);
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Грузим посуточную статистику активного события независимо от основной
-  // статистики: ошибка здесь не должна ломать остальной дашборд.
-  const loadDailyStats = async () => {
-    try {
-      const eventsResponse = await eventsApi.getActive();
-      const activeEvent = extractActiveEvent(eventsResponse);
-      if (!activeEvent) {
-        setDailyStats(null);
-        return;
-      }
-      const daily = await statsApi.getDailyByEvent(activeEvent.id);
-      setDailyStats(daily);
-    } catch (err) {
-      console.error('Failed to load daily stats:', err);
-      setDailyStats(null);
-    }
-  };
-
-  // Агрегируем статистику по всем событиям
-  const totalStats = stats.reduce(
-    (acc, stat) => ({
-      participants_count: acc.participants_count + stat.participants_count,
-      finished_count: acc.finished_count + stat.finished_count,
-      gifts_count: acc.gifts_count + stat.gifts_count,
-      prizes_assigned_count: acc.prizes_assigned_count + stat.prizes_assigned_count,
-      participants_with_prizes_count:
-        acc.participants_with_prizes_count + stat.participants_with_prizes_count,
-      by_gender: {
-        male: (acc.by_gender.male || 0) + (stat.by_gender.male || 0),
-        female: (acc.by_gender.female || 0) + (stat.by_gender.female || 0),
-      },
-      by_bike_type: {
-        gravel: (acc.by_bike_type.gravel || 0) + (stat.by_bike_type.gravel || 0),
-        mtb: (acc.by_bike_type.mtb || 0) + (stat.by_bike_type.mtb || 0),
-        road: (acc.by_bike_type.road || 0) + (stat.by_bike_type.road || 0),
-        single_speed: (acc.by_bike_type.single_speed || 0) + (stat.by_bike_type.single_speed || 0),
-        tandem: (acc.by_bike_type.tandem || 0) + (stat.by_bike_type.tandem || 0),
-      },
-    }),
-    {
-      participants_count: 0,
-      finished_count: 0,
-      gifts_count: 0,
-      prizes_assigned_count: 0,
-      participants_with_prizes_count: 0,
-      by_gender: {} as Record<string, number>,
-      by_bike_type: {} as Record<string, number>,
-    }
-  );
-
-  const totalParticipants = totalStats.participants_count;
-  const totalGender = totalStats.by_gender.male + totalStats.by_gender.female;
-  const totalBikeType =
-    (totalStats.by_bike_type.gravel || 0) +
-    (totalStats.by_bike_type.mtb || 0) +
-    (totalStats.by_bike_type.road || 0) +
-    (totalStats.by_bike_type.single_speed || 0) +
-    (totalStats.by_bike_type.tandem || 0);
 
   if (isLoading) {
     return (
@@ -127,7 +81,7 @@ export default function DashboardPage() {
       <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
         <p className="text-error-600 dark:text-error-400">{error}</p>
         <button
-          onClick={loadStats}
+          onClick={loadDashboard}
           className="mt-2 text-sm text-error-600 underline dark:text-error-400"
         >
           Попробовать снова
@@ -136,6 +90,27 @@ export default function DashboardPage() {
     );
   }
 
+  if (!stats) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
+            Dashboard
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">Нет активного события</p>
+        </div>
+      </div>
+    );
+  }
+
+  const genderTotal = (stats.by_gender.male || 0) + (stats.by_gender.female || 0);
+  const bikeTypeTotal =
+    (stats.by_bike_type.gravel || 0) +
+    (stats.by_bike_type.mtb || 0) +
+    (stats.by_bike_type.road || 0) +
+    (stats.by_bike_type.single_speed || 0) +
+    (stats.by_bike_type.tandem || 0);
+
   return (
     <div className="space-y-6">
       <div>
@@ -143,150 +118,82 @@ export default function DashboardPage() {
           Dashboard
         </h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Общая статистика по всем событиям
+          Активное событие: {stats.event_name}
         </p>
       </div>
 
-      {/* Карточки статистики */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 md:gap-6">
+      {/* Карточки статистики активного события */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6 lg:grid-cols-4">
         <StatCard
           title="Участников"
-          value={totalStats.participants_count}
+          value={stats.participants_count}
           icon={<GroupIcon className="size-6" />}
           color="primary"
         />
         <StatCard
           title="Проехали дистанцию"
-          value={totalStats.finished_count}
+          value={stats.finished_count}
           icon={<CheckCircleIcon className="size-6" />}
           color="success"
           trend={{
             value:
-              totalStats.participants_count > 0
-                ? (totalStats.finished_count / totalStats.participants_count) * 100
+              stats.participants_count > 0
+                ? (stats.finished_count / stats.participants_count) * 100
                 : 0,
             isPositive: true,
           }}
         />
         <StatCard
           title="Призов в фонде"
-          value={totalStats.gifts_count}
+          value={stats.gifts_count}
           icon={<BoxIcon className="size-6" />}
           color="info"
         />
         <StatCard
           title="Призов распределено"
-          value={totalStats.prizes_assigned_count}
+          value={stats.prizes_assigned_count}
           icon={<ShootingStarIcon className="size-6" />}
           color="warning"
         />
       </div>
 
-      {/* Разбивка по зачётам */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 md:gap-6">
-        {totalGender > 0 && (
+      {/* Посуточные графики активного события — на всю ширину */}
+      {dailyStats && (
+        <div className="space-y-4 md:space-y-6">
+          <EventDailyChart
+            title="Проехавшие по дням"
+            categories={dailyStats.finishes.map((p) => formatDay(p.date))}
+            data={dailyStats.finishes.map((p) => p.count)}
+            color="#12b76a"
+          />
+          <EventDailyChart
+            title="Новые участники по дням"
+            categories={dailyStats.registrations.map((p) => formatDay(p.date))}
+            data={dailyStats.registrations.map((p) => p.count)}
+            color="#465fff"
+          />
+        </div>
+      )}
+
+      {/* Разбивка по зачётам активного события */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6">
+        {genderTotal > 0 && (
           <BreakdownCard
             title="Разбивка по полу"
-            data={totalStats.by_gender}
-            total={totalGender}
+            data={stats.by_gender}
+            total={genderTotal}
             labels={GENDER_LABELS}
           />
         )}
-        {totalBikeType > 0 && (
+        {bikeTypeTotal > 0 && (
           <BreakdownCard
             title="Разбивка по типу велосипеда"
-            data={totalStats.by_bike_type}
-            total={totalBikeType}
+            data={stats.by_bike_type}
+            total={bikeTypeTotal}
             labels={BIKE_TYPE_LABELS}
           />
         )}
       </div>
-
-      {/* Активное событие — посуточные графики */}
-      {dailyStats && (
-        <div>
-          <h2 className="mb-4 text-xl font-semibold text-gray-800 dark:text-white">
-            Активное событие: {dailyStats.event_name}
-          </h2>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 md:gap-6">
-            <EventDailyChart
-              title="Проехавшие по дням"
-              categories={dailyStats.finishes.map((p) => formatDay(p.date))}
-              data={dailyStats.finishes.map((p) => p.count)}
-              color="#12b76a"
-            />
-            <EventDailyChart
-              title="Новые участники по дням"
-              categories={dailyStats.registrations.map((p) => formatDay(p.date))}
-              data={dailyStats.registrations.map((p) => p.count)}
-              color="#465fff"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Статистика по событиям */}
-      {stats.length > 0 && (
-        <div>
-          <h2 className="mb-4 text-xl font-semibold text-gray-800 dark:text-white">
-            Статистика по событиям
-          </h2>
-          <div className="space-y-4">
-            {stats.map((stat) => (
-              <div
-                key={stat.event_id}
-                className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]"
-              >
-                <h3 className="mb-3 font-semibold text-gray-800 dark:text-white">
-                  {stat.event_name}
-                </h3>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Участников
-                    </span>
-                    <p className="text-lg font-semibold text-gray-800 dark:text-white">
-                      {stat.participants_count}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Проехали
-                    </span>
-                    <p className="text-lg font-semibold text-gray-800 dark:text-white">
-                      {stat.finished_count}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Призов
-                    </span>
-                    <p className="text-lg font-semibold text-gray-800 dark:text-white">
-                      {stat.gifts_count}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Слотов выдано
-                    </span>
-                    <p className="text-lg font-semibold text-gray-800 dark:text-white">
-                      {stat.prizes_assigned_count}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Участников с призами
-                    </span>
-                    <p className="text-lg font-semibold text-gray-800 dark:text-white">
-                      {stat.participants_with_prizes_count}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

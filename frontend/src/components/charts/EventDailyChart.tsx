@@ -107,7 +107,7 @@ export default function EventDailyChart({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-      <h3 className="mb-3 font-semibold text-gray-800 dark:text-white">{title}</h3>
+      <h3 className="mb-3 text-lg font-semibold text-gray-800 dark:text-white">{title}</h3>
       {isEmpty ? (
         <div className="flex h-[220px] items-center justify-center text-sm text-gray-500 dark:text-gray-400">
           Нет данных
