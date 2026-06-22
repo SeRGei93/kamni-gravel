@@ -186,6 +186,43 @@ func TestResultHandlerStartSubmitResultUsesEditablePromptAfterStart(t *testing.T
 	}
 }
 
+func TestResultHandlerStartSubmitResultAllowsReplaceWhenFinished(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())
+	start := now.Add(-time.Minute)
+	texts := entity.DefaultEventTelegramTexts()
+	texts.ResultPrompt = "custom result prompt"
+	participant := &entity.Participant{
+		ID:      11,
+		EventID: 77,
+		Result:  &entity.Result{ResultLink: mustResultLink(t, stravaActivityLink)},
+	}
+	h := NewResultHandler(
+		manager,
+		&resultEventRepoFake{event: &entity.Event{ID: 77, Active: true, StartDate: &start, TelegramTexts: texts}},
+		&resultParticipantRepoFake{participant: participant},
+		nil,
+		WithResultHandlerClock(func() time.Time { return now }),
+	)
+
+	text, markup := h.StartSubmitResult(context.Background(), 123)
+
+	// Финишировавший участник больше не блокируется — ему предлагают прислать ссылку,
+	// замену он подтвердит на следующем шаге.
+	if text != "custom result prompt" {
+		t.Fatalf("text mismatch: got %q, want prompt", text)
+	}
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil, want cancel keyboard")
+	}
+	if got := manager.GetState(123); got != session.StateAwaitingResultLink {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingResultLink)
+	}
+	if participantID, _ := manager.GetData(123, "participant_id"); participantID != uint(11) {
+		t.Fatalf("participant_id mismatch: got %#v", participantID)
+	}
+}
+
 func TestResultHandlerStartSubmitResultBlocksBeforeStart(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	now := time.Date(2026, 5, 27, 11, 0, 0, 0, valueobject.MinskLocation())

@@ -182,16 +182,13 @@ func (h *ResultHandler) submit(ctx context.Context, userID int64, sc submissionC
 	), participant
 }
 
-// StartSubmitResult начинает процесс отправки результата
+// StartSubmitResult начинает процесс отправки результата. Участник с уже
+// отправленным результатом тоже допускается — ссылку он подтвердит на шаге
+// замены (см. SubmitOrConfirm), поэтому здесь статус финиша не блокирует сценарий.
 func (h *ResultHandler) StartSubmitResult(ctx context.Context, userID int64) (string, *models.InlineKeyboardMarkup) {
 	sc, errText, ok := h.resolveSubmission(ctx, userID)
 	if !ok {
 		return errText, nil
-	}
-
-	// Проверяем, не отправлен ли уже результат
-	if sc.participant.IsFinished() {
-		return sc.texts.ResultAlreadySent, nil
 	}
 
 	// Сохраняем данные сценария в сессии
@@ -273,87 +270,11 @@ func (h *ResultHandler) CancelReplacement(userID int64) string {
 	return resultReplaceCancelText
 }
 
-// HandleResultLink обрабатывает ссылку на результат. При успешной отправке возвращает
-// участника с привязанным результатом (для уведомления админов), иначе participant == nil.
-func (h *ResultHandler) HandleResultLink(ctx context.Context, userID int64, resultLink string) (string, *entity.Participant, error) {
-	// Получаем сохранённые данные
-	participantIDRaw, ok := h.sessionManager.GetData(userID, "participant_id")
-	if !ok {
-		return "Ошибка: данные сессии не найдены. Начните отправку результата заново.", nil, nil
-	}
-	participantID, ok := participantIDRaw.(uint)
-	if !ok {
-		log.Printf("WARN Invalid result session data: user_id=%d key=participant_id type=%T", userID, participantIDRaw)
-		return "Ошибка: данные сессии некорректны. Начните отправку результата заново.", nil, nil
-	}
-
-	// Выполняем команду отправки результата
-	cmd := command.SubmitResultCommand{
-		ParticipantID: participantID,
-		ResultLink:    resultLink,
-	}
-
-	participant, err := h.submitResultHandler.Handle(ctx, cmd)
-	if err != nil {
-		if errors.Is(err, command.ErrInvalidResultLink) {
-			eventID := resultSessionEventID(h.sessionManager, userID)
-			log.Printf(
-				"INFO Invalid result submission attempt: user_id=%d participant_id=%d event_id=%d reason=invalid_strava_format",
-				userID,
-				participantID,
-				eventID,
-			)
-			return ResultLinkInvalidInputText(resultSessionTelegramTexts(h.sessionManager, userID)), nil, nil
-		}
-
-		log.Printf("Error submitting result: user_id=%d participant_id=%d error=%v", userID, participantID, err)
-		return fmt.Sprintf("Ошибка при отправке результата: %v", err), nil, err
-	}
-
-	// Очищаем сессию
-	h.sessionManager.ResetState(userID)
-
-	return applyResultTextPlaceholders(
-		resultSessionTelegramTexts(h.sessionManager, userID).ResultSuccess,
-		map[string]string{"result_link": participant.GetResultLink()},
-	), participant, nil
-}
-
 func applyResultTextPlaceholders(text string, values map[string]string) string {
 	for key, value := range values {
 		text = strings.ReplaceAll(text, "{"+key+"}", value)
 	}
 	return text
-}
-
-func resultSessionTelegramTexts(manager *session.Manager, userID int64) entity.EventTelegramTexts {
-	textsRaw, ok := manager.GetData(userID, "event_telegram_texts")
-	if !ok {
-		return entity.NormalizeEventTelegramTexts(entity.EventTelegramTexts{})
-	}
-
-	texts, ok := textsRaw.(entity.EventTelegramTexts)
-	if !ok {
-		log.Printf("WARN Invalid result session data: user_id=%d key=event_telegram_texts type=%T", userID, textsRaw)
-		return entity.NormalizeEventTelegramTexts(entity.EventTelegramTexts{})
-	}
-
-	return entity.NormalizeEventTelegramTexts(texts)
-}
-
-func resultSessionEventID(manager *session.Manager, userID int64) uint {
-	eventIDRaw, ok := manager.GetData(userID, "event_id")
-	if !ok {
-		return 0
-	}
-
-	eventID, ok := eventIDRaw.(uint)
-	if !ok {
-		log.Printf("WARN Invalid result session data: user_id=%d key=event_id type=%T", userID, eventIDRaw)
-		return 0
-	}
-
-	return eventID
 }
 
 // CancelSubmitResult отменяет отправку результата

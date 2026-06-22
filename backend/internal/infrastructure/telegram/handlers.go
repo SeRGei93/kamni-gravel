@@ -1011,20 +1011,28 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 			return
 		}
 
-		// Обрабатываем ссылку на результат
+		// Обрабатываем ссылку на результат. SubmitOrConfirm сам решает: сразу
+		// сохранить результат или (если он уже есть) запросить подтверждение замены.
 		resultHandler := handler.NewResultHandler(
 			b.sessionManager,
 			b.eventRepo,
 			b.participantRepo,
 			b.submitResultHandler,
 		)
-		text, participant, _ := resultHandler.HandleResultLink(ctx, userID, resultLink)
+		text, markup, participant := resultHandler.SubmitOrConfirm(ctx, userID, resultLink)
+
+		// Результат уже отправлен — показываем подтверждение замены и остаёмся в сценарии.
+		if markup != nil {
+			_, _ = b.SendMessageWithKeyboard(ctx, msg.Chat.ID, text, *markup)
+			return
+		}
+
 		// При успешной отправке (participant != nil) уведомляем чат админов.
 		if participant != nil {
 			b.notifyAdminAboutResult(ctx, sender, participant)
 		}
 		// Если отправка завершена (сессия сброшена) — возвращаем главное меню,
-		// иначе остаёмся в сценарии и просто отвечаем текстом.
+		// иначе остаёмся в сценарии и просто отвечаем текстом (например, невалидная ссылка).
 		if b.sessionManager.GetState(userID) == session.StateIdle {
 			if !b.sendMainMenu(ctx, msg.Chat.ID, userID, text) {
 				_, _ = b.SendMessage(ctx, msg.Chat.ID, text)
