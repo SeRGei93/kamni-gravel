@@ -55,6 +55,7 @@ Infrastructure owns external systems:
 - `backend/internal/infrastructure/telegram` owns Telegram bot adapters, handlers, keyboards, and sessions.
 - `backend/internal/infrastructure/security` owns password hashing and other security adapters used by application interfaces.
 - `backend/internal/infrastructure/cache` owns file-backed caches (e.g. the miniapp first-screen gift catalog cache, invalidated on gift approval).
+- `backend/internal/infrastructure/lock` owns in-memory, TTL-based pessimistic edit locks (currently the participant edit lock used by the admin panel).
 - `backend/internal/infrastructure/migrations` owns database schema migration files.
 
 ## Frontend

@@ -10,11 +10,15 @@ import type { Result, Criteria } from '@/types';
 interface ResultCriteriaManagerProps {
   result: Result | null;
   onUpdate?: () => void;
+  // disabled блокирует изменение критериев, когда запись редактирует другой
+  // администратор (лок участника). Сервер дополнительно отклонит запись (409).
+  disabled?: boolean;
 }
 
 export default function ResultCriteriaManager({
   result,
   onUpdate,
+  disabled = false,
 }: ResultCriteriaManagerProps) {
   const [allCriteria, setAllCriteria] = useState<Criteria[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -47,8 +51,9 @@ export default function ResultCriteriaManager({
   };
 
   const handleToggleCriteria = async (criteriaId: number, isChecked: boolean) => {
-    // Гард только против повторного клика по этому же критерию, пока запрос в полёте.
-    if (!result || pendingIds.has(criteriaId)) return;
+    // Гард против повторного клика по этому же критерию, пока запрос в полёте,
+    // и против правок при чужом локе участника.
+    if (!result || disabled || pendingIds.has(criteriaId)) return;
 
     // Оптимистично обновляем чекбокс сразу — без ожидания ответа сервера.
     setSelectedIds((prev) => {
@@ -152,17 +157,21 @@ export default function ResultCriteriaManager({
             return (
               <label
                 key={criteria.id}
-                className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${
+                  disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+                } ${
                   isSelected
                     ? 'border-brand-500 bg-brand-50 dark:border-brand-600 dark:bg-brand-900/20'
                     : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
-                } ${isPending ? 'opacity-60 cursor-progress' : ''}`}
+                } ${isPending ? 'opacity-60 cursor-progress' : ''} ${
+                  disabled ? 'opacity-60' : ''
+                }`}
               >
                 <input
                   type="checkbox"
                   checked={isSelected}
                   onChange={(e) => handleToggleCriteria(criteria.id, e.target.checked)}
-                  disabled={isPending}
+                  disabled={isPending || disabled}
                   className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700"
                 />
                 <div className="flex-1">

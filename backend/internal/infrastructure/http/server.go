@@ -15,6 +15,7 @@ import (
 	"gravel_bot/internal/infrastructure/cache"
 	"gravel_bot/internal/infrastructure/http/handler"
 	"gravel_bot/internal/infrastructure/http/middleware"
+	"gravel_bot/internal/infrastructure/lock"
 	"gravel_bot/internal/infrastructure/security"
 	"gravel_bot/internal/infrastructure/storage"
 	telegraminfra "gravel_bot/internal/infrastructure/telegram"
@@ -78,6 +79,10 @@ type Server struct {
 	miniappHandler           *handler.MiniappHandler
 	userBlacklistHandler     *handler.UserBlacklistHandler
 	adminUsersHandler        *handler.AdminUsersHandler
+	participantLockHandler   *handler.ParticipantLockHandler
+
+	// Lock manager (in-memory participant edit locks)
+	lockManager *lock.Manager
 
 	// JWT Manager
 	jwtManager         *jwt.Manager
@@ -322,6 +327,11 @@ func NewServer(
 		getResultsWithPlacesHandler,
 	)
 
+	// In-memory pessimistic edit lock for participant records (admin panel).
+	// The cleanup goroutine starts inside NewManager.
+	lockManager := lock.NewManager(lock.DefaultTTL)
+	participantLockHandler := handler.NewParticipantLockHandler(lockManager)
+
 	s := &Server{
 		userRepo:                         userRepo,
 		eventRepo:                        eventRepo,
@@ -368,6 +378,8 @@ func NewServer(
 		miniappHandler:                   miniappHandler,
 		userBlacklistHandler:             userBlacklistHandler,
 		adminUsersHandler:                adminUsersHandler,
+		participantLockHandler:           participantLockHandler,
+		lockManager:                      lockManager,
 		jwtManager:                       jwtManager,
 		telegramWebAppAuth:               middleware.TelegramWebAppAuth(cfg.BotToken),
 	}
@@ -479,17 +491,29 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Post("/events/{id}/gpx-file", s.eventsHandler.UploadGPXFile)
 			r.Delete("/events/{id}", s.eventsHandler.Delete)
 
+			// Participant edit-lock guards (in-memory pessimistic lock). Writes
+			// reachable from the participant detail page are rejected with 409 when
+			// the participant is locked by another admin.
+			participantLockGuard := middleware.RequireParticipantUnlocked(s.lockManager, middleware.ParticipantIDFromParam("id"))
+			newResultLockGuard := middleware.RequireParticipantUnlocked(s.lockManager, middleware.ParticipantIDFromParam("participantId"))
+			resultLockGuard := middleware.RequireParticipantUnlocked(s.lockManager, middleware.ParticipantIDFromResult(s.resultRepo))
+
 			// Participants admin routes
 			r.Post("/events/{eventId}/participants", s.participantsHandler.Create)
-			r.Put("/participants/{id}", s.participantsHandler.Update)
-			r.Delete("/participants/{id}", s.participantsHandler.Delete)
+			r.With(participantLockGuard).Put("/participants/{id}", s.participantsHandler.Update)
+			r.With(participantLockGuard).Delete("/participants/{id}", s.participantsHandler.Delete)
 
-			// Results admin routes
-			r.Post("/participants/{participantId}/results", s.resultsHandler.Create)
-			r.Put("/results/{id}", s.resultsHandler.Update)
-			r.Delete("/results/{id}", s.resultsHandler.Delete)
-			r.Post("/results/{id}/criteria", s.resultsHandler.AddCriteria)
-			r.Delete("/results/{id}/criteria/{criteriaId}", s.resultsHandler.RemoveCriteria)
+			// Participant edit-lock routes (acquire / release / status)
+			r.Post("/participants/{id}/lock", s.participantLockHandler.Acquire)
+			r.Delete("/participants/{id}/lock", s.participantLockHandler.Release)
+			r.Get("/participants/{id}/lock", s.participantLockHandler.Status)
+
+			// Results admin routes (guarded by the owning participant's edit-lock)
+			r.With(newResultLockGuard).Post("/participants/{participantId}/results", s.resultsHandler.Create)
+			r.With(resultLockGuard).Put("/results/{id}", s.resultsHandler.Update)
+			r.With(resultLockGuard).Delete("/results/{id}", s.resultsHandler.Delete)
+			r.With(resultLockGuard).Post("/results/{id}/criteria", s.resultsHandler.AddCriteria)
+			r.With(resultLockGuard).Delete("/results/{id}/criteria/{criteriaId}", s.resultsHandler.RemoveCriteria)
 
 			// Gifts admin routes
 			r.Post("/events/{eventId}/gifts", s.giftsHandler.Create)

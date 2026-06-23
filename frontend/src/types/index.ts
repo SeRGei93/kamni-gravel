@@ -360,6 +360,19 @@ export interface UpdateParticipantRequest {
   notes?: string;
 }
 
+// LockStatus — состояние блокировки редактирования участника (in-memory лок на бэкенде).
+// Возвращается эндпоинтами /api/participants/{id}/lock и приходит в теле 409-конфликта,
+// когда другой администратор уже редактирует запись.
+export interface LockStatus {
+  participant_id: number;
+  locked: boolean;
+  locked_by_user_id?: number;
+  locked_by_username?: string;
+  acquired_at?: string;
+  expires_at?: string;
+  is_mine: boolean;
+}
+
 export interface Result {
   id: number;
   participant_id: number;

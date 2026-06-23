@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { participantsApi } from '@/api/participants';
 import { resultsApi } from '@/api/results';
+import { useParticipantLock } from '@/hooks/useParticipantLock';
+import ParticipantLockBanner from '@/components/participants/ParticipantLockBanner';
 import type { ParticipantDetail, Gift, Result, PrizeGiftAssignment } from '@/types';
 import Badge from '@/components/ui/badge/Badge';
 import Button from '@/components/ui/button/Button';
@@ -75,6 +77,11 @@ export default function ParticipantDetailPage() {
   const params = useParams();
   const router = useRouter();
   const participantId = Number(params.id);
+
+  // Пессимистичная блокировка редактирования: захват по входу в правку, heartbeat,
+  // снятие при выходе/уходе со страницы. Один лок на всю страницу (все секции).
+  const { isLockedByOther, lockOwnerName, beginEdit, endEdit } =
+    useParticipantLock(participantId);
 
   const [participant, setParticipant] = useState<ParticipantDetail | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
@@ -177,6 +184,12 @@ export default function ParticipantDetailPage() {
     }
   }, [participantId]);
 
+  // Вход в редактирование заметок: сначала захватываем лок участника.
+  const handleStartNotesEdit = async () => {
+    if (!(await beginEdit())) return;
+    setIsEditingNotes(true);
+  };
+
   const handleSaveNotes = async () => {
     if (!participant) return;
 
@@ -186,6 +199,7 @@ export default function ParticipantDetailPage() {
         notes: notes || undefined,
       });
       setIsEditingNotes(false);
+      endEdit();
       await loadParticipant(); // Перезагружаем данные
     } catch (err) {
       setError('Ошибка сохранения заметок');
@@ -199,6 +213,7 @@ export default function ParticipantDetailPage() {
     if (!participant) return;
     setNotes(participant.notes || '');
     setIsEditingNotes(false);
+    endEdit();
   };
 
   // Получаем ID текущего результата (для обновления времени)
@@ -212,8 +227,9 @@ export default function ParticipantDetailPage() {
     }
   };
 
-  const handleStartResultEdit = () => {
+  const handleStartResultEdit = async () => {
     if (!participant) return;
+    if (!(await beginEdit())) return;
     setElapsedTimeSec(participant.elapsed_time_sec);
     setMovingTimeSec(participant.moving_time_sec);
     setResultLink(participant.result_link || '');
@@ -221,7 +237,8 @@ export default function ParticipantDetailPage() {
     setIsEditingResult(true);
   };
 
-  const handleStartResultCreate = () => {
+  const handleStartResultCreate = async () => {
+    if (!(await beginEdit())) return;
     setElapsedTimeSec(undefined);
     setMovingTimeSec(undefined);
     setResultLink('');
@@ -294,6 +311,7 @@ export default function ParticipantDetailPage() {
       }
 
       setIsEditingResult(false);
+      endEdit();
       await loadParticipant();
     } catch (err) {
       setError('Ошибка сохранения результата');
@@ -314,6 +332,7 @@ export default function ParticipantDetailPage() {
     setResultLink(participant.result_link || '');
     fillMetricFieldsFromResult(currentResult);
     setIsEditingResult(false);
+    endEdit();
   };
 
   const handleDeleteParticipant = async () => {
@@ -326,12 +345,20 @@ export default function ParticipantDetailPage() {
       return;
     }
 
+    // Захватываем лок перед удалением: если запись уже редактирует другой
+    // администратор, удаление недоступно.
+    if (!(await beginEdit())) {
+      setError('Запись редактирует другой администратор');
+      return;
+    }
+
     try {
       setIsDeletingParticipant(true);
       setError(null);
       await participantsApi.delete(participant.id);
-      router.push('/participants');
+      router.push('/participants'); // размонтирование снимет лок
     } catch (err) {
+      endEdit(); // освобождаем лок при ошибке удаления
       setError('Ошибка удаления участника');
       console.error('Failed to delete participant:', {
         operation: 'delete_participant',
@@ -398,6 +425,9 @@ export default function ParticipantDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Баннер: запись редактирует другой администратор */}
+      <ParticipantLockBanner ownerName={lockOwnerName} />
+
       {/* Заголовок */}
       <div className="flex items-center justify-between">
         <div>
@@ -420,7 +450,7 @@ export default function ParticipantDetailPage() {
           variant="outline"
           startIcon={<TrashIcon />}
           onClick={handleDeleteParticipant}
-          disabled={isDeletingParticipant}
+          disabled={isDeletingParticipant || isLockedByOther}
         >
           {isDeletingParticipant ? 'Удаление...' : 'Удалить'}
         </Button>
@@ -539,7 +569,8 @@ export default function ParticipantDetailPage() {
                   size="sm"
                   variant="outline"
                   startIcon={<PencilIcon />}
-                  onClick={() => setIsEditingNotes(true)}
+                  onClick={handleStartNotesEdit}
+                  disabled={isLockedByOther}
                 >
                   Редактировать
                 </Button>
@@ -594,6 +625,7 @@ export default function ParticipantDetailPage() {
                   variant="outline"
                   startIcon={<PencilIcon />}
                   onClick={handleStartResultEdit}
+                  disabled={isLockedByOther}
                 >
                   Изменить время
                 </Button>
@@ -604,6 +636,7 @@ export default function ParticipantDetailPage() {
                   variant="outline"
                   startIcon={<PlusIcon />}
                   onClick={handleStartResultCreate}
+                  disabled={isLockedByOther}
                 >
                   Добавить результат
                 </Button>
@@ -853,6 +886,7 @@ export default function ParticipantDetailPage() {
             <ResultCriteriaManager
               result={currentResult}
               onUpdate={refreshMatchedGifts}
+              disabled={isLockedByOther}
             />
           </div>
 

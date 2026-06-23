@@ -1,4 +1,4 @@
-import { get, put, del } from './client';
+import { get, post, put, del } from './client';
 import type {
   Participant,
   ParticipantDetail,
@@ -6,6 +6,7 @@ import type {
   UpdateParticipantRequest,
   GiftListResponse,
   PrizeAssignmentListResponse,
+  LockStatus,
 } from '@/types';
 
 const PARTICIPANTS_PREFIX = '/api/participants';
@@ -79,5 +80,36 @@ export const participantsApi = {
 
   async delete(id: number): Promise<void> {
     return del<void>(`${PARTICIPANTS_PREFIX}/${id}`);
+  },
+};
+
+// participantLockApi — пессимистичная блокировка редактирования участника.
+// acquire служит и захватом, и heartbeat (повторный захват владельцем продлевает TTL).
+// При захвате, занятом другим администратором, бэкенд возвращает 409 с телом LockStatus
+// (доступно через ApiError.data).
+export const participantLockApi = {
+  async acquire(id: number): Promise<LockStatus> {
+    console.debug(`[lock] acquire participant_id=${id}`);
+    return post<LockStatus>(`${PARTICIPANTS_PREFIX}/${id}/lock`);
+  },
+
+  // refresh — алиас acquire; POST идемпотентен для владельца (heartbeat).
+  async refresh(id: number): Promise<LockStatus> {
+    console.debug(`[lock] refresh participant_id=${id}`);
+    return post<LockStatus>(`${PARTICIPANTS_PREFIX}/${id}/lock`);
+  },
+
+  // release — best-effort: ошибки проглатываем, чтобы не мешать cancel/unmount.
+  async release(id: number): Promise<void> {
+    console.debug(`[lock] release participant_id=${id}`);
+    try {
+      await del<void>(`${PARTICIPANTS_PREFIX}/${id}/lock`);
+    } catch (err) {
+      console.debug(`[lock] release failed (ignored) participant_id=${id}`, err);
+    }
+  },
+
+  async get(id: number): Promise<LockStatus> {
+    return get<LockStatus>(`${PARTICIPANTS_PREFIX}/${id}/lock`);
   },
 };
