@@ -167,7 +167,7 @@ function GiftTableRow({ gift }: { gift: Gift }) {
         </div>
       </td>
       <td className="min-w-0 px-1.5 py-1.5">
-        <p className="tg-title line-clamp-1 break-words text-sm font-medium leading-5">
+        <p className="tg-title break-words text-sm font-medium leading-5">
           {gift.description}
         </p>
         <p className="tg-muted mt-1 truncate text-[11px] font-medium leading-4">

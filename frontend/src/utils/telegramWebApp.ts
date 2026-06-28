@@ -48,6 +48,26 @@ export function expandTelegramWebApp(): void {
   webApp.expand();
 }
 
+// openTelegramProfile открывает профиль участника по его username. Внутри Telegram
+// используется нативный openTelegramLink, в браузерном фолбэке — обычное окно.
+export function openTelegramProfile(username: string): void {
+  const handle = username.replace(/^@+/, '').trim();
+  if (!handle) {
+    return;
+  }
+
+  const url = `https://t.me/${handle}`;
+  const webApp = getTelegramWebApp();
+  if (webApp?.openTelegramLink) {
+    webApp.openTelegramLink(url);
+    return;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
 export function getTelegramThemeParams(): TelegramWebAppThemeParams {
   return getTelegramWebApp()?.themeParams ?? {};
 }

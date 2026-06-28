@@ -18,6 +18,8 @@ declare global {
     ready: () => void;
     expand: () => void;
     close: () => void;
+    openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
+    openTelegramLink?: (url: string) => void;
     setHeaderColor?: (color: string) => void;
     setBackgroundColor?: (color: string) => void;
   }

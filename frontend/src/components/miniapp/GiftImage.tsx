@@ -65,7 +65,11 @@ export default function GiftImage({ giftId, attachment, variant = "detail" }: Gi
       <img
         src={imageUrl}
         alt="Фото приза"
-        className="h-full w-full object-cover"
+        className={
+          variant === "detail"
+            ? "block max-h-[80vh] w-full object-contain"
+            : "h-full w-full object-cover"
+        }
       />
     );
   }

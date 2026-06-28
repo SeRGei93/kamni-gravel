@@ -3,6 +3,7 @@ import { BIKE_TYPE_OPTIONS } from "@/constants";
 import type { BikeTypeFilter, GenderFilter, Gift, GiftAttachment } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
 import { formatGiftPlaceRule } from "@/utils/giftPlaceRule";
+import DonorProfileLink from "./DonorProfileLink";
 import GiftImage from "./GiftImage";
 
 interface GiftDetailViewProps {
@@ -23,7 +24,8 @@ const bikeText = BIKE_TYPE_OPTIONS.reduce<Record<string, string>>((acc, option) 
 export default function GiftDetailView({ gift }: GiftDetailViewProps) {
   const photos = gift.attachments?.filter((attachment) => attachment.file_type === "photo") ?? [];
   const donorName = [gift.first_name, gift.last_name].filter(Boolean).join(" ");
-  const donor = donorName || gift.username || `Участник ${gift.user_id}`;
+  const donorUsername = (gift.username ?? "").replace(/^@+/, "").trim();
+  const donor = donorName || (donorUsername ? `@${donorUsername}` : `Участник ${gift.user_id}`);
   const gender = (gift.gender_filter || "all") as GenderFilter;
   const bikeType = (gift.bike_type_filter || "all") as BikeTypeFilter;
   const criteria = gift.criteria ?? [];
@@ -55,7 +57,7 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
               </p>
             </div>
 
-            <DetailRow label="От кого" value={donor} />
+            <DetailRow label="От кого" value={donor} username={donorUsername || undefined} />
 
             <div className="tg-divider grid grid-cols-2 rounded-lg border text-sm">
               <DetailCell label="Пол" value={genderText[gender] ?? gender} />
@@ -107,7 +109,7 @@ function GiftPhotoGallery({
 
   return (
     <div className="tg-placeholder tg-divider border-b">
-      <div className={hasPrimaryPhoto ? "aspect-[4/3]" : "h-36"}>
+      <div className={hasPrimaryPhoto ? "flex justify-center" : "h-36"}>
         <GiftImage giftId={giftId} attachment={primaryPhoto} variant="detail" />
       </div>
 
@@ -127,11 +129,21 @@ function GiftPhotoGallery({
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({
+  label,
+  value,
+  username,
+}: {
+  label: string;
+  value: string;
+  username?: string;
+}) {
   return (
     <div className="tg-divider rounded-lg border px-3 py-2">
       <p className="tg-muted text-xs font-medium">{label}</p>
-      <p className="tg-title mt-1 break-words text-sm font-medium">{value}</p>
+      <p className="tg-title mt-1 break-words text-sm font-medium">
+        {username ? <DonorProfileLink label={value} username={username} /> : value}
+      </p>
     </div>
   );
 }
