@@ -139,3 +139,29 @@ make docker-prod-up
 ```bash
 make docker-prod-up
 ```
+
+## 8. Бэкап базы в Telegram
+
+Скрипт `scripts/backup-telegram.sh` снимает `pg_dump` из контейнера `gravel_postgres`, сжимает его в `.sql.gz` и отправляет архив в Telegram через Bot API. Архивы складываются в `./backup` (хранятся последние `BACKUP_KEEP`, по умолчанию 48 — двое суток при ежечасном запуске).
+
+В `.env` укажите чат/пользователя, куда слать бэкапы:
+
+```env
+BACKUP_TELEGRAM_ID=123456789
+```
+
+`BACKUP_TELEGRAM_ID` — это id личного чата (узнать у `@userinfobot`) или id группы. Бэкап уходит от имени бота `BOT_TOKEN`, поэтому бот должен иметь возможность писать в этот чат (для группы — добавьте бота в неё).
+
+Разовый запуск вручную:
+
+```bash
+make db-backup-telegram
+```
+
+Ежечасный запуск через cron:
+
+```cron
+0 * * * * cd /opt/gravel_bot && ./scripts/backup-telegram.sh >> /var/log/gravel-backup.log 2>&1
+```
+
+Лимит загрузки документа для бота — 50 МБ; для большой базы уменьшите частоту или используйте локальный Bot API сервер.

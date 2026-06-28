@@ -75,6 +75,11 @@ data/
 /data
 /storage
 
+# Database dumps produced by scripts/backup-telegram.sh and make db-backup
+/backup/*.sql
+/backup/*.sql.gz
+/backup/*.dump
+
 # Docker
 *.log
 nginx/certbot/

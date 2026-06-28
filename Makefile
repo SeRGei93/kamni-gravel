@@ -1,4 +1,4 @@
-.PHONY: help build run-bot run-api migrate-up migrate-down migrate-status test clean docker-up docker-down docker-logs docker-prod-build docker-prod-up docker-prod-down docker-prod-logs ssl-cert ssl-renew db-psql
+.PHONY: help build run-bot run-api migrate-up migrate-down migrate-status test clean docker-up docker-down docker-logs docker-prod-build docker-prod-up docker-prod-down docker-prod-logs ssl-cert ssl-renew db-psql db-backup db-restore db-backup-telegram
 
 COMPOSE ?= docker compose
 PROD_COMPOSE = $(COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml
@@ -82,6 +82,9 @@ db-backup: ## Backup database to ./backup/gravel_bot_backup.sql
 
 db-restore: ## Restore database from backup (usage: make db-restore FILE=backup/file.sql)
 	$(COMPOSE) exec -T postgres psql -U gravel gravel_bot < $(FILE)
+
+db-backup-telegram: ## Dump the database and send it to Telegram (requires BACKUP_TELEGRAM_ID in .env)
+	./scripts/backup-telegram.sh
 
 # Development
 dev-deps: ## Install development dependencies
