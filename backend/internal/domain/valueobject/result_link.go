@@ -24,7 +24,13 @@ const (
 var (
 	stravaActivityIDRe = regexp.MustCompile(`^\d+$`)
 	stravaAppTokenRe   = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	urlSchemeRe        = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*://`)
 )
+
+// linkTrimCutset — символы пунктуации, которые отрезаются по краям токена перед
+// разбором, чтобы ссылка распознавалась даже когда она обёрнута текстом
+// («…Strava: strava.app.link/abc.»).
+const linkTrimCutset = " \t\n\r.,;:!?()[]{}<>\"'«»"
 
 // NewResultLink создаёт и валидирует ссылку на результат
 func NewResultLink(rawURL string) (*ResultLink, error) {
@@ -81,6 +87,31 @@ func isStravaAppURL(host string, path string) bool {
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	return len(parts) == 1 && stravaAppTokenRe.MatchString(parts[0])
+}
+
+// ExtractResultLink ищет в произвольном тексте первую ссылку Strava на результат
+// и возвращает её в нормализованном виде. В отличие от NewResultLink, допускает
+// сообщения, где ссылка обёрнута текстом («Оцени мою тренировку в Strava:
+// strava.app.link/99daOD8LKOb»), и ссылки без схемы (https:// подставляется
+// автоматически).
+func ExtractResultLink(text string) (*ResultLink, bool) {
+	for _, token := range strings.Fields(text) {
+		candidate := strings.Trim(token, linkTrimCutset)
+		if candidate == "" {
+			continue
+		}
+
+		if !urlSchemeRe.MatchString(candidate) {
+			candidate = "https://" + candidate
+		}
+
+		link, err := NewResultLink(candidate)
+		if err == nil && link.IsStrava() {
+			return link, true
+		}
+	}
+
+	return nil, false
 }
 
 // IsStrava проверяет, является ли ссылка Strava

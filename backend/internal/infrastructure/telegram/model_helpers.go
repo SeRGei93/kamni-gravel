@@ -315,21 +315,24 @@ func resultLinkText(msg *models.Message) (string, bool) {
 	return text, text != ""
 }
 
-// detectStravaResultLink распознаёт сообщение, состоящее из ссылки Strava на
-// результат (формата https://www.strava.com/activities/<id> или
-// https://strava.app.link/<token>), чтобы принять его как отправку результата.
+// detectStravaResultLink распознаёт в сообщении ссылку Strava на результат
+// (формата https://www.strava.com/activities/<id> или
+// https://strava.app.link/<token>), чтобы принять её как отправку результата.
+// Ссылка распознаётся даже когда обёрнута текстом («Оцени мою тренировку в
+// Strava: strava.app.link/...») или прислана без схемы https://; возвращается
+// нормализованный URL.
 func detectStravaResultLink(msg *models.Message) (string, bool) {
 	text, ok := resultLinkText(msg)
 	if !ok {
 		return "", false
 	}
 
-	link, err := valueobject.NewResultLink(text)
-	if err != nil || !link.IsStrava() {
+	link, ok := valueobject.ExtractResultLink(text)
+	if !ok {
 		return "", false
 	}
 
-	return text, true
+	return link.String(), true
 }
 
 func largestPhotoFileID(msg *models.Message) (string, bool) {

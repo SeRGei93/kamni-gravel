@@ -321,9 +321,16 @@ func TestDetectStravaResultLink(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name:   "link with extra text",
-			msg:    &models.Message{Text: "мой результат https://www.strava.com/activities/18929617181"},
-			wantOK: false,
+			name:     "link with extra text",
+			msg:      &models.Message{Text: "мой результат https://www.strava.com/activities/18929617181"},
+			wantLink: "https://www.strava.com/activities/18929617181",
+			wantOK:   true,
+		},
+		{
+			name:     "app link wrapped in text without scheme",
+			msg:      &models.Message{Text: "Оцени мою тренировку в Strava: strava.app.link/99daOD8LKOb"},
+			wantLink: "https://strava.app.link/99daOD8LKOb",
+			wantOK:   true,
 		},
 		{
 			name:   "photo ignored",

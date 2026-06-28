@@ -44,6 +44,75 @@ func TestNewResultLinkAcceptsStravaLinks(t *testing.T) {
 	}
 }
 
+func TestExtractResultLinkFindsWrappedLinks(t *testing.T) {
+	tests := []struct {
+		name    string
+		text    string
+		wantURL string
+	}{
+		{
+			name:    "app link wrapped in text without scheme",
+			text:    "Оцени мою тренировку в Strava: strava.app.link/99daOD8LKOb",
+			wantURL: "https://strava.app.link/99daOD8LKOb",
+		},
+		{
+			name:    "app link with trailing punctuation",
+			text:    "Вот ссылка — strava.app.link/AbC123_Token-9.",
+			wantURL: "https://strava.app.link/AbC123_Token-9",
+		},
+		{
+			name:    "activity link without scheme",
+			text:    "мой результат www.strava.com/activities/14758223172 готово",
+			wantURL: "https://www.strava.com/activities/14758223172",
+		},
+		{
+			name:    "full url stays normalized",
+			text:    "https://www.strava.com/activities/14758223172?utm_source=telegram",
+			wantURL: "https://www.strava.com/activities/14758223172?utm_source=telegram",
+		},
+		{
+			name:    "skips non-strava link and picks strava one",
+			text:    "сначала https://example.com, потом strava.app.link/luP9ipxj13b",
+			wantURL: "https://strava.app.link/luP9ipxj13b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			link, ok := ExtractResultLink(tt.text)
+			if !ok {
+				t.Fatalf("ExtractResultLink(%q) ok = false, want true", tt.text)
+			}
+			if link.URL != tt.wantURL {
+				t.Fatalf("ExtractResultLink().URL = %q, want %q", link.URL, tt.wantURL)
+			}
+			if !link.IsStrava() {
+				t.Fatal("ExtractResultLink().IsStrava() = false, want true")
+			}
+		})
+	}
+}
+
+func TestExtractResultLinkRejectsTextWithoutStravaLink(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+	}{
+		{name: "plain text", text: "когда старт?"},
+		{name: "non-strava link", text: "посмотри https://www.komoot.com/tour/2308024419"},
+		{name: "empty", text: "   "},
+		{name: "strava word but no link", text: "люблю Strava и катать"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if link, ok := ExtractResultLink(tt.text); ok {
+				t.Fatalf("ExtractResultLink(%q) ok = true (url=%q), want false", tt.text, link.URL)
+			}
+		})
+	}
+}
+
 func TestNewResultLinkRejectsNonStravaLinks(t *testing.T) {
 	tests := []struct {
 		name       string

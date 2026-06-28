@@ -211,8 +211,10 @@ func (h *ResultHandler) SubmitOrConfirm(ctx context.Context, userID int64, resul
 		return errText, nil, nil
 	}
 
-	resultLink = strings.TrimSpace(resultLink)
-	if _, err := valueobject.NewResultLink(resultLink); err != nil {
+	// Допускаем сообщения, где ссылка обёрнута текстом или прислана без схемы
+	// https:// — извлекаем и нормализуем её перед сохранением.
+	link, ok := valueobject.ExtractResultLink(resultLink)
+	if !ok {
 		log.Printf(
 			"INFO Invalid result submission attempt: user_id=%d participant_id=%d event_id=%d reason=invalid_strava_format",
 			userID,
@@ -221,6 +223,7 @@ func (h *ResultHandler) SubmitOrConfirm(ctx context.Context, userID int64, resul
 		)
 		return ResultLinkInvalidInputText(sc.texts), nil, nil
 	}
+	resultLink = link.String()
 
 	// Результат уже есть — запрашиваем подтверждение замены.
 	if sc.participant.IsFinished() {
