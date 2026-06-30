@@ -184,11 +184,16 @@ func buildPrizeParticipantContexts(
 }
 
 func prizeDistributionResultFromContext(ctx *prizeParticipantContext) *PrizeDistributionResult {
+	status := ctx.participant.Status
+	if status == "" {
+		status = valueobject.ParticipantStatusActive
+	}
 	return &PrizeDistributionResult{
 		ParticipantID:          ctx.participant.ID,
 		ParticipantName:        prizeParticipantDisplayName(ctx.participant),
 		Gender:                 string(ctx.participant.Gender),
 		BikeType:               string(ctx.participant.BikeType),
+		Status:                 string(status),
 		PlaceAbsolute:          ctx.rwp.PlaceAbsolute,
 		PlaceByGender:          ctx.rwp.PlaceByGender,
 		PlaceByGenderBike:      ctx.rwp.PlaceByGenderBike,
@@ -250,6 +255,9 @@ func classifyGiftForSlotEngine(gift *entity.Gift) (giftMatchPriority, bool) {
 func eligiblePrizeContexts(contexts []*prizeParticipantContext, gift *entity.Gift) []*prizeEligibleContext {
 	eligible := make([]*prizeEligibleContext, 0, len(contexts))
 	for _, ctx := range contexts {
+		if !participantStatusEligibleForGift(ctx.participant, gift) {
+			continue
+		}
 		if !giftMatchesParticipantFilters(gift, ctx.participant) {
 			continue
 		}
@@ -262,6 +270,24 @@ func eligiblePrizeContexts(contexts []*prizeParticipantContext, gift *entity.Gif
 		})
 	}
 	return eligible
+}
+
+// participantStatusEligibleForGift применяет статусные ограничения участника к
+// конкретному подарку:
+//   - дисквалифицированные исключены из любых призов;
+//   - сошедшие с дистанции (DNF) допускаются только к призам по чистым
+//     критериям (у подарка есть criteria и нет привязки к месту), но не к
+//     призам по местам/общим;
+//   - остальные (active / пустой статус) допускаются везде.
+func participantStatusEligibleForGift(participant *entity.Participant, gift *entity.Gift) bool {
+	switch {
+	case participant.IsDisqualified():
+		return false
+	case participant.IsDNF():
+		return len(gift.Criteria) > 0 && !giftPlaceRuleForDistribution(gift).HasPlaceConstraint()
+	default:
+		return true
+	}
 }
 
 func giftMatchesParticipantFilters(gift *entity.Gift, participant *entity.Participant) bool {

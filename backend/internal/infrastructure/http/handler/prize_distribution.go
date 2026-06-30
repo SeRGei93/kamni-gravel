@@ -77,6 +77,7 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 			ParticipantName:   dist.ParticipantName,
 			Gender:            dist.Gender,
 			BikeType:          dist.BikeType,
+			Status:            dist.Status,
 			PlaceAbsolute:     dist.PlaceAbsolute,
 			PlaceByGender:     dist.PlaceByGender,
 			PlaceByGenderBike: dist.PlaceByGenderBike,

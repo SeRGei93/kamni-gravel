@@ -302,6 +302,7 @@ func (r *resultRepository) FindByEventWithPlaces(ctx context.Context, eventID ui
 		FROM results r
 		JOIN participants p ON r.participant_id = p.id
 		WHERE p.event_id = $1 AND r.is_current = true AND r.elapsed_time_sec IS NOT NULL
+		  AND p.status = 'active'
 		ORDER BY r.elapsed_time_sec
 	`
 

@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import Badge from '../ui/badge/Badge';
 import type { Participant } from '@/types';
+import { PARTICIPANT_STATUS_LABELS } from '@/types';
 import { formatDistanceKm, formatSpeed } from '@/utils/format';
 
 // Реестр колонок списка участников. Набор видимых колонок настраивается
@@ -118,6 +119,22 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
         {BIKE_TYPE_LABELS[p.bike_type] || p.bike_type}
       </Badge>
     ),
+  },
+  {
+    key: 'status',
+    label: 'Статус',
+    defaultVisible: true,
+    render: (p) =>
+      p.status && p.status !== 'active' ? (
+        <Badge
+          color={p.status === 'disqualified' ? 'error' : 'warning'}
+          size="sm"
+        >
+          {PARTICIPANT_STATUS_LABELS[p.status]}
+        </Badge>
+      ) : (
+        <span className={cellMuted}>-</span>
+      ),
   },
   {
     key: 'elapsed_time',

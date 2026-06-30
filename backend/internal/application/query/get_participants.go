@@ -11,10 +11,10 @@ import (
 
 // GetParticipantsQuery представляет запрос на получение участников
 type GetParticipantsQuery struct {
-	EventID      uint
-	BikeType     *string // фильтр по типу велосипеда (опционально)
-	Gender       *string // фильтр по полу (опционально)
-	IsFinished   *bool   // фильтр по статусу завершения (опционально)
+	EventID    uint
+	BikeType   *string // фильтр по типу велосипеда (опционально)
+	Gender     *string // фильтр по полу (опционально)
+	IsFinished *bool   // фильтр по статусу завершения (опционально)
 }
 
 // ParticipantWithPlace представляет участника с рассчитанным местом
@@ -88,7 +88,8 @@ func (h *GetParticipantsHandler) calculatePlaces(participants []*entity.Particip
 
 	for _, p := range participants {
 		elapsedTime := p.GetElapsedTimeSec()
-		if p.IsFinished() && elapsedTime != nil && *elapsedTime > 0 {
+		// Сошедшие/дисквалифицированные исключены из зачёта — место не присваиваем.
+		if p.IsRanked() && p.IsFinished() && elapsedTime != nil && *elapsedTime > 0 {
 			finished = append(finished, p)
 		} else {
 			others = append(others, p)

@@ -8,6 +8,7 @@ type PrizeDistributionDTO struct {
 	ParticipantName        string                    `json:"participant_name"`
 	Gender                 string                    `json:"gender"`
 	BikeType               string                    `json:"bike_type"`
+	Status                 string                    `json:"status"` // active / dnf / disqualified
 	PlaceAbsolute          int                       `json:"place_absolute"`
 	PlaceByGender          int                       `json:"place_by_gender"`
 	PlaceByGenderBike      int                       `json:"place_by_gender_bike"`

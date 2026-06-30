@@ -22,6 +22,7 @@ describe('frontend prize distribution summaries', () => {
     participant_name: 'Rider',
     gender: 'male',
     bike_type: 'gravel',
+    status: 'active',
     place_absolute: 1,
     place_by_gender: 1,
     place_by_gender_bike: 1,

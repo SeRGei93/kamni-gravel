@@ -12,6 +12,7 @@ function makeParticipant(overrides: Partial<Participant>): Participant {
     event_id: 1,
     bike_type: 'gravel',
     gender: 'male',
+    status: 'active',
     is_finished: false,
     registered_at: '2026-06-15T00:00:00Z',
     has_gift: false,

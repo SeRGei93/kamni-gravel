@@ -19,6 +19,7 @@ var (
 	ErrAlreadyRegistered = errors.New("user already registered for this event")
 	ErrInvalidBikeType   = errors.New("invalid bike type")
 	ErrInvalidGender     = errors.New("invalid gender")
+	ErrInvalidStatus     = errors.New("invalid participant status")
 )
 
 // RegisterParticipantCommand представляет команду регистрации участника на событие

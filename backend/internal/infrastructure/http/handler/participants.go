@@ -349,6 +349,7 @@ type UpdateParticipantRequest struct {
 	BikeType *string `json:"bike_type,omitempty"`
 	Gender   *string `json:"gender,omitempty"`
 	Notes    *string `json:"notes,omitempty"`
+	Status   *string `json:"status,omitempty"`
 }
 
 // Update обрабатывает PUT /api/participants/:id - обновление участника
@@ -373,12 +374,13 @@ func (h *ParticipantsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		BikeType:      req.BikeType,
 		Gender:        req.Gender,
 		Notes:         req.Notes,
+		Status:        req.Status,
 	})
 	if err != nil {
 		log.Printf("Error updating participant: %v", err)
 		if err.Error() == "participant not found" {
 			response.NotFound(w, err.Error())
-		} else if err == command.ErrInvalidBikeType || err == command.ErrInvalidGender {
+		} else if err == command.ErrInvalidBikeType || err == command.ErrInvalidGender || err == command.ErrInvalidStatus {
 			response.BadRequest(w, err.Error())
 		} else {
 			response.InternalServerError(w, "Failed to update participant")

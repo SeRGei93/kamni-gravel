@@ -9,6 +9,7 @@ import type {
   PrizeDistributionStats,
   UnassignedPrizeSlot,
 } from '@/types';
+import { PARTICIPANT_STATUS_LABELS } from '@/types';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
 import Badge from '@/components/ui/badge/Badge';
@@ -310,6 +311,18 @@ export default function PrizeDistributionPage() {
                       >
                         {dist.participant_name}
                       </Link>
+                      {dist.status && dist.status !== 'active' && (
+                        <div className="mt-1">
+                          <Badge
+                            color={
+                              dist.status === 'disqualified' ? 'error' : 'warning'
+                            }
+                            size="sm"
+                          >
+                            {PARTICIPANT_STATUS_LABELS[dist.status]}
+                          </Badge>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Badge
@@ -326,17 +339,17 @@ export default function PrizeDistributionPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-sm font-medium text-gray-800 dark:text-white/90">
-                        {dist.place_absolute}
+                        {dist.place_absolute || '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-sm font-medium text-gray-800 dark:text-white/90">
-                        {dist.place_by_gender}
+                        {dist.place_by_gender || '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-sm font-medium text-gray-800 dark:text-white/90">
-                        {dist.place_by_gender_bike}
+                        {dist.place_by_gender_bike || '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3">

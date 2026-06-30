@@ -7,6 +7,16 @@ export type BikeTypeFilter = 'all' | 'gravel' | 'mtb' | 'road' | 'single_speed' 
 export type FileType = 'photo' | 'document';
 export type CriteriaType = 'speed' | 'photo' | 'beer' | 'random' | 'custom';
 export type GiftReviewStatus = 'pending_review' | 'approved';
+// Статус участия в зачёте: active — обычный участник; dnf — сошёл с дистанции
+// (исключён из зачёта и призов по местам, но участвует в призах по критериям);
+// disqualified — дисквалификация (исключён из любого распределения призов).
+export type ParticipantStatus = 'active' | 'dnf' | 'disqualified';
+
+export const PARTICIPANT_STATUS_LABELS: Record<ParticipantStatus, string> = {
+  active: 'Участвует',
+  dnf: 'Сошёл с дистанции',
+  disqualified: 'Дисквалификация',
+};
 
 export interface User {
   id: number;
@@ -62,6 +72,7 @@ export interface Participant {
   event_id: number;
   bike_type: BikeType;
   gender: Gender;
+  status: ParticipantStatus;
   result_link?: string;
   is_finished: boolean;
   elapsed_time?: string; // формат ЧЧ:ММ:СС
@@ -358,6 +369,7 @@ export interface UpdateParticipantRequest {
   bike_type?: BikeType;
   gender?: Gender;
   notes?: string;
+  status?: ParticipantStatus;
 }
 
 // LockStatus — состояние блокировки редактирования участника (in-memory лок на бэкенде).
@@ -478,6 +490,7 @@ export interface PrizeDistribution {
   participant_name: string;
   gender: string;
   bike_type: string;
+  status: ParticipantStatus;
   place_absolute: number;
   place_by_gender: number;
   place_by_gender_bike: number;

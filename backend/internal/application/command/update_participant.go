@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
@@ -16,6 +17,7 @@ type UpdateParticipantCommand struct {
 	BikeType      *string
 	Gender        *string
 	Notes         *string
+	Status        *string
 }
 
 // UpdateParticipantHandler обрабатывает обновление участника
@@ -59,6 +61,18 @@ func (h *UpdateParticipantHandler) Handle(ctx context.Context, cmd UpdatePartici
 
 	if cmd.Notes != nil {
 		participant.Notes = *cmd.Notes
+	}
+
+	if cmd.Status != nil {
+		status, err := valueobject.NewParticipantStatus(*cmd.Status)
+		if err != nil {
+			return nil, ErrInvalidStatus
+		}
+		log.Printf(
+			"level=debug msg=\"Participant status updated\" participant_id=%d old_status=%q new_status=%q",
+			participant.ID, participant.Status, status,
+		)
+		participant.Status = status
 	}
 
 	// Сохраняем изменения в БД

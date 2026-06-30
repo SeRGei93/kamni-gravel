@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/valueobject"
 )
 
 // ParticipantDTO представляет DTO участника для API
@@ -16,6 +17,7 @@ type ParticipantDTO struct {
 	EventID                uint                      `json:"event_id"`
 	BikeType               string                    `json:"bike_type"`
 	Gender                 string                    `json:"gender"`
+	Status                 string                    `json:"status"` // active / dnf / disqualified
 	ResultLink             *string                   `json:"result_link,omitempty"`
 	IsFinished             bool                      `json:"is_finished"`
 	ElapsedTime            *string                   `json:"elapsed_time,omitempty"` // формат ЧЧ:ММ:СС
@@ -57,12 +59,18 @@ type ParticipantDTO struct {
 
 // FromParticipant создаёт DTO из entity.Participant
 func FromParticipant(p *entity.Participant) *ParticipantDTO {
+	status := p.Status
+	if status == "" {
+		status = valueobject.ParticipantStatusActive
+	}
+
 	dto := &ParticipantDTO{
 		ID:             p.ID,
 		UserID:         p.UserID,
 		EventID:        p.EventID,
 		BikeType:       string(p.BikeType),
 		Gender:         string(p.Gender),
+		Status:         string(status),
 		IsFinished:     p.IsFinished(),
 		ElapsedTimeSec: p.GetElapsedTimeSec(),
 		MovingTimeSec:  p.GetMovingTimeSec(),

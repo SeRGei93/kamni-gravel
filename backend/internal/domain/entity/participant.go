@@ -13,12 +13,29 @@ type Participant struct {
 	EventID      uint
 	BikeType     valueobject.BikeType
 	Gender       valueobject.Gender
+	Status       valueobject.ParticipantStatus // active / dnf / disqualified
 	Notes        string
 	RegisteredAt time.Time
 
 	// Связанные сущности (для удобства, заполняются через JOIN)
 	User   *User
 	Result *Result // Текущий актуальный результат (is_current = true)
+}
+
+// IsDNF сообщает, что участник сошёл с дистанции.
+func (p *Participant) IsDNF() bool {
+	return p.Status == valueobject.ParticipantStatusDNF
+}
+
+// IsDisqualified сообщает, что участник дисквалифицирован.
+func (p *Participant) IsDisqualified() bool {
+	return p.Status == valueobject.ParticipantStatusDisqualified
+}
+
+// IsRanked сообщает, участвует ли участник в зачёте (по местам). Сошедшие и
+// дисквалифицированные из зачёта исключаются; пустой статус считается active.
+func (p *Participant) IsRanked() bool {
+	return !p.IsDNF() && !p.IsDisqualified()
 }
 
 // HasResult проверяет, есть ли у участника результат

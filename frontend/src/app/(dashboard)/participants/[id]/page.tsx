@@ -6,10 +6,18 @@ import { participantsApi } from '@/api/participants';
 import { resultsApi } from '@/api/results';
 import { useParticipantLock } from '@/hooks/useParticipantLock';
 import ParticipantLockBanner from '@/components/participants/ParticipantLockBanner';
-import type { ParticipantDetail, Gift, Result, PrizeGiftAssignment } from '@/types';
+import type {
+  ParticipantDetail,
+  Gift,
+  Result,
+  PrizeGiftAssignment,
+  ParticipantStatus,
+} from '@/types';
+import { PARTICIPANT_STATUS_LABELS } from '@/types';
 import Badge from '@/components/ui/badge/Badge';
 import Button from '@/components/ui/button/Button';
 import Input from '@/components/form/input/InputField';
+import Select from '@/components/form/Select';
 import TextArea from '@/components/form/input/TextArea';
 import TimeInput from '@/components/participants/TimeInput';
 import Label from '@/components/form/Label';
@@ -33,6 +41,18 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
   single_speed: 'Фикс',
   tandem: 'Тандем',
 };
+
+const STATUS_BADGE_COLOR: Record<ParticipantStatus, 'success' | 'warning' | 'error'> = {
+  active: 'success',
+  dnf: 'warning',
+  disqualified: 'error',
+};
+
+const STATUS_OPTIONS: { value: ParticipantStatus; label: string }[] = [
+  { value: 'active', label: PARTICIPANT_STATUS_LABELS.active },
+  { value: 'dnf', label: PARTICIPANT_STATUS_LABELS.dnf },
+  { value: 'disqualified', label: PARTICIPANT_STATUS_LABELS.disqualified },
+];
 
 function formatPrizeAssignment(assignment: PrizeGiftAssignment): string {
   const target = assignment.target_rank
@@ -90,6 +110,9 @@ export default function ParticipantDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isEditingStatus, setIsEditingStatus] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+  const [statusValue, setStatusValue] = useState<ParticipantStatus>('active');
   const [isDeletingParticipant, setIsDeletingParticipant] = useState(false);
 
   // Редактируемые поля участника
@@ -213,6 +236,36 @@ export default function ParticipantDetailPage() {
     if (!participant) return;
     setNotes(participant.notes || '');
     setIsEditingNotes(false);
+    endEdit();
+  };
+
+  // Вход в редактирование статуса: захватываем лок участника.
+  const handleStartStatusEdit = async () => {
+    if (!participant) return;
+    if (!(await beginEdit())) return;
+    setStatusValue(participant.status);
+    setIsEditingStatus(true);
+  };
+
+  const handleSaveStatus = async () => {
+    if (!participant) return;
+
+    try {
+      setIsSavingStatus(true);
+      await participantsApi.update(participantId, { status: statusValue });
+      setIsEditingStatus(false);
+      endEdit();
+      await loadParticipant(); // статус влияет на места и распределение призов
+    } catch (err) {
+      setError('Ошибка сохранения статуса');
+      console.error('Failed to update participant status:', err);
+    } finally {
+      setIsSavingStatus(false);
+    }
+  };
+
+  const handleCancelStatusEdit = () => {
+    setIsEditingStatus(false);
     endEdit();
   };
 
@@ -555,6 +608,68 @@ export default function ParticipantDetailPage() {
                   )}
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* Статус участия */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                Статус участия
+              </h3>
+              {!isEditingStatus ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  startIcon={<PencilIcon />}
+                  onClick={handleStartStatusEdit}
+                  disabled={isLockedByOther}
+                >
+                  Изменить
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    startIcon={<CloseLineIcon />}
+                    onClick={handleCancelStatusEdit}
+                    disabled={isSavingStatus}
+                  >
+                    Отмена
+                  </Button>
+                  <Button
+                    size="sm"
+                    startIcon={<CheckLineIcon />}
+                    onClick={handleSaveStatus}
+                    disabled={isSavingStatus}
+                  >
+                    {isSavingStatus ? 'Сохранение...' : 'Сохранить'}
+                  </Button>
+                </div>
+              )}
+            </div>
+            {isEditingStatus ? (
+              <div className="space-y-2">
+                <Select
+                  options={STATUS_OPTIONS}
+                  defaultValue={statusValue}
+                  onChange={(value) => setStatusValue(value as ParticipantStatus)}
+                  placeholder="Выберите статус"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  «Сошёл с дистанции» и «Дисквалификация» исключают участника из
+                  зачёта и призов по местам. Сошедшие сохраняют право на призы по
+                  критериям, дисквалифицированные исключаются из всех призов.
+                </p>
+              </div>
+            ) : (
+              <Badge
+                color={STATUS_BADGE_COLOR[participant.status] ?? 'light'}
+                size="sm"
+              >
+                {PARTICIPANT_STATUS_LABELS[participant.status] ?? participant.status}
+              </Badge>
             )}
           </div>
 

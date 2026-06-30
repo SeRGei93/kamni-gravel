@@ -91,6 +91,52 @@ func (h *GetPrizeDistributionHandler) HandleDetailed(ctx context.Context, query 
 		participantMap[p.ID] = p
 	}
 
+	// Сошедшие с дистанции (DNF) исключены из зачёта (их нет в resultsWithPlaces),
+	// но остаются кандидатами на призы по чистым критериям. Добавляем их как
+	// отдельные кандидаты без места (PlaceAbsolute = 0); движок по статусу
+	// допустит их только к подаркам с criteria без привязки к месту.
+	// Дисквалифицированные не добавляются — они исключены из любого распределения.
+	ranked := make(map[uint]bool, len(resultsWithPlaces))
+	for _, rwp := range resultsWithPlaces {
+		if rwp != nil && rwp.Result != nil {
+			ranked[rwp.Result.ParticipantID] = true
+		}
+	}
+
+	dnfCandidates := 0
+	disqualifiedExcluded := 0
+	for _, p := range participants {
+		if p.IsDisqualified() {
+			disqualifiedExcluded++
+			continue
+		}
+		if !p.IsDNF() || p.Result == nil || ranked[p.ID] {
+			continue
+		}
+		// Подгружаем критерии результата DNF-участника — без них он не совпадёт
+		// ни с одним призом по критериям.
+		criteria, err := h.criteriaRepo.FindByResult(ctx, p.Result.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get criteria for DNF result %d: %w", p.Result.ID, err)
+		}
+		p.Result.Criteria = criteria
+		resultsWithPlaces = append(resultsWithPlaces, &repository.ResultWithPlace{
+			Result:              p.Result,
+			ParticipantGender:   string(p.Gender),
+			ParticipantBikeType: string(p.BikeType),
+		})
+		dnfCandidates++
+		log.Printf(
+			"level=debug msg=\"Prize distribution DNF criteria-candidate added\" event_id=%d participant_id=%d result_id=%d criteria=%d",
+			query.EventID, p.ID, p.Result.ID, len(criteria),
+		)
+	}
+
+	log.Printf(
+		"level=debug msg=\"Prize distribution candidate set\" event_id=%d ranked=%d dnf_criteria_candidates=%d disqualified_excluded=%d",
+		query.EventID, len(ranked), dnfCandidates, disqualifiedExcluded,
+	)
+
 	// Распределяем призы
 	output := h.distributePrizeSlots(resultsWithPlaces, gifts, participantMap)
 	assignedSlots := 0
@@ -115,6 +161,7 @@ type PrizeDistributionResult struct {
 	ParticipantName        string
 	Gender                 string
 	BikeType               string
+	Status                 string // active / dnf / disqualified
 	PlaceAbsolute          int
 	PlaceByGender          int
 	PlaceByGenderBike      int
