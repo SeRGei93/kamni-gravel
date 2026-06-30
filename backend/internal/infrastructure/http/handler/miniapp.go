@@ -239,6 +239,10 @@ func (h *MiniappHandler) TelegramFile(w http.ResponseWriter, r *http.Request) {
 	if contentLength := fileResponse.Header.Get("Content-Length"); contentLength != "" {
 		w.Header().Set("Content-Length", contentLength)
 	}
+	// Telegram file_id неизменен, а байты по нему — тоже. Кешируем в браузере,
+	// чтобы повторные открытия каталога и скролл не перекачивали фото заново.
+	// private: ответ за Telegram-авторизацией, кеш только в браузере пользователя.
+	w.Header().Set("Cache-Control", "private, max-age=2592000, immutable")
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := io.Copy(w, fileResponse.Body); err != nil {
