@@ -71,7 +71,12 @@ gzip -t "$backup_file" 2>/dev/null || die "not a valid gzip file: $backup_file"
 
 # Owner role baked into the dump (the role objects are ALTERed to own).
 # Used to remap ownership onto $POSTGRES_USER when they differ.
-DUMP_OWNER="${DUMP_OWNER:-$(gzip -dc "$backup_file" | grep -m1 -oE 'OWNER TO [A-Za-z0-9_]+' | awk '{print $3}')}"
+# NB: awk reads the whole stream and prints only the first match, so gzip never
+# gets SIGPIPE — using `grep -m1`/`head` here would kill the script under
+# `set -o pipefail`.
+if [[ -z "${DUMP_OWNER:-}" ]]; then
+  DUMP_OWNER="$(gzip -dc "$backup_file" | awk 'found{next} match($0,/OWNER TO [A-Za-z0-9_]+;/){print substr($0,RSTART+9,RLENGTH-10); found=1}')"
+fi
 
 size_human="$(ls -lh "$backup_file" | awk '{print $5}')"
 log "Backup file : $backup_file ($size_human)"
@@ -145,6 +150,15 @@ log "Restoring (single transaction, rollback on error)..."
       -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
   || die "restore failed — database left unchanged (transaction rolled back)"
 
-log "Restore complete."
-log "Tip: restart the app so it picks up the restored data:"
-log "  docker restart gravel_bot gravel_api 2>/dev/null || true"
+# Refresh planner stats so the row counts below are accurate (not 0).
+dexec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ANALYZE;" >/dev/null 2>&1 || true
+
+log "Restore complete. Tables now in '$POSTGRES_DB':"
+dexec psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT relname AS table, n_live_tup AS rows
+   FROM pg_stat_user_tables WHERE schemaname = 'public'
+   ORDER BY relname;" \
+  || log "  (could not list tables — restore itself succeeded)"
+
+log "Tip: restart the app so it picks up the restored data, e.g.:"
+log "  docker restart gravel-bot-bot gravel-bot-api 2>/dev/null || true"
