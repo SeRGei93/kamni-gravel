@@ -15,6 +15,7 @@ import {
   expandTelegramWebApp,
   isTelegramWebAppAvailable,
   readyTelegramWebApp,
+  waitForTelegramInitData,
 } from "@/utils/telegramWebApp";
 import { getGiftFirstFixedPlace } from "@/utils/giftPlaceRule";
 
@@ -31,11 +32,6 @@ export default function MiniappGiftsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isTelegramWebAppAvailable()) {
-      readyTelegramWebApp();
-      expandTelegramWebApp();
-    }
-
     let ignore = false;
 
     async function loadSession() {
@@ -43,6 +39,14 @@ export default function MiniappGiftsPage() {
       setError(null);
 
       try {
+        // Дожидаемся инициализации Telegram SDK: без initData (гонка с загрузкой
+        // telegram-web-app.js) бэкенд вернёт 401 и каталог не откроется.
+        await waitForTelegramInitData();
+        if (isTelegramWebAppAvailable()) {
+          readyTelegramWebApp();
+          expandTelegramWebApp();
+        }
+
         const data = await miniappApi.getSession();
         if (!ignore) {
           setSession(data);

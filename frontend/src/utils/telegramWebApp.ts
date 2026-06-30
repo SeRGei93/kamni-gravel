@@ -28,6 +28,34 @@ export function getTelegramInitData(): string {
   return webApp.initData;
 }
 
+// waitForTelegramInitData ждёт, пока telegram-web-app.js инициализирует initData.
+// Скрипт грузится асинхронно (Script strategy="afterInteractive"), поэтому первый
+// эффект страницы может выстрелить раньше — тогда запрос уходит с пустым initData
+// и бэкенд отвечает 401 "Missing Telegram init data". Возвращает initData как
+// только он появился, либо '' по таймауту (браузерный фолбэк — без Telegram).
+export async function waitForTelegramInitData(
+  timeoutMs = 3000,
+  intervalMs = 50
+): Promise<string> {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const initData = getTelegramWebApp()?.initData ?? '';
+    if (initData) {
+      return initData;
+    }
+    if (Date.now() >= deadline) {
+      return '';
+    }
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, intervalMs);
+    });
+  }
+}
+
 export function readyTelegramWebApp(): void {
   const webApp = getTelegramWebApp();
   if (!webApp) {
