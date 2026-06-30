@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Dump the PostgreSQL database from the running Docker container, gzip it,
 # and upload the archive to a Telegram chat via the Bot API (sendDocument).
-# Meant to run hourly from cron. See DEPLOY.md ("Бэкап базы в Telegram").
+# Meant to run hourly from cron. See DEPLOY.md ("Бэкап БД в Telegram").
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"

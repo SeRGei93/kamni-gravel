@@ -8,11 +8,11 @@ Telegram бот для организации велогонок с DDD архи
 gravel_bot/
 ├── backend/          # Go backend (DDD)
 ├── frontend/         # Next.js админ-панель
-├── docker-compose.yml
-├── docker-compose.prod.yml
-├── nginx/            # production reverse proxy config
+├── docker-compose.yml      # локальная разработка (свой postgres, порты наружу)
+├── docker-compose.prod.yml # production под docker-server (Caddy + общий postgres)
 ├── scripts/          # operational scripts
-├── env.example
+├── env.example       # шаблон .env для локалки
+├── .env.prod.example # шаблон .env для production (см. DEPLOY.md)
 └── Makefile
 ```
 
@@ -38,7 +38,7 @@ docker-compose up -d
 - REST API сервер
 - Frontend (Next.js)
 
-Локальный compose публикует сервисы на host-порты для удобства разработки. Production nginx подключается только через `docker-compose.prod.yml`.
+Локальный compose публикует сервисы на host-порты для удобства разработки. Production-деплой (Caddy + общий postgres сервера `docker-server`) — отдельный самодостаточный `docker-compose.prod.yml`, см. [DEPLOY.md](DEPLOY.md).
 
 ### Локальный запуск
 
@@ -63,12 +63,8 @@ POSTGRES_USER=gravel
 POSTGRES_PASSWORD=gravel_password
 POSTGRES_PORT=5432
 
-# Database Connection
+# Database Connection (name/user/password/port берутся из POSTGRES_* выше)
 DB_HOST=postgres
-DB_PORT=5432
-DB_NAME=gravel_bot
-DB_USER=gravel
-DB_PASSWORD=gravel_password
 DB_SSLMODE=disable
 
 # API
@@ -80,11 +76,10 @@ ALLOWED_ORIGINS=https://gravel.example.com
 # Miniapp first-screen cache (backend, file-backed)
 MINIAPP_CACHE_DIR=/app/cache/miniapp
 MINIAPP_GIFTS_CACHE_TTL=1h
-
-# Production nginx and SSL
-PUBLIC_DOMAIN=gravel.example.com
-CERTBOT_EMAIL=admin@example.com
 ```
+
+> Для production используйте отдельный шаблон `.env.prod.example` (общий postgres,
+> без своих портов/SSL) — см. [DEPLOY.md](DEPLOY.md).
 
 ### Telegram Mini App
 
@@ -112,40 +107,26 @@ Miniapp-запросы отправляют заголовок `X-Telegram-Init-
 
 Кеш события сбрасывается сразу при одобрении, правке или удалении одобренного подарка через админ-эндпоинты `PUT`/`DELETE /api/gifts/{id}`; TTL служит лишь подстраховкой. Сессия (`GET /api/miniapp/session`) и счётчик участников не кешируются и остаются актуальными.
 
-### Production nginx и SSL
+### Production (Caddy + docker-server)
 
-Для production нужен один публичный домен `PUBLIC_DOMAIN`. На нем nginx маршрутизирует:
+Production разворачивается как проект общего edge-сервера **docker-server**: TLS и
+маршрутизацию по одному публичному домену (`PUBLIC_DOMAIN`) держит **Caddy**
+(авто Let's Encrypt), БД — **общий postgres** сервера. Свой nginx/certbot/postgres
+не поднимаются. Caddy маршрутизирует:
 
-- `/` и `/miniapp/*` во frontend;
-- `/api/*`, `/health`, `/docs/*` в backend API.
+- `/api/*`, `/health`, `/docs/*` → backend API;
+- всё остальное (`/`, `/miniapp/*`, websocket) → frontend.
 
-Отдельный `api.` поддомен сейчас не нужен: API доступен по path routing на том же домене, поэтому frontend и miniapp работают с тем же origin. Отдельный Telegram webhook домен тоже не нужен, потому что бот работает через polling. PostgreSQL, API, frontend, bot и migrate в production остаются во внутренней Docker-сети; наружу публикуются только `80` и `443` у nginx.
+Бот работает через polling, поэтому отдельный webhook-домен не нужен. Сервисы
+`docker-compose.prod.yml` наружу портов не публикуют — Caddy видит их через
+сеть `edge`, БД доступна через `shared-db`.
 
-Перед запуском production укажите DNS `A/AAAA` записи `PUBLIC_DOMAIN` на сервер и откройте входящие `80/tcp` и `443/tcp`.
-
-Первичная выдача Let's Encrypt сертификата:
-
-```bash
-make ssl-cert
-```
-
-Скрипт `scripts/generate-ssl-cert.sh` временно останавливает nginx, запускает certbot в standalone-режиме на `80/tcp`, запрашивает реальный сертификат и после успеха поднимает nginx обратно. Для проверки без боевого лимита Let's Encrypt можно поставить `SSL_STAGING=true`.
-
-Сертификаты сохраняются локально на сервере в `nginx/certbot/conf` и монтируются в nginx и certbot как `/etc/letsencrypt`. Эта директория добавлена в `.gitignore`. Повторный `make ssl-cert` не перевыпускает сертификат, если существующий сертификат еще валиден дольше `SSL_RENEW_BEFORE_SECONDS` секунд, по умолчанию 30 дней.
-
-Запуск production:
+Полная инструкция (add-db, `.env.prod.example`, блок в Caddyfile, запуск) —
+**[DEPLOY.md](DEPLOY.md)**. Кратко:
 
 ```bash
-make docker-prod-up
+make docker-prod-up   # docker compose -f docker-compose.prod.yml up -d --build
 ```
-
-Продление сертификата:
-
-```bash
-make ssl-renew
-```
-
-Для cron достаточно запускать `make ssl-renew` периодически, например раз в день.
 
 ## Доступные команды
 
@@ -160,9 +141,7 @@ make test           # Запустить тесты
 make docker-up      # Запустить в Docker
 make docker-down    # Остановить Docker контейнеры
 make docker-logs    # Показать логи Docker
-make docker-prod-up # Запустить production compose с nginx
-make ssl-cert       # Выпустить initial SSL сертификат
-make ssl-renew      # Продлить SSL сертификат
+make docker-prod-up # Запустить production compose (Caddy/общий postgres)
 ```
 
 ## 📚 API Документация
@@ -295,11 +274,11 @@ go test ./...
 - **8080/18080**: Backend API, в зависимости от `API_PUBLIC_PORT`
 - **5432**: PostgreSQL
 
-Production compose:
+Production compose (docker-server/Caddy):
 
-- **80**: nginx HTTP и Let's Encrypt HTTP-01 challenge
-- **443**: nginx HTTPS
-- Backend API, frontend и PostgreSQL доступны только внутри Docker-сети.
+- Сервисы наружу портов **не публикуют**. `80/443` держит Caddy сервера.
+- `gravel-bot-api` и `gravel-bot-frontend` доступны Caddy через сеть `edge`;
+  БД — через `shared-db`. Подробнее — [DEPLOY.md](DEPLOY.md).
 
 ## Лицензия
 

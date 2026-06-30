@@ -1,7 +1,9 @@
-.PHONY: help build run-bot run-api migrate-up migrate-down migrate-status test clean docker-up docker-down docker-logs docker-prod-build docker-prod-up docker-prod-down docker-prod-logs ssl-cert ssl-renew db-psql db-backup db-restore db-backup-telegram
+.PHONY: help build run-bot run-api migrate-up migrate-down migrate-status test clean docker-up docker-down docker-logs docker-prod-build docker-prod-up docker-prod-down docker-prod-logs db-psql db-backup db-restore db-backup-telegram
 
 COMPOSE ?= docker compose
-PROD_COMPOSE = $(COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml
+# Production compose is self-contained (Caddy + shared postgres via docker-server),
+# NOT an overlay on docker-compose.yml. See DEPLOY.md.
+PROD_COMPOSE = $(COMPOSE) -f docker-compose.prod.yml
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -57,7 +59,7 @@ docker-restart: ## Restart all services
 docker-prod-build: ## Build production images with production env
 	$(PROD_COMPOSE) build
 
-docker-prod-up: ## Start production services with nginx
+docker-prod-up: ## Start production services (Caddy/shared-db; run docker-server ./up.sh first)
 	$(PROD_COMPOSE) up -d --build
 
 docker-prod-down: ## Stop production services
@@ -66,11 +68,8 @@ docker-prod-down: ## Stop production services
 docker-prod-logs: ## Show production logs
 	$(PROD_COMPOSE) logs -f
 
-ssl-cert: ## Issue initial Let's Encrypt certificate for PUBLIC_DOMAIN
-	./scripts/generate-ssl-cert.sh issue
-
-ssl-renew: ## Renew Let's Encrypt certificate for PUBLIC_DOMAIN
-	./scripts/generate-ssl-cert.sh renew
+# TLS под docker-server выпускает Caddy автоматически — отдельные ssl-cert/ssl-renew
+# (certbot) больше не нужны; см. DEPLOY.md.
 
 # Database commands
 db-psql: ## Connect to PostgreSQL via psql (requires docker-compose running)

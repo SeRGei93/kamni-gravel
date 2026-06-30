@@ -1,167 +1,169 @@
-# Deploy
+# Деплой
 
-Краткая инструкция для production-развертывания с nginx и Let's Encrypt.
+Production gravel_bot разворачивается как проект общего edge-сервера
+`docker-server`: TLS и маршрутизацию делает **Caddy**, БД — **общий postgres**
+сервера. Свой postgres/nginx/certbot не поднимаются. Полный пример Caddyfile —
+в разделе [«Полный Caddyfile»](#полный-caddyfile) ниже.
 
-## 1. Подготовить сервер
+Файлы для этого режима:
+- `docker-compose.prod.yml` — самодостаточный compose: сервисы без своего
+  postgres/nginx, на сетях `edge` (Caddy) и `shared-db` (общий postgres), без
+  публикации портов;
+- `.env.prod.example` — шаблон переменных.
 
-На сервере должны быть установлены Docker и Docker Compose. В DNS направьте домен на сервер:
+Контейнеры-цели для Caddy: `gravel-bot-api:8080` и `gravel-bot-frontend:3000`.
 
-```text
-gravel.example.com A <server-ip>
+## Предусловия
+
+Сервер `docker-server` поднят: `./up.sh` создал сети `edge` и `shared-db` и
+запустил Caddy + общий `postgres`.
+
+## Шаги
+
+1. **Положить проект** в `docker-server/projects/gravel-bot/` (клонировать репозиторий сюда).
+
+2. **Завести базу** в общем postgres (из каталога `docker-server`):
+
+   ```bash
+   ./add-db.sh gravel_bot gravel_bot      # выведет сгенерированный пароль — сохраните
+   ```
+
+3. **Заполнить `.env`** проекта:
+
+   ```bash
+   cd projects/gravel-bot
+   cp .env.prod.example .env
+   ```
+
+   Обязательно: `PUBLIC_DOMAIN`, `DB_PASSWORD` (из шага 2), `BOT_TOKEN`,
+   `JWT_SECRET`, `*_CHAT_ID`. Для бэкапа: `BACKUP_TELEGRAM_ID` и
+   `POSTGRES_PASSWORD` (= `DB_PASSWORD`).
+
+4. **Собрать и поднять** (миграции прогонит одноразовый `gravel-bot-migrate`, затем стартуют api/bot/frontend):
+
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d --build
+   ```
+
+   > `NEXT_PUBLIC_API_URL` вшивается в фронтенд на этапе сборки из
+   > `PUBLIC_DOMAIN`. После смены домена пересоберите фронтенд (`--build`).
+
+5. **Добавить домен в Caddy.** `add-site.sh` умеет только один бэкенд на домен,
+   а здесь нужен path-routing (`/api` → api, остальное → frontend). Допишите
+   site-блок в `docker-server/Caddyfile` вручную (глобальный блок `{ email }`
+   там уже есть). Полный блок — в разделе [«Полный Caddyfile»](#полный-caddyfile);
+   минимальный вариант:
+
+   ```caddy
+   example.com {
+       @api path /api/* /health /docs /docs/*
+       handle @api {
+           reverse_proxy gravel-bot-api:8080
+       }
+       handle {
+           reverse_proxy gravel-bot-frontend:3000
+       }
+   }
+   ```
+
+   Проверить и перечитать (из каталога `docker-server`):
+
+   ```bash
+   docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+     caddy:2-alpine validate --adapter caddyfile --config /etc/caddy/Caddyfile
+   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+   ```
+
+   Маршруты совпадают с прежним nginx: `/api/*`, `/health`, `/docs`, `/docs/*`
+   → API; всё остальное (дашборд, `/miniapp/*`, websocket) → фронтенд.
+
+## Полный Caddyfile
+
+Полный рабочий конфиг: глобальный блок + site с path-routing, лимитом загрузки и
+security-заголовками (паритет с прежним nginx). На общем `docker-server`
+глобальный `{ email }` уже есть — добавляйте только site-блок (шаг 5); файл
+целиком нужен для standalone-Caddy или как референс.
+
+```caddy
+{
+	# Email для уведомлений Let's Encrypt (ACME).
+	email admin@example.com
+}
+
+# gravel_bot — один домен, path-routing API/фронтенд.
+example.com {
+	# Лимит размера запроса (фото подарков загружаются через /api) — как в nginx.
+	request_body {
+		max_size 20MB
+	}
+
+	# Заголовки безопасности (паритет с прежним nginx).
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# API, health-check и Swagger → backend.
+	@api path /api/* /health /docs /docs/*
+	handle @api {
+		reverse_proxy gravel-bot-api:8080
+	}
+
+	# Дашборд, /miniapp/*, websocket → frontend.
+	handle {
+		reverse_proxy gravel-bot-frontend:3000
+	}
+}
 ```
 
-Откройте входящие порты. `80/tcp` нужен для первичного выпуска и продления Let's Encrypt сертификата:
+Локальная разработка без ACME — тот же site-блок с `tls internal` и
+`*.localhost`-доменом (Caddy выпустит сертификат внутренним CA):
 
-```text
-80/tcp
-443/tcp
+```caddy
+app.localhost {
+	tls internal
+	@api path /api/* /health /docs /docs/*
+	handle @api {
+		reverse_proxy gravel-bot-api:8080
+	}
+	handle {
+		reverse_proxy gravel-bot-frontend:3000
+	}
+}
 ```
 
-В production наружу публикуется только nginx. `postgres`, `backend-api`, `frontend` и `bot` остаются во внутренней Docker-сети.
+> `X-Frame-Options: SAMEORIGIN` повторяет прежний nginx и работает для Telegram
+> Mini App в мобильных клиентах (webview). Если нужен запуск в Telegram Web
+> (web.telegram.org грузит Mini App в iframe со своего origin) — уберите
+> `X-Frame-Options` или замените на CSP `frame-ancestors`.
 
-## 2. Залить код
-
-Вариант через git:
+## Обновление
 
 ```bash
-ssh user@server
-mkdir -p /opt
-cd /opt
-git clone <repo-url> gravel_bot
-cd gravel_bot
-```
-
-Для обновления уже развернутого проекта:
-
-```bash
-cd /opt/gravel_bot
+cd docker-server/projects/gravel-bot
 git pull
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-## 3. Настроить .env
+## Бэкап БД в Telegram (опционально)
 
-```bash
-cp env.example .env
-nano .env
-```
-
-Минимально проверьте и замените:
-
-```env
-ENV=production
-PUBLIC_DOMAIN=gravel.example.com
-CERTBOT_EMAIL=admin@example.com
-
-BOT_TOKEN=...
-JWT_SECRET=...
-POSTGRES_PASSWORD=...
-
-MINIAPP_URL=https://gravel.example.com/miniapp/gifts
-NEXT_PUBLIC_API_URL=https://gravel.example.com
-ALLOWED_ORIGINS=https://gravel.example.com
-```
-
-`MINIAPP_URL`, `NEXT_PUBLIC_API_URL` и `ALLOWED_ORIGINS` используют один и тот же публичный домен. Отдельный поддомен для miniapp не нужен.
-
-## 4. Выпустить SSL-сертификат
-
-Первый запуск:
-
-```bash
-make ssl-cert
-```
-
-На время выпуска скрипт останавливает nginx и запускает certbot в standalone-режиме на `80/tcp`. Сертификат сохраняется в:
-
-```text
-nginx/certbot/conf
-```
-
-Эта директория не коммитится. Повторный `make ssl-cert` не перевыпускает сертификат, если текущий сертификат еще валиден дольше `SSL_RENEW_BEFORE_SECONDS`, по умолчанию 30 дней.
-
-Для тестовой проверки без боевых лимитов Let's Encrypt:
-
-```env
-SSL_STAGING=true
-```
-
-После успешной проверки верните:
-
-```env
-SSL_STAGING=false
-```
-
-И выпустите реальный сертификат.
-
-## 5. Запустить production
-
-```bash
-make docker-prod-up
-```
-
-Проверить логи:
-
-```bash
-make docker-prod-logs
-```
-
-Проверить снаружи:
-
-```bash
-curl -I https://gravel.example.com/health
-curl -I https://gravel.example.com/
-```
-
-## 6. Продление сертификата
-
-Ручное продление:
-
-```bash
-make ssl-renew
-```
-
-Пример cron-задачи:
+Скрипт `scripts/backup-telegram.sh` уже параметризован — на общий postgres его
+наводят переменные `.env` (`POSTGRES_CONTAINER=postgres`, `POSTGRES_DB/USER/PASSWORD`).
+Cron на хосте, ежечасно:
 
 ```cron
-0 3 * * * cd /opt/gravel_bot && make ssl-renew >> /var/log/gravel-ssl-renew.log 2>&1
+0 * * * * cd /path/to/docker-server/projects/gravel-bot && ./scripts/backup-telegram.sh >> backup/backup.log 2>&1
 ```
 
-## 7. Обновление приложения
+## Заметки
 
-```bash
-cd /opt/gravel_bot
-git pull
-make docker-prod-up
-```
-
-Если менялись только env-переменные:
-
-```bash
-make docker-prod-up
-```
-
-## 8. Бэкап базы в Telegram
-
-Скрипт `scripts/backup-telegram.sh` снимает `pg_dump` из контейнера `gravel_postgres`, сжимает его в `.sql.gz` и отправляет архив в Telegram через Bot API. Архивы складываются в `./backup` (хранятся последние `BACKUP_KEEP`, по умолчанию 48 — двое суток при ежечасном запуске).
-
-В `.env` укажите чат/пользователя, куда слать бэкапы:
-
-```env
-BACKUP_TELEGRAM_ID=123456789
-```
-
-`BACKUP_TELEGRAM_ID` — это id личного чата (узнать у `@userinfobot`) или id группы. Бэкап уходит от имени бота `BOT_TOKEN`, поэтому бот должен иметь возможность писать в этот чат (для группы — добавьте бота в неё).
-
-Разовый запуск вручную:
-
-```bash
-make db-backup-telegram
-```
-
-Ежечасный запуск через cron:
-
-```cron
-0 * * * * cd /opt/gravel_bot && ./scripts/backup-telegram.sh >> /var/log/gravel-backup.log 2>&1
-```
-
-Лимит загрузки документа для бота — 50 МБ; для большой базы уменьшите частоту или используйте локальный Bot API сервер.
+- Общий postgres — **PG18** (локальный dev — PG16); миграции на чистом SQL
+  (goose), совместимы.
+- Загруженные файлы и кэш miniapp лежат в именованных томах `event_files` и
+  `miniapp_cache`. Дамп БД их не включает — бэкапьте `event_files` отдельно,
+  если храните там фото подарков.
+- Если порт api/frontend не отвечает при `add-site.sh`/reload — проверьте, что
+  контейнер в сети `edge`: `docker inspect -f '{{json .NetworkSettings.Networks}}' gravel-bot-api`.

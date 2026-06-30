@@ -1,37 +1,138 @@
-services:
-  postgres:
-    ports: !reset []
+# Production-деплой под общий edge-сервер docker-server (Caddy + общий postgres).
+#
+# ВАЖНО: это САМОДОСТАТОЧНЫЙ compose (НЕ overlay над docker-compose.yml).
+# Запуск: docker compose -f docker-compose.prod.yml up -d --build
+#         (или make docker-prod-up)
+#
+# Отличия от локального docker-compose.yml:
+#   • НЕТ своего postgres — используется общий контейнер `postgres` сервера
+#     (сеть shared-db). Базу/пользователя заводит docker-server/add-db.sh.
+#   • НЕТ nginx/certbot — TLS и маршрутизацию по домену делает Caddy сервера
+#     (сеть edge). Порты наружу не публикуем.
+#   • Публичные контейнеры названы gravel-bot-api / gravel-bot-frontend —
+#     это цели reverse_proxy в Caddyfile.
+#
+# Сети edge и shared-db создаёт docker-server/up.sh (external: true).
+# Полный порядок развёртывания — в DEPLOY.md.
 
-  backend-bot:
+services:
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: migrate
+    container_name: gravel-bot-migrate
+    restart: "no"
+    env_file:
+      - .env
     environment:
-      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}/miniapp/gifts}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-gravel_bot}
+      - DB_USER=${DB_USER:-gravel_bot}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required (см. add-db.sh)}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+    networks:
+      - default
+      - shared-db
+    command: ["up"]
 
   backend-api:
-    ports: !reset []
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: api
+    container_name: gravel-bot-api
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - ALLOWED_ORIGINS=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
+      - ENV=${ENV:-production}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-gravel_bot}
+      - DB_USER=${DB_USER:-gravel_bot}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required (см. add-db.sh)}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - API_HOST=0.0.0.0
+      - API_PORT=8080
+      - BOT_TOKEN=${BOT_TOKEN:?BOT_TOKEN is required}
+      - PUBLIC_CHAT_ID=${PUBLIC_CHAT_ID:-0}
+      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}/miniapp/gifts}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - JWT_ACCESS_TTL=${JWT_ACCESS_TTL:-15m}
+      - JWT_REFRESH_TTL=${JWT_REFRESH_TTL:-168h}
+      - ALLOWED_ORIGINS=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}
+      - FILE_STORAGE_PATH=${FILE_STORAGE_PATH:-/app/storage}
+      - MINIAPP_CACHE_DIR=${MINIAPP_CACHE_DIR:-/app/cache/miniapp}
+      - MINIAPP_GIFTS_CACHE_TTL=${MINIAPP_GIFTS_CACHE_TTL:-1h}
+    volumes:
+      - event_files:/app/storage
+      - miniapp_cache:/app/cache/miniapp
+    networks:
+      - default
+      - edge
+      - shared-db
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  backend-bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: bot
+    container_name: gravel-bot-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENV=${ENV:-production}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-gravel_bot}
+      - DB_USER=${DB_USER:-gravel_bot}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required (см. add-db.sh)}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - BOT_TOKEN=${BOT_TOKEN:?BOT_TOKEN is required}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID:-0}
+      - PUBLIC_CHAT_ID=${PUBLIC_CHAT_ID:-0}
+      - BOT_MESSAGES_CHAT_ID=${BOT_MESSAGES_CHAT_ID:-0}
+      - BOT_DEBUG=${BOT_DEBUG:-false}
+      - BOT_SESSION_TIMEOUT=${BOT_SESSION_TIMEOUT:-30m}
+      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}/miniapp/gifts}
+      - FILE_STORAGE_PATH=${FILE_STORAGE_PATH:-/app/storage}
+    volumes:
+      - event_files:/app/storage
+    networks:
+      - default
+      - shared-db
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build:
+      context: ./frontend
+      dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
-    ports: !reset []
-    environment:
-      - NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
-
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: gravel_nginx
+        - NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}
+    container_name: gravel-bot-frontend
     restart: unless-stopped
     environment:
-      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for production}
-      - CLIENT_MAX_BODY_SIZE=${CLIENT_MAX_BODY_SIZE:-20m}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/templates:/etc/nginx/templates:ro
-      - ./nginx/certbot/conf:/etc/letsencrypt:ro
-    depends_on:
-      - backend-api
-      - frontend
+      - NEXT_PUBLIC_API_URL=https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}
+    networks:
+      - default
+      - edge
+
+volumes:
+  event_files:
+  miniapp_cache:
+
+networks:
+  default:
+  edge:
+    external: true
+  shared-db:
+    external: true
