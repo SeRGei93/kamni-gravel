@@ -9,9 +9,14 @@ set -euo pipefail
 #
 # Without a file argument the newest backup/${POSTGRES_DB}_*.sql.gz is used.
 #
-# WARNING: this DROPs the `public` schema and recreates it from the dump,
-# so ALL current data in the database is replaced. The whole load runs in a
+# WARNING: this drops every table/sequence/view in the `public` schema and
+# reloads them from the dump, so ALL current data is replaced. Extensions
+# (e.g. pgvector) and the schema itself are kept. The whole load runs in a
 # single transaction (ON_ERROR_STOP) — on any error nothing is changed.
+#
+# The dump bakes in its original owner role (e.g. OWNER TO gravel). If that
+# role differs from $POSTGRES_USER it is remapped on the fly so objects end up
+# owned by the connecting user. Override detection with DUMP_OWNER=<role>.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -64,10 +69,17 @@ fi
 # Make sure the archive is a readable gzip before we touch the database.
 gzip -t "$backup_file" 2>/dev/null || die "not a valid gzip file: $backup_file"
 
+# Owner role baked into the dump (the role objects are ALTERed to own).
+# Used to remap ownership onto $POSTGRES_USER when they differ.
+DUMP_OWNER="${DUMP_OWNER:-$(gzip -dc "$backup_file" | grep -m1 -oE 'OWNER TO [A-Za-z0-9_]+' | awk '{print $3}')}"
+
 size_human="$(ls -lh "$backup_file" | awk '{print $5}')"
 log "Backup file : $backup_file ($size_human)"
 log "Container   : $POSTGRES_CONTAINER"
 log "Database    : $POSTGRES_DB (user: $POSTGRES_USER)"
+if [[ -n "$DUMP_OWNER" && "$DUMP_OWNER" != "$POSTGRES_USER" ]]; then
+  log "Owner remap : $DUMP_OWNER -> $POSTGRES_USER"
+fi
 
 if [[ "$ASSUME_YES" -ne 1 ]]; then
   echo
@@ -81,7 +93,41 @@ dexec() {
   docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" "$@"
 }
 
-# Drop other client connections so DROP SCHEMA isn't blocked by locks
+# Rewrite the dump's ownership to the connecting user when the baked-in owner
+# role doesn't exist here. Only ownership/privilege lines are touched — never
+# COPY data — so this is safe to run over the whole stream.
+remap_owner() {
+  if [[ -n "$DUMP_OWNER" && "$DUMP_OWNER" != "$POSTGRES_USER" ]]; then
+    sed -E \
+      -e "s/ OWNER TO ${DUMP_OWNER};$/ OWNER TO ${POSTGRES_USER};/" \
+      -e "s/^(GRANT .* TO )${DUMP_OWNER}( WITH GRANT OPTION)?;$/\1${POSTGRES_USER}\2;/" \
+      -e "s/^(REVOKE .* FROM )${DUMP_OWNER};$/\1${POSTGRES_USER};/"
+  else
+    cat
+  fi
+}
+
+# Drop everything the dump recreates, but keep extensions (pgvector) and the
+# schema intact. DROP TABLE ... CASCADE also removes owned sequences and FKs.
+reset_sql() {
+  cat <<'SQL'
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT viewname     FROM pg_views     WHERE schemaname = 'public' LOOP
+    EXECUTE format('DROP VIEW IF EXISTS public.%I CASCADE', r.viewname);
+  END LOOP;
+  FOR r IN SELECT tablename    FROM pg_tables    WHERE schemaname = 'public' LOOP
+    EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', r.tablename);
+  END LOOP;
+  FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' LOOP
+    EXECUTE format('DROP SEQUENCE IF EXISTS public.%I CASCADE', r.sequencename);
+  END LOOP;
+END $$;
+SQL
+}
+
+# Drop other client connections so the table drops aren't blocked by locks
 # (e.g. backend-api / backend-bot holding open sessions). Best-effort.
 log "Terminating other connections to '$POSTGRES_DB'..."
 dexec psql -v ON_ERROR_STOP=0 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
@@ -93,8 +139,8 @@ dexec psql -v ON_ERROR_STOP=0 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
 # any error rolls everything back, leaving the DB untouched.
 log "Restoring (single transaction, rollback on error)..."
 {
-  printf 'DROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public;\n'
-  gzip -dc "$backup_file"
+  reset_sql
+  gzip -dc "$backup_file" | remap_owner
 } | dexec psql -v ON_ERROR_STOP=1 --single-transaction \
       -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
   || die "restore failed — database left unchanged (transaction rolled back)"
