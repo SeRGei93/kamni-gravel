@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { miniappApi } from "@/api/miniapp";
 import GiftDetailView from "@/components/miniapp/GiftDetailView";
+import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
 import type { GenderFilter, Gift } from "@/types";
 import {
   expandTelegramWebApp,
@@ -76,7 +77,14 @@ export default function MiniappGiftDetailPage() {
   }, [giftId]);
 
   if (isLoading) {
-    return <MiniappDetailState title="Приз" text="Загружаем описание и фото" />;
+    return (
+      <main className="tg-screen flex min-h-screen items-center justify-center px-5 py-8">
+        <section className="tg-card flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border p-6">
+          <MiniappSpinner size={28} />
+          <p className="tg-muted text-sm leading-5">Загружаем описание и фото</p>
+        </section>
+      </main>
+    );
   }
 
   if (error || !gift) {

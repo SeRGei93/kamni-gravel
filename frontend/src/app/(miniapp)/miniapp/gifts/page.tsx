@@ -4,13 +4,10 @@ import { useEffect, useState } from "react";
 import { miniappApi } from "@/api/miniapp";
 import GiftCatalogTable from "@/components/miniapp/GiftCatalogTable";
 import GiftEmptyState from "@/components/miniapp/GiftEmptyState";
-import GiftFilters, { type MiniappGenderFilter } from "@/components/miniapp/GiftFilters";
-import type {
-  BikeTypeFilter,
-  GenderFilter,
-  Gift,
-  MiniappSessionResponse,
-} from "@/types";
+import GiftFilters from "@/components/miniapp/GiftFilters";
+import { useMiniappCatalog } from "@/components/miniapp/MiniappCatalogContext";
+import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
+import type { GenderFilter, Gift } from "@/types";
 import {
   expandTelegramWebApp,
   isTelegramWebAppAvailable,
@@ -22,16 +19,47 @@ import { getGiftFirstFixedPlace } from "@/utils/giftPlaceRule";
 const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["all", "male", "female"];
 
 export default function MiniappGiftsPage() {
-  const [session, setSession] = useState<MiniappSessionResponse | null>(null);
-  const [gifts, setGifts] = useState<Gift[]>([]);
-  const [participantCount, setParticipantCount] = useState<number | undefined>(undefined);
-  const [gender, setGender] = useState<MiniappGenderFilter>("all_genders");
-  const [bikeType, setBikeType] = useState<BikeTypeFilter>("all");
-  const [isSessionLoading, setIsSessionLoading] = useState(true);
+  const {
+    gender,
+    setGender,
+    bikeType,
+    setBikeType,
+    session,
+    setSession,
+    getCatalogSnapshot,
+    setCatalogSnapshot,
+  } = useMiniappCatalog();
+
+  const catalogKey = `${gender}|${bikeType}`;
+
+  // Списки инициализируем из кеша контекста: при возврате с карточки приза
+  // каталог отрисовывается мгновенно, без скелетона и потери позиции прокрутки.
+  const [gifts, setGifts] = useState<Gift[]>(
+    () => getCatalogSnapshot(catalogKey)?.gifts ?? []
+  );
+  const [participantCount, setParticipantCount] = useState<number | undefined>(
+    () => getCatalogSnapshot(catalogKey)?.participantCount
+  );
+  // Если сессия уже в контексте (возврат с карточки) — не показываем загрузку.
+  const [isSessionLoading, setIsSessionLoading] = useState(() => session === null);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Telegram WebApp готовим на каждом маунте (вызовы идемпотентны).
   useEffect(() => {
+    if (isTelegramWebAppAvailable()) {
+      readyTelegramWebApp();
+      expandTelegramWebApp();
+    }
+  }, []);
+
+  useEffect(() => {
+    // Сессию грузим один раз и кешируем в контексте.
+    if (session) {
+      setIsSessionLoading(false);
+      return;
+    }
+
     let ignore = false;
 
     async function loadSession() {
@@ -70,12 +98,23 @@ export default function MiniappGiftsPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [session, setSession]);
 
   useEffect(() => {
+    if (!session) {
+      return;
+    }
+
     let ignore = false;
 
     async function loadCatalog() {
+      // Сразу показываем кеш текущего фильтра (если есть), затем обновляем.
+      const cached = getCatalogSnapshot(catalogKey);
+      if (cached) {
+        setGifts(cached.gifts);
+        setParticipantCount(cached.participantCount);
+      }
+
       setIsCatalogLoading(true);
 
       try {
@@ -97,10 +136,17 @@ export default function MiniappGiftsPage() {
               ];
 
         if (!ignore) {
-          setGifts(mergeUniqueGifts(catalogResponses.flatMap((response) => response.gifts)));
-          setParticipantCount(
-            catalogResponses[0]?.participant_count
+          const mergedGifts = mergeUniqueGifts(
+            catalogResponses.flatMap((response) => response.gifts)
           );
+          const nextParticipantCount = catalogResponses[0]?.participant_count;
+          setGifts(mergedGifts);
+          setParticipantCount(nextParticipantCount);
+          setError(null);
+          setCatalogSnapshot(catalogKey, {
+            gifts: mergedGifts,
+            participantCount: nextParticipantCount,
+          });
         }
       } catch (loadError) {
         console.warn("[miniapp] Gift catalog load failed", {
@@ -108,7 +154,8 @@ export default function MiniappGiftsPage() {
           bikeType,
           message: loadError instanceof Error ? loadError.message : "Unknown error",
         });
-        if (!ignore) {
+        // Если есть кеш — оставляем его показанным, ошибку не выводим.
+        if (!ignore && !cached) {
           setError("Не удалось загрузить призы");
         }
       } finally {
@@ -118,14 +165,12 @@ export default function MiniappGiftsPage() {
       }
     }
 
-    if (session) {
-      loadCatalog();
-    }
+    loadCatalog();
 
     return () => {
       ignore = true;
     };
-  }, [bikeType, gender, session]);
+  }, [bikeType, gender, session, catalogKey, getCatalogSnapshot, setCatalogSnapshot]);
 
   if (isSessionLoading) {
     return <MiniappShellState title="Каталог призов" text="Загружаем активное событие" />;
@@ -155,6 +200,12 @@ export default function MiniappGiftsPage() {
             onGenderChange={setGender}
             onBikeTypeChange={setBikeType}
           />
+          {isCatalogLoading && (
+            <div className="tg-muted flex items-center justify-center gap-2 text-[11px] font-medium">
+              <MiniappSpinner size={12} />
+              <span>Обновляем призы…</span>
+            </div>
+          )}
         </div>
       </section>
 
