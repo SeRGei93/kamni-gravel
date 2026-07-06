@@ -80,6 +80,7 @@ type Server struct {
 	userBlacklistHandler     *handler.UserBlacklistHandler
 	adminUsersHandler        *handler.AdminUsersHandler
 	participantLockHandler   *handler.ParticipantLockHandler
+	chatMembersHandler       *handler.ChatMembersHandler
 
 	// Lock manager (in-memory participant edit locks)
 	lockManager *lock.Manager
@@ -117,6 +118,7 @@ func NewServer(
 	prizeAssignmentRepo repository.PrizeAssignmentRepository,
 	userBlacklistRepo repository.UserBlacklistRepository,
 	adminRepo repository.AdminRepository,
+	chatMemberRepo repository.ChatMemberRepository,
 ) *Server {
 	// Создаём command handlers
 	registerParticipantHandler := command.NewRegisterParticipantHandler(
@@ -332,6 +334,22 @@ func NewServer(
 	lockManager := lock.NewManager(lock.DefaultTTL)
 	participantLockHandler := handler.NewParticipantLockHandler(lockManager)
 
+	// Чистка публичного чата: kicker включается только при заданных токене и
+	// публичном чате, иначе execute вернёт ErrChatPurgeNotConfigured.
+	var chatPurgeKicker command.ChatMemberKicker
+	kicker, err := telegraminfra.NewChatMemberKickerFromToken(cfg.BotToken, cfg.PublicChatID)
+	if err != nil {
+		log.Printf("WARN Chat member kicker disabled: error=%v", err)
+	} else if kicker != nil {
+		chatPurgeKicker = kicker
+	}
+	chatMembersHandler := handler.NewChatMembersHandler(
+		chatMemberRepo,
+		eventRepo,
+		query.NewGetChatPurgeCandidatesHandler(chatMemberRepo, giftRepo, participantRepo),
+		command.NewExecuteChatPurgeHandler(chatMemberRepo, giftRepo, chatPurgeKicker),
+	)
+
 	s := &Server{
 		userRepo:                         userRepo,
 		eventRepo:                        eventRepo,
@@ -379,6 +397,7 @@ func NewServer(
 		userBlacklistHandler:             userBlacklistHandler,
 		adminUsersHandler:                adminUsersHandler,
 		participantLockHandler:           participantLockHandler,
+		chatMembersHandler:               chatMembersHandler,
 		lockManager:                      lockManager,
 		jwtManager:                       jwtManager,
 		telegramWebAppAuth:               middleware.TelegramWebAppAuth(cfg.BotToken),
@@ -519,6 +538,12 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Post("/events/{eventId}/gifts", s.giftsHandler.Create)
 			r.Put("/gifts/{id}", s.giftsHandler.Update)
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)
+
+			// Chat members / purge admin routes
+			r.Get("/chat-members/summary", s.chatMembersHandler.Summary)
+			r.Post("/chat-members/import", s.chatMembersHandler.Import)
+			r.Get("/chat-purge/candidates", s.chatMembersHandler.Candidates)
+			r.Post("/chat-purge/execute", s.chatMembersHandler.Execute)
 
 			// User blacklist admin routes
 			r.Get("/user-blacklist", s.userBlacklistHandler.GetAll)

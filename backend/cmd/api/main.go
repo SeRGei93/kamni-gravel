@@ -45,6 +45,7 @@ func main() {
 	prizeAssignmentRepo := postgres.NewPrizeAssignmentRepository(db)
 	userBlacklistRepo := postgres.NewUserBlacklistRepository(db)
 	adminRepo := postgres.NewAdminRepository(db)
+	chatMemberRepo := postgres.NewChatMemberRepository(db)
 
 	// Создаём HTTP сервер
 	server := http.NewServer(
@@ -71,6 +72,7 @@ func main() {
 		prizeAssignmentRepo,
 		userBlacklistRepo,
 		adminRepo,
+		chatMemberRepo,
 	)
 
 	// Канал для сигналов ОС
