@@ -2511,6 +2511,7 @@ func (r *telegramParticipantRepoFake) GetFinishedByEvent(ctx context.Context, ev
 
 type telegramGiftRepoFake struct {
 	createdGift *entity.Gift
+	gifts       []*entity.Gift
 }
 
 func (r *telegramGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error { return nil }
@@ -2531,7 +2532,7 @@ func (r *telegramGiftRepoFake) FindByID(ctx context.Context, id uint) (*entity.G
 	return nil, nil
 }
 func (r *telegramGiftRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
-	return nil, nil
+	return r.gifts, nil
 }
 func (r *telegramGiftRepoFake) FindByEventAndReviewStatus(ctx context.Context, eventID uint, reviewStatus entity.GiftReviewStatus) ([]*entity.Gift, error) {
 	return nil, nil

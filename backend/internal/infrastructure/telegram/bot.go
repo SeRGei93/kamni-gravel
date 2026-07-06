@@ -33,13 +33,16 @@ const (
 
 // Bot представляет Telegram бота
 type Bot struct {
-	api                telegramAPI
-	debug              bool
-	botUsername        string
-	miniappURL         string
-	adminChatID        int64
-	publicChatID       int64
-	botMessagesChatID  int64
+	api                  telegramAPI
+	debug                bool
+	botUsername          string
+	miniappURL           string
+	adminChatID          int64
+	publicChatID         int64
+	botMessagesChatID    int64
+	adminActionsPassword string
+	adminNotifyMu        sync.Mutex
+	adminNotifyPending   *adminNotifyPendingState
 	proxyUsersMu       sync.RWMutex
 	proxyUsers         map[int64]entity.User
 	proxyDialogMu      sync.Mutex
@@ -94,13 +97,14 @@ type telegramAPI interface {
 
 // Config представляет конфигурацию бота
 type Config struct {
-	Token             string
-	AdminChatID       int64
-	PublicChatID      int64
-	BotMessagesChatID int64
-	Debug             bool
-	MiniappURL        string
-	SessionTimeout    time.Duration
+	Token                string
+	AdminChatID          int64
+	PublicChatID         int64
+	BotMessagesChatID    int64
+	Debug                bool
+	MiniappURL           string
+	SessionTimeout       time.Duration
+	AdminActionsPassword string
 }
 
 // NewBot создаёт новый экземпляр бота
@@ -170,6 +174,7 @@ func NewBot(
 		adminChatID:                cfg.AdminChatID,
 		publicChatID:               cfg.PublicChatID,
 		botMessagesChatID:          cfg.BotMessagesChatID,
+		adminActionsPassword:       cfg.AdminActionsPassword,
 		proxyIdleTimeout:           proxyDialogIdleTimeout,
 		proxySendInterval:          proxyBroadcastInterval,
 		sessionManager:             sessionManager,
@@ -224,6 +229,7 @@ func NewBot(
 	telegramBot.logChatMode("public", cfg.PublicChatID)
 	telegramBot.logChatMode("admin", cfg.AdminChatID)
 	telegramBot.logChatMode("bot_messages", cfg.BotMessagesChatID)
+	log.Printf("INFO Telegram admin actions password configured: set=%t", telegramBot.adminActionsPassword != "")
 	log.Printf("Telegram bot initialized successfully: debug=%t", cfg.Debug)
 
 	return telegramBot, nil
@@ -281,6 +287,7 @@ func validateMiniappURL(rawURL string) string {
 // Start запускает бота
 func (b *Bot) Start(ctx context.Context) error {
 	b.configureProxyChatCommands(ctx)
+	b.configureAdminChatCommands(ctx)
 	log.Println("Telegram bot started, waiting for updates...")
 	b.api.Start(ctx)
 	log.Println("Telegram bot stopped")
@@ -325,6 +332,9 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *telegrambot.Bot, update *mode
 		return
 	}
 	if b.handleProxyUpdate(ctx, update) {
+		return
+	}
+	if b.handleAdminChatUpdate(ctx, update) {
 		return
 	}
 	if update.Message != nil && len(update.Message.NewChatMembers) > 0 && b.isPublicChat(update.Message.Chat.ID) {

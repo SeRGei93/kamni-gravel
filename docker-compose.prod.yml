@@ -101,6 +101,7 @@ services:
       - BOT_MESSAGES_CHAT_ID=${BOT_MESSAGES_CHAT_ID:-0}
       - BOT_DEBUG=${BOT_DEBUG:-false}
       - BOT_SESSION_TIMEOUT=${BOT_SESSION_TIMEOUT:-30m}
+      - ADMIN_ACTIONS_PASSWORD=${ADMIN_ACTIONS_PASSWORD:-}
       - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}/miniapp/gifts}
       - FILE_STORAGE_PATH=${FILE_STORAGE_PATH:-/app/storage}
     volumes:
