@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 
@@ -46,6 +47,11 @@ func (h *GiftHandler) StartAddGift(ctx context.Context, userID int64) (string, *
 
 	if event == nil {
 		return "В данный момент нет активных событий.", nil
+	}
+
+	if event.GiftIntakeClosedAt(time.Now()) {
+		log.Printf("INFO Gift creation blocked: telegram_user_id=%d event_id=%d reason=gift_intake_closed", userID, event.ID)
+		return GiftIntakeClosedText(event, time.Now()), nil
 	}
 
 	// Сохраняем ID события в сессии
@@ -416,6 +422,13 @@ func (h *GiftHandler) ConfirmAddGift(ctx context.Context, userID int64) (*entity
 		return nil, message, nil
 	}
 
+	// Приём призов могли закрыть, пока пользователь заполнял черновик.
+	if event, err := h.findEventByID(ctx, data.eventID); err == nil && event.GiftIntakeClosedAt(time.Now()) {
+		log.Printf("INFO Gift creation blocked: telegram_user_id=%d event_id=%d reason=gift_intake_closed", userID, data.eventID)
+		h.sessionManager.ResetState(userID)
+		return nil, GiftIntakeClosedText(event, time.Now()), nil
+	}
+
 	cmd := command.AddGiftCommand{
 		UserID:         userID,
 		EventID:        data.eventID,
@@ -448,6 +461,13 @@ func (h *GiftHandler) ConfirmAddGift(ctx context.Context, userID int64) (*entity
 		"photo_count": fmt.Sprintf("%d", len(gift.Attachments)),
 		"photo_line":  photoText,
 	}), nil
+}
+
+func (h *GiftHandler) findEventByID(ctx context.Context, eventID uint) (*entity.Event, error) {
+	if h.eventRepo == nil {
+		return nil, fmt.Errorf("event repository is not configured")
+	}
+	return h.eventRepo.FindByID(ctx, eventID)
 }
 
 // RestartAddGift сбрасывает текущий ввод подарка и начинает процесс заново.

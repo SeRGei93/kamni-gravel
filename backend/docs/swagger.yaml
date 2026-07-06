@@ -380,6 +380,12 @@ paths:
                 active:
                   type: boolean
                   default: true
+                stop_results:
+                  type: boolean
+                  default: false
+                stop_gifts:
+                  type: boolean
+                  default: false
                 telegram_texts:
                   $ref: '#/components/schemas/EventTelegramTexts'
       responses:
@@ -433,6 +439,10 @@ paths:
                   type: string
                   format: date-time
                 active:
+                  type: boolean
+                stop_results:
+                  type: boolean
+                stop_gifts:
                   type: boolean
                 telegram_texts:
                   $ref: '#/components/schemas/EventTelegramTexts'
@@ -1500,6 +1510,12 @@ components:
           example: УСЛОВИЯ УЧАСТИЯ (ДИСКЛЕЙМЕР) ‼️
         active:
           type: boolean
+        stop_results:
+          type: boolean
+          description: Приём результатов остановлен вручную
+        stop_gifts:
+          type: boolean
+          description: Приём призов остановлен вручную
         start_date:
           type: string
           format: date-time

@@ -391,6 +391,82 @@ func TestGiftHandlerConfirmAddGiftPersistsTelegramUserIDAndPendingStatus(t *test
 	}
 }
 
+func TestGiftHandlerStartAddGiftEndedEvent(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	end := time.Now().Add(-time.Hour)
+	h := NewGiftHandler(
+		manager,
+		&giftConfirmEventRepoFake{event: &entity.Event{ID: 77, Name: "Тестовый заезд", Active: true, EndDate: &end}},
+		nil,
+	)
+
+	text, markup := h.StartAddGift(context.Background(), 123)
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestGiftHandlerStartAddGiftStoppedGifts(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	h := NewGiftHandler(
+		manager,
+		&giftConfirmEventRepoFake{event: &entity.Event{ID: 77, Active: true, StopGifts: true}},
+		nil,
+	)
+
+	text, markup := h.StartAddGift(context.Background(), 123)
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if !strings.Contains(text, "Добавление призов завершено") {
+		t.Fatalf("text should mention closed gift intake, got %q", text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestGiftHandlerConfirmAddGiftEndedEvent(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	end := time.Now().Add(-time.Hour)
+	h := NewGiftHandler(
+		manager,
+		&giftConfirmEventRepoFake{event: &entity.Event{ID: 77, Active: true, EndDate: &end}},
+		nil,
+	)
+	userID := int64(12345)
+
+	manager.SetState(userID, session.StateAwaitingGiftConfirmation)
+	manager.SetData(userID, "event_id", uint(77))
+	manager.SetData(userID, "gift_gender", "all")
+	manager.SetData(userID, "gift_bike_type", "gravel")
+	manager.SetData(userID, "gift_description", "Bottle cage")
+	manager.SetData(userID, "gift_attachments", []command.GiftAttachmentData{})
+
+	gift, text, err := h.ConfirmAddGift(context.Background(), userID)
+
+	if err != nil {
+		t.Fatalf("ConfirmAddGift error: %v", err)
+	}
+	if gift != nil {
+		t.Fatalf("gift mismatch: got %#v, want nil", gift)
+	}
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if got := manager.GetState(userID); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
 func giftCallbackData(menu models.InlineKeyboardMarkup) []string {
 	var data []string
 	for _, row := range menu.InlineKeyboard {

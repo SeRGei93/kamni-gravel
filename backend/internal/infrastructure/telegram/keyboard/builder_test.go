@@ -15,18 +15,33 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 	}{
 		{
 			name: "main menu",
-			menu: MainMenu(false, false, "", nil),
+			menu: MainMenu(MainMenuOptions{}),
 			want: []string{},
 		},
 		{
 			name: "main menu participant",
-			menu: MainMenu(true, true, "", nil),
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true, IsRegistered: true}),
 			want: []string{"withdraw_participation", "add_gift", "submit_result", "event_conditions"},
 		},
 		{
 			name: "main menu not participant",
-			menu: MainMenu(true, false, "", nil),
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true}),
 			want: []string{"register", "add_gift", "event_conditions"},
+		},
+		{
+			name: "main menu participant with stopped gifts",
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true, IsRegistered: true, StopGifts: true}),
+			want: []string{"withdraw_participation", "submit_result", "event_conditions"},
+		},
+		{
+			name: "main menu participant with stopped results",
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true, IsRegistered: true, StopResults: true}),
+			want: []string{"withdraw_participation", "add_gift", "event_conditions"},
+		},
+		{
+			name: "main menu not participant with stopped gifts and results",
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true, StopGifts: true, StopResults: true}),
+			want: []string{"register", "event_conditions"},
 		},
 		{
 			name: "bike type menu",
@@ -91,7 +106,7 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 	const miniappURL = "https://example.com/miniapp/gifts"
 
-	menu := MainMenu(true, false, miniappURL, nil)
+	menu := MainMenu(MainMenuOptions{HasActiveEvent: true, MiniappURL: miniappURL})
 
 	if got := callbackData(menu); !reflect.DeepEqual(got, []string{"register", "add_gift", "event_conditions"}) {
 		t.Fatalf("callback data mismatch: got %v", got)
@@ -120,8 +135,26 @@ func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 	}
 }
 
+func TestEventEndedMenu(t *testing.T) {
+	if menu := EventEndedMenu(""); len(menu.InlineKeyboard) != 0 {
+		t.Fatalf("menu without miniapp URL must be empty, got %#v", menu.InlineKeyboard)
+	}
+
+	menu := EventEndedMenu("https://example.com/miniapp/gifts")
+	if len(menu.InlineKeyboard) != 1 || len(menu.InlineKeyboard[0]) != 1 {
+		t.Fatalf("menu should contain single button, got %#v", menu.InlineKeyboard)
+	}
+	button := menu.InlineKeyboard[0][0]
+	if button.WebApp == nil || button.WebApp.URL != "https://example.com/miniapp/gifts" {
+		t.Fatalf("button should open miniapp, got %#v", button)
+	}
+	if button.CallbackData != "" {
+		t.Fatalf("button callback data mismatch: got %q, want empty", button.CallbackData)
+	}
+}
+
 func TestMainMenuOmitsWebAppButtonWhenURLIsEmpty(t *testing.T) {
-	menu := MainMenu(true, false, "", nil)
+	menu := MainMenu(MainMenuOptions{HasActiveEvent: true})
 
 	for _, row := range menu.InlineKeyboard {
 		for _, button := range row {
@@ -133,10 +166,10 @@ func TestMainMenuOmitsWebAppButtonWhenURLIsEmpty(t *testing.T) {
 }
 
 func TestMainMenuUsesDeepLinks(t *testing.T) {
-	menu := MainMenu(true, false, "", &MainMenuDeepLinks{
+	menu := MainMenu(MainMenuOptions{HasActiveEvent: true, DeepLinks: &MainMenuDeepLinks{
 		Register:   "https://t.me/gravel_bot?start=register",
 		Conditions: "https://t.me/gravel_bot?start=conditions",
-	})
+	}})
 
 	var registerButton *models.InlineKeyboardButton
 	var conditionsButton *models.InlineKeyboardButton

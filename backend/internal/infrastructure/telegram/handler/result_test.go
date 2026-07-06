@@ -46,6 +46,87 @@ func mustResultLink(t *testing.T, raw string) *valueobject.ResultLink {
 	return link
 }
 
+func TestResultHandlerStartSubmitResultEndedEvent(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	now := time.Date(2026, 7, 7, 0, 0, 1, 0, valueobject.MinskLocation())
+	start := now.Add(-24 * time.Hour)
+	end := now.Add(-time.Second)
+	h := newResultHandlerWithSubmit(
+		manager,
+		&entity.Participant{ID: 11, EventID: 77},
+		&entity.Event{ID: 77, Name: "Тестовый заезд", Active: true, StartDate: &start, EndDate: &end},
+		&resultResultRepoFake{},
+		now,
+	)
+
+	text, markup := h.StartSubmitResult(context.Background(), 123)
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestResultHandlerStartSubmitResultStoppedResults(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	now := time.Date(2026, 7, 6, 12, 0, 0, 0, valueobject.MinskLocation())
+	start := now.Add(-24 * time.Hour)
+	h := newResultHandlerWithSubmit(
+		manager,
+		&entity.Participant{ID: 11, EventID: 77},
+		&entity.Event{ID: 77, Active: true, StartDate: &start, StopResults: true},
+		&resultResultRepoFake{},
+		now,
+	)
+
+	text, markup := h.StartSubmitResult(context.Background(), 123)
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if !strings.Contains(text, "Приём результатов завершён") {
+		t.Fatalf("text should mention closed result intake, got %q", text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestResultHandlerSubmitOrConfirmEndedEvent(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	now := time.Date(2026, 7, 7, 0, 0, 1, 0, valueobject.MinskLocation())
+	start := now.Add(-24 * time.Hour)
+	end := now.Add(-time.Second)
+	resultRepo := &resultResultRepoFake{}
+	h := newResultHandlerWithSubmit(
+		manager,
+		&entity.Participant{ID: 11, EventID: 77},
+		&entity.Event{ID: 77, Active: true, StartDate: &start, EndDate: &end},
+		resultRepo,
+		now,
+	)
+
+	text, markup, participant := h.SubmitOrConfirm(context.Background(), 123, stravaActivityLink)
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if participant != nil {
+		t.Fatalf("participant mismatch: got %#v, want nil", participant)
+	}
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if resultRepo.created != nil {
+		t.Fatal("result must not be created after event end")
+	}
+}
+
 func TestResultHandlerSubmitOrConfirmSavesWhenNoResult(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	now := time.Date(2026, 5, 27, 12, 0, 0, 0, valueobject.MinskLocation())

@@ -14,6 +14,8 @@ type Event struct {
 	Description             string
 	ParticipationConditions string
 	Active                  bool
+	StopResults             bool
+	StopGifts               bool
 	StartDate               *time.Time
 	EndDate                 *time.Time
 	GPXFilePath             string
@@ -301,6 +303,32 @@ func (e *Event) HasStartedAt(now time.Time) bool {
 	start := e.StartDate.In(valueobject.MinskLocation())
 	current := now.In(valueobject.MinskLocation())
 	return !current.Before(start)
+}
+
+// HasEndedAt проверяет, завершилось ли событие к указанному моменту времени.
+func (e *Event) HasEndedAt(now time.Time) bool {
+	if e == nil || e.EndDate == nil {
+		return false
+	}
+	return now.After(*e.EndDate)
+}
+
+// GiftIntakeClosedAt проверяет, закрыт ли приём призов: вручную флагом
+// StopGifts или автоматически по окончании события.
+func (e *Event) GiftIntakeClosedAt(now time.Time) bool {
+	if e == nil {
+		return false
+	}
+	return e.StopGifts || e.HasEndedAt(now)
+}
+
+// ResultIntakeClosedAt проверяет, закрыт ли приём результатов: вручную флагом
+// StopResults или автоматически по окончании события.
+func (e *Event) ResultIntakeClosedAt(now time.Time) bool {
+	if e == nil {
+		return false
+	}
+	return e.StopResults || e.HasEndedAt(now)
 }
 
 // SubmissionStartTimeInMinsk возвращает время старта подачи результата в Минске UTC+3.

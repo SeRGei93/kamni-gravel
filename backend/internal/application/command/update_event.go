@@ -17,6 +17,8 @@ type UpdateEventCommand struct {
 	Description             *string
 	ParticipationConditions *string
 	Active                  *bool
+	StopResults             *bool
+	StopGifts               *bool
 	StartDate               *time.Time
 	EndDate                 *time.Time
 	GPXFilePath             *string
@@ -77,6 +79,14 @@ func (h *UpdateEventHandler) Handle(ctx context.Context, cmd UpdateEventCommand)
 			}
 		}
 		event.Active = *cmd.Active
+	}
+
+	if cmd.StopResults != nil {
+		event.StopResults = *cmd.StopResults
+	}
+
+	if cmd.StopGifts != nil {
+		event.StopGifts = *cmd.StopGifts
 	}
 
 	if cmd.StartDate != nil {

@@ -74,46 +74,71 @@ func (b *Builder) Build() models.InlineKeyboardMarkup {
 	}
 }
 
-// MainMenu создаёт главное меню
+// MainMenuDeepLinks содержит ссылки для кнопок главного меню.
 type MainMenuDeepLinks struct {
 	Register   string
 	Conditions string
 }
 
-func MainMenu(hasActiveEvent bool, isRegistered bool, miniappURL string, deepLinks *MainMenuDeepLinks) models.InlineKeyboardMarkup {
-	if !hasActiveEvent {
+// MainMenuOptions настраивает состав главного меню.
+type MainMenuOptions struct {
+	HasActiveEvent bool
+	IsRegistered   bool
+	MiniappURL     string
+	DeepLinks      *MainMenuDeepLinks
+	StopGifts      bool
+	StopResults    bool
+}
+
+// MainMenu создаёт главное меню
+func MainMenu(opts MainMenuOptions) models.InlineKeyboardMarkup {
+	if !opts.HasActiveEvent {
 		return models.InlineKeyboardMarkup{}
 	}
 
 	builder := NewBuilder()
 
-	if isRegistered {
+	if opts.IsRegistered {
 		builder.AddRow(Button("😢 Отказаться от участия", "withdraw_participation"))
 	} else {
-		if deepLinks != nil && deepLinks.Register != "" {
-			builder.AddRow(ButtonURL("✅ Принять участие", deepLinks.Register))
+		if opts.DeepLinks != nil && opts.DeepLinks.Register != "" {
+			builder.AddRow(ButtonURL("✅ Принять участие", opts.DeepLinks.Register))
 		} else {
 			builder.AddRow(Button("✅ Принять участие", "register"))
 		}
 	}
 
-	builder.AddRow(Button("🎁 Добавить приз", "add_gift"))
+	if !opts.StopGifts {
+		builder.AddRow(Button("🎁 Добавить приз", "add_gift"))
+	}
 
-	if isRegistered {
+	if opts.IsRegistered && !opts.StopResults {
 		builder.AddRow(Button("🏁 Я уже проехал", "submit_result"))
 	}
 
-	if deepLinks != nil && deepLinks.Conditions != "" {
-		builder.AddRow(ButtonURL("‼️ Условия участия", deepLinks.Conditions))
+	if opts.DeepLinks != nil && opts.DeepLinks.Conditions != "" {
+		builder.AddRow(ButtonURL("‼️ Условия участия", opts.DeepLinks.Conditions))
 	} else {
 		builder.AddRow(Button("‼️ Условия участия", "event_conditions"))
 	}
 
-	if miniappURL != "" {
-		builder.AddRow(ButtonWebApp("🏆 Призовой фонд", miniappURL))
+	if opts.MiniappURL != "" {
+		builder.AddRow(ButtonWebApp("🏆 Призовой фонд", opts.MiniappURL))
 	}
 
 	return builder.Build()
+}
+
+// EventEndedMenu создаёт меню завершённого события: остаётся только просмотр
+// призового фонда. Возвращает пустую клавиатуру, если miniapp не настроен.
+func EventEndedMenu(miniappURL string) models.InlineKeyboardMarkup {
+	if miniappURL == "" {
+		return models.InlineKeyboardMarkup{}
+	}
+
+	return NewBuilder().
+		AddButtonWebApp("🏆 Призовой фонд", miniappURL).
+		Build()
 }
 
 // PublicMenu создаёт меню со ссылками для публичного чата.

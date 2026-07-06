@@ -269,7 +269,23 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 
 	// Все получатели — зарегистрированные участники активного события,
 	// поэтому прикрепляем к сообщению рассылки главное меню участника.
-	participantMenu := keyboard.MainMenu(true, true, b.miniappURL, nil)
+	// После завершения события остаётся только кнопка призового фонда.
+	var participantMenu *models.InlineKeyboardMarkup
+	if event, err := b.eventRepo.FindActive(ctx); err == nil && event != nil {
+		menu := keyboard.MainMenu(keyboard.MainMenuOptions{
+			HasActiveEvent: true,
+			IsRegistered:   true,
+			MiniappURL:     b.miniappURL,
+			StopGifts:      event.StopGifts,
+			StopResults:    event.StopResults,
+		})
+		if event.HasEndedAt(time.Now()) {
+			menu = keyboard.EventEndedMenu(b.miniappURL)
+		}
+		if len(menu.InlineKeyboard) > 0 {
+			participantMenu = &menu
+		}
+	}
 
 	delivered := 0
 	failed := 0
@@ -279,7 +295,7 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 			return
 		}
 
-		if err := b.sendProxyBroadcastMessage(ctx, targetUserID, text, &participantMenu); err != nil {
+		if err := b.sendProxyBroadcastMessage(ctx, targetUserID, text, participantMenu); err != nil {
 			failed++
 			log.Printf("WARN Telegram proxy broadcast delivery failed: chat=%s target_user_id=%d text_len=%d error=%v", b.chatLogMarker(proxyChatID), targetUserID, len(text), err)
 			continue
@@ -1237,6 +1253,10 @@ func (b *Bot) handleNewChatMembers(ctx context.Context, msg *models.Message) {
 	}
 
 	prizeFundLink, registerLink, conditionsLink := b.publicWelcomeLinks()
+	// После завершения события новых участников чата не зовём регистрироваться.
+	if event.HasEndedAt(time.Now()) {
+		registerLink = ""
+	}
 
 	for _, member := range msg.NewChatMembers {
 		if member.IsBot {
@@ -1332,6 +1352,13 @@ func (b *Bot) handleWithdrawParticipationCallback(ctx context.Context, callback 
 	if event == nil {
 		_ = b.AnswerCallback(ctx, callback.ID, "Нет активных событий")
 		_, _ = b.SendMessage(ctx, msgRef.ChatID, "В данный момент нет активных событий.")
+		return
+	}
+
+	if event.HasEndedAt(time.Now()) {
+		log.Printf("INFO Participant withdrawal blocked: telegram_user_id=%d event_id=%d reason=event_ended", userID, event.ID)
+		_ = b.AnswerCallback(ctx, callback.ID, "Событие завершено")
+		_, _ = b.SendMessage(ctx, msgRef.ChatID, handler.EventEndedText(event))
 		return
 	}
 
@@ -1493,6 +1520,14 @@ func (b *Bot) getStartKeyboard(ctx context.Context, userID int64) *models.Inline
 	if event == nil {
 		return nil
 	}
+	// После завершения события из меню остаётся только призовой фонд.
+	if event.HasEndedAt(time.Now()) {
+		markup := keyboard.EventEndedMenu(b.miniappURL)
+		if len(markup.InlineKeyboard) == 0 {
+			return nil
+		}
+		return &markup
+	}
 
 	isRegistered := false
 	if b.participantRepo != nil {
@@ -1505,7 +1540,13 @@ func (b *Bot) getStartKeyboard(ctx context.Context, userID int64) *models.Inline
 	}
 
 	// Создаём клавиатуру с действиями
-	markup := keyboard.MainMenu(true, isRegistered, b.miniappURL, nil)
+	markup := keyboard.MainMenu(keyboard.MainMenuOptions{
+		HasActiveEvent: true,
+		IsRegistered:   isRegistered,
+		MiniappURL:     b.miniappURL,
+		StopGifts:      event.StopGifts,
+		StopResults:    event.StopResults,
+	})
 	return &markup
 }
 

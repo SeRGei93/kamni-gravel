@@ -13,6 +13,8 @@ type EventDTO struct {
 	Description             string                    `json:"description"`
 	ParticipationConditions string                    `json:"participation_conditions"`
 	Active                  bool                      `json:"active"`
+	StopResults             bool                      `json:"stop_results"`
+	StopGifts               bool                      `json:"stop_gifts"`
 	StartDate               *time.Time                `json:"start_date,omitempty"`
 	EndDate                 *time.Time                `json:"end_date,omitempty"`
 	GPXFilePath             string                    `json:"gpx_file_path,omitempty"`
@@ -29,6 +31,8 @@ func FromEvent(e *entity.Event) *EventDTO {
 		Description:             e.Description,
 		ParticipationConditions: entity.NormalizeEventParticipationConditions(e.ParticipationConditions),
 		Active:                  e.Active,
+		StopResults:             e.StopResults,
+		StopGifts:               e.StopGifts,
 		StartDate:               e.StartDate,
 		EndDate:                 e.EndDate,
 		GPXFilePath:             e.GPXFilePath,

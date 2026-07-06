@@ -64,6 +64,53 @@ func TestRegistrationHandlerHandleGenderSelectionShowsConditions(t *testing.T) {
 	}
 }
 
+func TestRegistrationHandlerStartRegistrationEndedEvent(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	end := time.Now().Add(-time.Hour)
+	eventRepo := &registrationEventRepoFake{
+		event: &entity.Event{ID: 77, Name: "Тестовый заезд", Active: true, EndDate: &end},
+	}
+	h := NewRegistrationHandler(manager, eventRepo, nil, nil)
+
+	text, markup := h.StartRegistration(context.Background(), 123)
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
+func TestRegistrationHandlerConfirmRegistrationEndedEvent(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	end := time.Now().Add(-time.Hour)
+	eventRepo := &registrationEventRepoFake{
+		event: &entity.Event{ID: 77, Active: true, EndDate: &end},
+	}
+	h := NewRegistrationHandler(manager, eventRepo, nil, nil)
+
+	manager.SetData(123, "event_id", uint(77))
+	manager.SetData(123, "bike_type", "gravel")
+	manager.SetData(123, "gender", "male")
+	manager.SetState(123, session.StateAwaitingRegistrationConsent)
+
+	text, err := h.ConfirmRegistration(context.Background(), 123)
+
+	if err != nil {
+		t.Fatalf("ConfirmRegistration error: %v", err)
+	}
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if got := manager.GetState(123); got != session.StateIdle {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	}
+}
+
 type registrationEventRepoFake struct {
 	event *entity.Event
 }

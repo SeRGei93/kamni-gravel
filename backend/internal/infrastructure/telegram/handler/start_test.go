@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 
@@ -94,6 +95,64 @@ func TestStartHandlerHandleUnknownPayloadKeepsMenu(t *testing.T) {
 	}
 	if !strings.Contains(text, "Что ты хочешь сделать?") {
 		t.Fatalf("text mismatch: got %q", text)
+	}
+}
+
+func TestStartHandlerHandleEndedEventHidesMenu(t *testing.T) {
+	end := time.Now().Add(-time.Hour)
+	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
+		ID:      11,
+		Name:    "Gran Fondo Test",
+		Active:  true,
+		EndDate: &end,
+	}}, &startParticipantRepoFake{}, "")
+
+	text, markup := h.Handle(context.Background(), &models.Message{
+		ID:   10,
+		Chat: models.Chat{ID: 20},
+		From: &models.User{ID: 123, FirstName: "Alex"},
+		Text: "/start",
+	})
+
+	if markup != nil {
+		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	}
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if !strings.Contains(text, "Gran Fondo Test") {
+		t.Fatalf("text should mention event name, got %q", text)
+	}
+}
+
+func TestStartHandlerHandleEndedEventKeepsMiniappButton(t *testing.T) {
+	end := time.Now().Add(-time.Hour)
+	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
+		ID:      11,
+		Name:    "Gran Fondo Test",
+		Active:  true,
+		EndDate: &end,
+	}}, &startParticipantRepoFake{}, "https://example.com/miniapp/gifts")
+
+	text, markup := h.Handle(context.Background(), &models.Message{
+		ID:   10,
+		Chat: models.Chat{ID: 20},
+		From: &models.User{ID: 123, FirstName: "Alex"},
+		Text: "/start",
+	})
+
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil, want miniapp-only menu")
+	}
+	if len(markup.InlineKeyboard) != 1 || len(markup.InlineKeyboard[0]) != 1 {
+		t.Fatalf("markup should contain single miniapp button, got %#v", markup.InlineKeyboard)
+	}
+	button := markup.InlineKeyboard[0][0]
+	if button.WebApp == nil || button.CallbackData != "" {
+		t.Fatalf("button should be web app only, got %#v", button)
 	}
 }
 

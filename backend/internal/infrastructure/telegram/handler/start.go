@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 
@@ -89,6 +90,16 @@ func (h *StartHandler) Handle(ctx context.Context, msg *models.Message) (string,
 		log.Printf("WARN Unrecognized /start payload: user_id=%d payload=%q", userID, payload)
 	}
 
+	if event.HasEndedAt(time.Now()) {
+		log.Printf("INFO Start menu hidden: user_id=%d event_id=%d reason=event_ended", userID, event.ID)
+		// Призовой фонд остаётся доступным и после завершения события.
+		markup := keyboard.EventEndedMenu(h.miniappURL)
+		if len(markup.InlineKeyboard) == 0 {
+			return EventEndedText(event), nil
+		}
+		return EventEndedText(event), &markup
+	}
+
 	isRegistered := h.isUserRegisteredForActiveEvent(ctx, userID, event.ID)
 
 	// Формируем приветственное сообщение
@@ -100,7 +111,13 @@ func (h *StartHandler) Handle(ctx context.Context, msg *models.Message) (string,
 
 Что ты хочешь сделать?`, firstName, event.Name, event.Description)
 
-	markup := keyboard.MainMenu(true, isRegistered, h.miniappURL, nil)
+	markup := keyboard.MainMenu(keyboard.MainMenuOptions{
+		HasActiveEvent: true,
+		IsRegistered:   isRegistered,
+		MiniappURL:     h.miniappURL,
+		StopGifts:      event.StopGifts,
+		StopResults:    event.StopResults,
+	})
 
 	return text, &markup
 }
@@ -120,6 +137,42 @@ func (h *StartHandler) isUserRegisteredForActiveEvent(ctx context.Context, userI
 	}
 
 	return false
+}
+
+// EventEndedText возвращает вежливое сообщение о завершении события.
+func EventEndedText(event *entity.Event) string {
+	title := "Событие завершено"
+	if event != nil && strings.TrimSpace(event.Name) != "" {
+		title = fmt.Sprintf("Событие «%s» завершено", strings.TrimSpace(event.Name))
+	}
+
+	return fmt.Sprintf(`🏁 %s.
+
+Регистрация, добавление призов и приём результатов закрыты.
+
+Спасибо всем за участие! ❤️ Следите за анонсами новых событий.`, title)
+}
+
+// GiftIntakeClosedText возвращает вежливое сообщение о закрытии приёма призов.
+func GiftIntakeClosedText(event *entity.Event, now time.Time) string {
+	if event.HasEndedAt(now) {
+		return EventEndedText(event)
+	}
+
+	return `🎁 Добавление призов завершено.
+
+Спасибо всем, кто пополнил призовой фонд! ❤️`
+}
+
+// ResultIntakeClosedText возвращает вежливое сообщение о закрытии приёма результатов.
+func ResultIntakeClosedText(event *entity.Event, now time.Time) string {
+	if event.HasEndedAt(now) {
+		return EventEndedText(event)
+	}
+
+	return `🏁 Приём результатов завершён.
+
+Спасибо всем участникам! Следите за подведением итогов. ❤️`
 }
 
 func EventConditionsText(event *entity.Event) string {

@@ -21,6 +21,8 @@ type CreateEventCommand struct {
 	Description             string
 	ParticipationConditions string
 	Active                  bool
+	StopResults             bool
+	StopGifts               bool
 	StartDate               *time.Time
 	EndDate                 *time.Time
 	GPXFilePath             string
@@ -79,6 +81,8 @@ func (h *CreateEventHandler) Handle(ctx context.Context, cmd CreateEventCommand)
 		Description:             cmd.Description,
 		ParticipationConditions: entity.NormalizeEventParticipationConditions(cmd.ParticipationConditions),
 		Active:                  cmd.Active,
+		StopResults:             cmd.StopResults,
+		StopGifts:               cmd.StopGifts,
 		StartDate:               cmd.StartDate,
 		EndDate:                 cmd.EndDate,
 		GPXFilePath:             cmd.GPXFilePath,

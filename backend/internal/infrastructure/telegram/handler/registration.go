@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 
 	"gravel_bot/internal/application/command"
+	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/telegram/keyboard"
 	"gravel_bot/internal/infrastructure/telegram/session"
@@ -47,6 +49,11 @@ func (h *RegistrationHandler) StartRegistration(ctx context.Context, userID int6
 
 	if event == nil {
 		return "В данный момент нет активных событий.", nil
+	}
+
+	if event.HasEndedAt(time.Now()) {
+		log.Printf("INFO Participant registration blocked: telegram_user_id=%d event_id=%d reason=event_ended", userID, event.ID)
+		return EventEndedText(event), nil
 	}
 
 	// Проверяем, не зарегистрирован ли уже участник
@@ -147,6 +154,13 @@ func (h *RegistrationHandler) ConfirmRegistration(ctx context.Context, userID in
 	}
 	log.Printf("INFO Participant registration conditions accepted: telegram_user_id=%d event_id=%d bike_type=%s gender=%s", userID, eventID, bikeType, gender)
 
+	// Событие могло завершиться, пока пользователь читал условия участия.
+	if event, err := h.findEventByID(ctx, eventID); err == nil && event.HasEndedAt(time.Now()) {
+		log.Printf("INFO Participant registration blocked: telegram_user_id=%d event_id=%d reason=event_ended", userID, eventID)
+		h.sessionManager.ResetState(userID)
+		return EventEndedText(event), nil
+	}
+
 	// Выполняем команду регистрации
 	cmd := command.RegisterParticipantCommand{
 		UserID:   userID,
@@ -190,6 +204,13 @@ func (h *RegistrationHandler) ConfirmRegistration(ctx context.Context, userID in
 • Отправить результат после заезда 🏁
 
 💪 Желаем удачи на трассе! Увидимся на старте! 🚴✨`, bikeTypeText, genderText), nil
+}
+
+func (h *RegistrationHandler) findEventByID(ctx context.Context, eventID uint) (*entity.Event, error) {
+	if h.eventRepo == nil {
+		return nil, fmt.Errorf("event repository is not configured")
+	}
+	return h.eventRepo.FindByID(ctx, eventID)
 }
 
 // DeclineRegistration отменяет регистрацию из-за отказа от условий участия.

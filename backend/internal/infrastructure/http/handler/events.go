@@ -134,6 +134,8 @@ type CreateEventRequest struct {
 	Description             string                    `json:"description"`
 	ParticipationConditions string                    `json:"participation_conditions,omitempty"`
 	Active                  bool                      `json:"active"`
+	StopResults             bool                      `json:"stop_results,omitempty"`
+	StopGifts               bool                      `json:"stop_gifts,omitempty"`
 	StartDate               *string                   `json:"start_date,omitempty"` // ISO 8601 format
 	EndDate                 *string                   `json:"end_date,omitempty"`   // ISO 8601 format
 	GPXFilePath             string                    `json:"gpx_file_path,omitempty"`
@@ -174,6 +176,8 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Description:             req.Description,
 		ParticipationConditions: req.ParticipationConditions,
 		Active:                  req.Active,
+		StopResults:             req.StopResults,
+		StopGifts:               req.StopGifts,
 		StartDate:               startDate,
 		EndDate:                 endDate,
 		GPXFilePath:             req.GPXFilePath,
@@ -202,6 +206,8 @@ type UpdateEventRequest struct {
 	Description             *string                    `json:"description,omitempty"`
 	ParticipationConditions *string                    `json:"participation_conditions,omitempty"`
 	Active                  *bool                      `json:"active,omitempty"`
+	StopResults             *bool                      `json:"stop_results,omitempty"`
+	StopGifts               *bool                      `json:"stop_gifts,omitempty"`
 	StartDate               *string                    `json:"start_date,omitempty"` // ISO 8601 format
 	EndDate                 *string                    `json:"end_date,omitempty"`   // ISO 8601 format
 	GPXFilePath             *string                    `json:"gpx_file_path,omitempty"`
@@ -251,6 +257,8 @@ func (h *EventsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description:             req.Description,
 		ParticipationConditions: req.ParticipationConditions,
 		Active:                  req.Active,
+		StopResults:             req.StopResults,
+		StopGifts:               req.StopGifts,
 		StartDate:               startDate,
 		EndDate:                 endDate,
 		GPXFilePath:             req.GPXFilePath,
