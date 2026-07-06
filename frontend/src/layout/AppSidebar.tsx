@@ -10,6 +10,7 @@ import {
   CalenderIcon,
   ChevronDownIcon,
   GridIcon,
+  GroupIcon,
   HorizontaLDots,
   ListIcon,
   LockIcon,
@@ -60,6 +61,11 @@ const navItems: NavItem[] = [
     icon: <LockIcon />,
     name: "Blacklist",
     path: "/user-blacklist",
+  },
+  {
+    icon: <GroupIcon />,
+    name: "Чистка чата",
+    path: "/chat-purge",
   },
   {
     icon: <UserIcon />,
