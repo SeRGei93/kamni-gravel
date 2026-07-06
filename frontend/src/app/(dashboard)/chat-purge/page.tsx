@@ -3,7 +3,6 @@
 import { ChangeEvent, useEffect, useState } from 'react';
 import {
   chatMembersApi,
-  ChatMembersSummary,
   ChatPurgeCandidate,
   ChatPurgeExecuteResult,
 } from '@/api/chatMembers';
@@ -14,7 +13,6 @@ import Label from '@/components/form/Label';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
 
 export default function ChatPurgePage() {
-  const [summary, setSummary] = useState<ChatMembersSummary | null>(null);
   const [eventName, setEventName] = useState('');
   const [candidates, setCandidates] = useState<ChatPurgeCandidate[]>([]);
   const [protectedGiftOwners, setProtectedGiftOwners] = useState(0);
@@ -36,16 +34,12 @@ export default function ChatPurgePage() {
     try {
       setIsLoading(true);
       setError(null);
-      const [summaryResp, candidatesResp] = await Promise.all([
-        chatMembersApi.getSummary(),
-        chatMembersApi.getCandidates(),
-      ]);
-      setSummary(summaryResp);
+      const candidatesResp = await chatMembersApi.getCandidates();
       setEventName(candidatesResp.event_name);
       setCandidates(candidatesResp.candidates);
       setProtectedGiftOwners(candidatesResp.protected_gift_owners);
-      // Все кандидаты предотмечены.
-      setSelected(new Set(candidatesResp.candidates.map((c) => c.user_id)));
+      // По умолчанию никто не выбран — админ отмечает нужных сам.
+      setSelected(new Set());
     } catch (err) {
       setError('Не удалось загрузить данные чистки чата');
       console.error('Failed to load chat purge data:', { operation: 'load', error: err });
@@ -156,18 +150,11 @@ export default function ChatPurgePage() {
       )}
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
-        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 dark:text-gray-300">
-          <span>В чате: <b>{summary?.total ?? '—'}</b></span>
-          <span>Админов: <b>{summary?.admins ?? '—'}</b></span>
-          <span>Ботов: <b>{summary?.bots ?? '—'}</b></span>
-        </div>
-        <div className="mt-4">
-          <Label htmlFor="chat-members-csv">Обновить список из CSV</Label>
-          <FileInput id="chat-members-csv" accept=".csv" onChange={handleImport} disabled={isImporting} />
-          {isImporting && (
-            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Импорт…</p>
-          )}
-        </div>
+        <Label htmlFor="chat-members-csv">Обновить список из CSV</Label>
+        <FileInput id="chat-members-csv" accept=".csv" onChange={handleImport} disabled={isImporting} />
+        {isImporting && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Импорт…</p>
+        )}
       </div>
 
       {result && (
@@ -186,6 +173,7 @@ export default function ChatPurgePage() {
             variant="primary"
             onClick={handlePurge}
             disabled={busy || selected.size === 0}
+            startIcon={<span aria-hidden="true">👢</span>}
           >
             {isPurging ? 'Выполняется удаление…' : `Кикнуть выбранных (${selected.size})`}
           </Button>
@@ -243,6 +231,7 @@ export default function ChatPurgePage() {
                         variant="outline"
                         onClick={() => handleKickOne(candidate)}
                         disabled={busy}
+                        startIcon={<span aria-hidden="true">👢</span>}
                       >
                         {kickingId === candidate.user_id ? 'Удаление…' : 'Кикнуть'}
                       </Button>

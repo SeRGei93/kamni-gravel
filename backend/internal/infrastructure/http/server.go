@@ -540,7 +540,6 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)
 
 			// Chat members / purge admin routes
-			r.Get("/chat-members/summary", s.chatMembersHandler.Summary)
 			r.Post("/chat-members/import", s.chatMembersHandler.Import)
 			r.Get("/chat-purge/candidates", s.chatMembersHandler.Candidates)
 			r.Post("/chat-purge/execute", s.chatMembersHandler.Execute)

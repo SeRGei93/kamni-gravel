@@ -3,12 +3,6 @@ import { get, post, postForm } from './client';
 const CHAT_MEMBERS_PREFIX = '/api/chat-members';
 const CHAT_PURGE_PREFIX = '/api/chat-purge';
 
-export interface ChatMembersSummary {
-  total: number;
-  admins: number;
-  bots: number;
-}
-
 export interface ChatMembersImportResult {
   imported: number;
   skipped_rows: number;
@@ -36,10 +30,6 @@ export interface ChatPurgeExecuteResult {
 }
 
 export const chatMembersApi = {
-  async getSummary(): Promise<ChatMembersSummary> {
-    return get<ChatMembersSummary>(`${CHAT_MEMBERS_PREFIX}/summary`);
-  },
-
   async importCsv(file: File): Promise<ChatMembersImportResult> {
     const formData = new FormData();
     formData.append('file', file);

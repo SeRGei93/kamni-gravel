@@ -44,12 +44,6 @@ func NewChatMembersHandler(
 
 // --- Response payloads ---
 
-type chatMembersSummaryResponse struct {
-	Total  int `json:"total"`
-	Admins int `json:"admins"`
-	Bots   int `json:"bots"`
-}
-
 type chatMembersImportResponse struct {
 	Imported     int `json:"imported"`
 	SkippedRows  int `json:"skipped_rows"`
@@ -78,31 +72,6 @@ type chatPurgeExecuteResponse struct {
 	Failed    int `json:"failed"`
 	Skipped   int `json:"skipped"`
 	Protected int `json:"protected"`
-}
-
-// Summary возвращает сводку ростера чата.
-func (h *ChatMembersHandler) Summary(w http.ResponseWriter, r *http.Request) {
-	members, err := h.chatMemberRepo.GetAll(r.Context())
-	if err != nil {
-		log.Printf("Chat members summary failed: error=%v", err)
-		response.InternalServerError(w, "Не удалось получить список участников чата")
-		return
-	}
-
-	summary := chatMembersSummaryResponse{Total: len(members)}
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		if member.IsAdmin {
-			summary.Admins++
-		}
-		if member.IsBot {
-			summary.Bots++
-		}
-	}
-
-	response.Success(w, summary)
 }
 
 // Import заливает первичный ростер из CSV (export скрипта) в таблицу.
