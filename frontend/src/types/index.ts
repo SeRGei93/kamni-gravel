@@ -150,6 +150,8 @@ export interface Event {
   description: string;
   participation_conditions: string;
   active: boolean;
+  stop_results: boolean;
+  stop_gifts: boolean;
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;
@@ -329,6 +331,8 @@ export interface CreateEventRequest {
   description: string;
   participation_conditions?: string;
   active: boolean;
+  stop_results?: boolean;
+  stop_gifts?: boolean;
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;
@@ -340,6 +344,8 @@ export interface UpdateEventRequest {
   description?: string;
   participation_conditions?: string;
   active?: boolean;
+  stop_results?: boolean;
+  stop_gifts?: boolean;
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;

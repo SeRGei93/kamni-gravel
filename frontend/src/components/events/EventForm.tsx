@@ -58,6 +58,8 @@ export default function EventForm({
     event?.participation_conditions || DEFAULT_PARTICIPATION_CONDITIONS
   );
   const [active, setActive] = useState(event?.active ?? true);
+  const [stopResults, setStopResults] = useState(event?.stop_results ?? false);
+  const [stopGifts, setStopGifts] = useState(event?.stop_gifts ?? false);
   const [startDate, setStartDate] = useState<string>(
     toMinskDateTimeInput(event?.start_date)
   );
@@ -74,6 +76,8 @@ export default function EventForm({
       description,
       participation_conditions: participationConditions,
       active,
+      stop_results: stopResults,
+      stop_gifts: stopGifts,
       start_date: fromMinskDateTimeInput(startDate),
       end_date: fromMinskDateTimeInput(endDate),
     };
@@ -167,6 +171,23 @@ export default function EventForm({
           defaultChecked={active}
           onChange={setActive}
         />
+      </div>
+
+      <div className="space-y-3">
+        <Switch
+          label="Остановить добавление результатов"
+          defaultChecked={stopResults}
+          onChange={setStopResults}
+        />
+        <Switch
+          label="Остановить добавление призов"
+          defaultChecked={stopGifts}
+          onChange={setStopGifts}
+        />
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          Бот перестанет принимать результаты/призы и скроет кнопки. По дате
+          окончания событие закрывается целиком автоматически.
+        </div>
       </div>
 
       <div className="flex items-center gap-3 justify-end">
