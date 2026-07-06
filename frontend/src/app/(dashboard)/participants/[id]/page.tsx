@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { ApiError } from '@/api/client';
 import { participantsApi } from '@/api/participants';
 import { resultsApi } from '@/api/results';
 import { useParticipantLock } from '@/hooks/useParticipantLock';
@@ -93,6 +94,15 @@ function parseOptionalInt(value: string): number | undefined {
   return parsed === undefined ? undefined : Math.round(parsed);
 }
 
+// Достаёт человекочитаемую причину из ответа API для показа в инлайн-ошибке.
+function describeApiError(err: unknown): string | undefined {
+  if (err instanceof ApiError) {
+    const message = err.data?.message || err.data?.error;
+    return typeof message === 'string' && message ? message : err.statusText;
+  }
+  return undefined;
+}
+
 export default function ParticipantDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -107,7 +117,15 @@ export default function ParticipantDetailPage() {
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [currentResult, setCurrentResult] = useState<Result | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Ошибка первичной загрузки — единственный случай, когда вместо страницы
+  // показывается полноэкранный блок ошибки.
   const [error, setError] = useState<string | null>(null);
+  // Ошибки действий (заметки, статус, удаление) — инлайн-баннер, страница
+  // и заполненные формы остаются на месте.
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Ошибка формы результата (валидация и сохранение) — показывается внутри
+  // самой формы, введённые данные не сбрасываются.
+  const [resultError, setResultError] = useState<string | null>(null);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isEditingStatus, setIsEditingStatus] = useState(false);
@@ -210,6 +228,7 @@ export default function ParticipantDetailPage() {
   // Вход в редактирование заметок: сначала захватываем лок участника.
   const handleStartNotesEdit = async () => {
     if (!(await beginEdit())) return;
+    setActionError(null);
     setIsEditingNotes(true);
   };
 
@@ -218,6 +237,7 @@ export default function ParticipantDetailPage() {
 
     try {
       setIsSavingNotes(true);
+      setActionError(null);
       await participantsApi.update(participantId, {
         notes: notes || undefined,
       });
@@ -225,7 +245,10 @@ export default function ParticipantDetailPage() {
       endEdit();
       await loadParticipant(); // Перезагружаем данные
     } catch (err) {
-      setError('Ошибка сохранения заметок');
+      const detail = describeApiError(err);
+      setActionError(
+        `Ошибка сохранения заметок${detail ? `: ${detail}` : ''}. Введённый текст не потерян — попробуйте ещё раз.`
+      );
       console.error('Failed to update participant notes:', err);
     } finally {
       setIsSavingNotes(false);
@@ -243,6 +266,7 @@ export default function ParticipantDetailPage() {
   const handleStartStatusEdit = async () => {
     if (!participant) return;
     if (!(await beginEdit())) return;
+    setActionError(null);
     setStatusValue(participant.status);
     setIsEditingStatus(true);
   };
@@ -252,12 +276,16 @@ export default function ParticipantDetailPage() {
 
     try {
       setIsSavingStatus(true);
+      setActionError(null);
       await participantsApi.update(participantId, { status: statusValue });
       setIsEditingStatus(false);
       endEdit();
       await loadParticipant(); // статус влияет на места и распределение призов
     } catch (err) {
-      setError('Ошибка сохранения статуса');
+      const detail = describeApiError(err);
+      setActionError(
+        `Ошибка сохранения статуса${detail ? `: ${detail}` : ''}. Попробуйте ещё раз.`
+      );
       console.error('Failed to update participant status:', err);
     } finally {
       setIsSavingStatus(false);
@@ -283,6 +311,7 @@ export default function ParticipantDetailPage() {
   const handleStartResultEdit = async () => {
     if (!participant) return;
     if (!(await beginEdit())) return;
+    setResultError(null);
     setElapsedTimeSec(participant.elapsed_time_sec);
     setMovingTimeSec(participant.moving_time_sec);
     setResultLink(participant.result_link || '');
@@ -292,6 +321,7 @@ export default function ParticipantDetailPage() {
 
   const handleStartResultCreate = async () => {
     if (!(await beginEdit())) return;
+    setResultError(null);
     setElapsedTimeSec(undefined);
     setMovingTimeSec(undefined);
     setResultLink('');
@@ -309,7 +339,7 @@ export default function ParticipantDetailPage() {
 
     // Общее время: либо из старт/финиш, либо из «Общего времени».
     if (!hasStartFinish && (elapsedTimeSec === undefined || elapsedTimeSec <= 0)) {
-      setError('Укажите общее время или обе метки: время старта и финиша');
+      setResultError('Укажите общее время или обе метки: время старта и финиша');
       return;
     }
 
@@ -321,7 +351,7 @@ export default function ParticipantDetailPage() {
           1000
       );
       if (diffSec <= 0) {
-        setError('Время финиша должно быть позже времени старта');
+        setResultError('Время финиша должно быть позже времени старта');
         return;
       }
       totalSec = diffSec;
@@ -332,7 +362,7 @@ export default function ParticipantDetailPage() {
       totalSec !== undefined &&
       movingTimeSec > totalSec
     ) {
-      setError('Время в движении не может быть больше общего времени');
+      setResultError('Время в движении не может быть больше общего времени');
       return;
     }
 
@@ -351,7 +381,7 @@ export default function ParticipantDetailPage() {
 
     try {
       setIsSavingResult(true);
-      setError(null);
+      setResultError(null);
       const resultId = await getCurrentResultId();
 
       if (resultId) {
@@ -367,7 +397,11 @@ export default function ParticipantDetailPage() {
       endEdit();
       await loadParticipant();
     } catch (err) {
-      setError('Ошибка сохранения результата');
+      // Форма остаётся открытой с введёнными данными — можно исправить и повторить.
+      const detail = describeApiError(err);
+      setResultError(
+        `Ошибка сохранения результата${detail ? `: ${detail}` : ''}. Введённые данные не потеряны — попробуйте ещё раз.`
+      );
       console.error('Failed to save result:', {
         operation: currentResult ? 'update_result' : 'create_result',
         participant_id: participant.id,
@@ -384,6 +418,7 @@ export default function ParticipantDetailPage() {
     setMovingTimeSec(participant.moving_time_sec);
     setResultLink(participant.result_link || '');
     fillMetricFieldsFromResult(currentResult);
+    setResultError(null);
     setIsEditingResult(false);
     endEdit();
   };
@@ -401,18 +436,19 @@ export default function ParticipantDetailPage() {
     // Захватываем лок перед удалением: если запись уже редактирует другой
     // администратор, удаление недоступно.
     if (!(await beginEdit())) {
-      setError('Запись редактирует другой администратор');
+      setActionError('Запись редактирует другой администратор');
       return;
     }
 
     try {
       setIsDeletingParticipant(true);
-      setError(null);
+      setActionError(null);
       await participantsApi.delete(participant.id);
       router.push('/participants'); // размонтирование снимет лок
     } catch (err) {
       endEdit(); // освобождаем лок при ошибке удаления
-      setError('Ошибка удаления участника');
+      const detail = describeApiError(err);
+      setActionError(`Ошибка удаления участника${detail ? `: ${detail}` : ''}`);
       console.error('Failed to delete participant:', {
         operation: 'delete_participant',
         participant_id: participant.id,
@@ -433,7 +469,9 @@ export default function ParticipantDetailPage() {
     );
   }
 
-  if (error || !participant) {
+  // Полноэкранная ошибка — только когда данные участника так и не загрузились.
+  // Ошибки сохранений показываются инлайн, не размонтируя страницу и формы.
+  if (!participant) {
     return (
       <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
         <p className="text-error-600 dark:text-error-400">
@@ -480,6 +518,21 @@ export default function ParticipantDetailPage() {
     <div className="space-y-6">
       {/* Баннер: запись редактирует другой администратор */}
       <ParticipantLockBanner ownerName={lockOwnerName} />
+
+      {/* Инлайн-ошибка действий: страница и заполненные поля остаются на месте */}
+      {actionError && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
+          <p className="text-sm text-error-600 dark:text-error-400">{actionError}</p>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="text-error-600 hover:text-error-800 dark:text-error-400 dark:hover:text-error-300"
+            aria-label="Закрыть"
+          >
+            <CloseLineIcon />
+          </button>
+        </div>
+      )}
 
       {/* Заголовок */}
       <div className="flex items-center justify-between">
@@ -777,7 +830,14 @@ export default function ParticipantDetailPage() {
                 </div>
               )}
             </div>
-            
+
+            {/* Ошибка сохранения/валидации результата: форма не сбрасывается */}
+            {isEditingResult && resultError && (
+              <div className="mb-4 rounded-lg border border-error-200 bg-error-50 p-3 dark:border-error-800 dark:bg-error-900/20">
+                <p className="text-sm text-error-600 dark:text-error-400">{resultError}</p>
+              </div>
+            )}
+
             <div className="space-y-4">
               {/* Статус */}
               <div className="flex items-center gap-3">
