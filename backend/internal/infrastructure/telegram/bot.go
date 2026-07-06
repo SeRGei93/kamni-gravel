@@ -65,6 +65,7 @@ type Bot struct {
 	giftCriteriaRepo    repository.GiftCriteriaRepository
 	prizeAssignmentRepo repository.PrizeAssignmentRepository
 	userBlacklistRepo   repository.UserBlacklistRepository
+	chatMemberRepo      repository.ChatMemberRepository
 
 	// Command handlers
 	registerParticipantHandler *command.RegisterParticipantHandler
@@ -119,6 +120,7 @@ func NewBot(
 	giftCriteriaRepo repository.GiftCriteriaRepository,
 	prizeAssignmentRepo repository.PrizeAssignmentRepository,
 	userBlacklistRepo repository.UserBlacklistRepository,
+	chatMemberRepo repository.ChatMemberRepository,
 ) (*Bot, error) {
 	miniappURL := validateMiniappURL(cfg.MiniappURL)
 
@@ -187,6 +189,7 @@ func NewBot(
 		giftCriteriaRepo:           giftCriteriaRepo,
 		prizeAssignmentRepo:        prizeAssignmentRepo,
 		userBlacklistRepo:          userBlacklistRepo,
+		chatMemberRepo:             chatMemberRepo,
 		registerParticipantHandler: registerParticipantHandler,
 		addGiftHandler:             addGiftHandler,
 		submitResultHandler:        submitResultHandler,
@@ -202,7 +205,18 @@ func NewBot(
 
 	opts := []telegrambot.Option{
 		telegrambot.WithDefaultHandler(telegramBot.handleUpdate),
+		// allowed_updates — ПОЛНЫЙ whitelist, не добавочный: chat_member по
+		// умолчанию не приходит, но перечислить нужно и все уже используемые типы
+		// (message + callback_query), иначе бот перестанет их получать.
+		telegrambot.WithAllowedUpdates(telegrambot.AllowedUpdates{
+			models.AllowedUpdateMessage,
+			models.AllowedUpdateEditedMessage,
+			models.AllowedUpdateCallbackQuery,
+			models.AllowedUpdateMyChatMember,
+			models.AllowedUpdateChatMember,
+		}),
 	}
+	log.Printf("INFO Telegram allowed updates configured: chat_member=on")
 	if cfg.Debug {
 		opts = append(opts, telegrambot.WithDebug())
 	}
@@ -335,6 +349,10 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *telegrambot.Bot, update *mode
 		return
 	}
 	if b.handleAdminChatUpdate(ctx, update) {
+		return
+	}
+	if update.ChatMember != nil {
+		b.handleChatMemberUpdate(ctx, update.ChatMember)
 		return
 	}
 	if update.Message != nil && len(update.Message.NewChatMembers) > 0 && b.isPublicChat(update.Message.Chat.ID) {

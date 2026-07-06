@@ -45,6 +45,7 @@ func main() {
 	giftCriteriaRepo := postgres.NewGiftCriteriaRepository(db)
 	prizeAssignmentRepo := postgres.NewPrizeAssignmentRepository(db)
 	userBlacklistRepo := postgres.NewUserBlacklistRepository(db)
+	chatMemberRepo := postgres.NewChatMemberRepository(db)
 
 	// Создаём бота
 	bot, err := telegram.NewBot(
@@ -67,6 +68,7 @@ func main() {
 		giftCriteriaRepo,
 		prizeAssignmentRepo,
 		userBlacklistRepo,
+		chatMemberRepo,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create bot: %v", err)
