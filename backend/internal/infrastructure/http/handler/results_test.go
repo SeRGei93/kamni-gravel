@@ -295,6 +295,10 @@ func (r *resultsResultRepoFake) FindByEventWithPlaces(ctx context.Context, event
 	return nil, nil
 }
 
+func (r *resultsResultRepoFake) FindPrevEventElapsedByUser(ctx context.Context, eventID uint) (map[int64]int, error) {
+	return nil, nil
+}
+
 type resultsCriteriaRepoFake struct{}
 
 func (r *resultsCriteriaRepoFake) Create(ctx context.Context, criteria *entity.Criteria) error {

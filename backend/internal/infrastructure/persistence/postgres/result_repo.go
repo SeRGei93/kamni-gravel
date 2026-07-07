@@ -290,6 +290,45 @@ func (r *resultRepository) FindWithCriteria(ctx context.Context, resultID uint) 
 	return result, rows.Err()
 }
 
+func (r *resultRepository) FindPrevEventElapsedByUser(ctx context.Context, eventID uint) (map[int64]int, error) {
+	// Предыдущее событие — ближайшее по дате старта (fallback на дату создания)
+	// до текущего. Берём только актуальные результаты с заполненным временем.
+	query := `
+		WITH prev_event AS (
+			SELECT e.id
+			FROM events e
+			JOIN events cur ON cur.id = $1
+			WHERE e.id <> cur.id
+			  AND COALESCE(e.start_date, e.created_at) < COALESCE(cur.start_date, cur.created_at)
+			ORDER BY COALESCE(e.start_date, e.created_at) DESC
+			LIMIT 1
+		)
+		SELECT p.user_id, r.elapsed_time_sec
+		FROM participants p
+		JOIN results r ON r.participant_id = p.id AND r.is_current = true
+		WHERE p.event_id = (SELECT id FROM prev_event)
+		  AND r.elapsed_time_sec IS NOT NULL
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query previous event results: %w", err)
+	}
+	defer rows.Close()
+
+	elapsedByUser := make(map[int64]int)
+	for rows.Next() {
+		var userID int64
+		var elapsedSec int
+		if err := rows.Scan(&userID, &elapsedSec); err != nil {
+			return nil, fmt.Errorf("failed to scan previous event result: %w", err)
+		}
+		elapsedByUser[userID] = elapsedSec
+	}
+
+	return elapsedByUser, rows.Err()
+}
+
 func (r *resultRepository) FindByEventWithPlaces(ctx context.Context, eventID uint) ([]*repository.ResultWithPlace, error) {
 	query := `
 		SELECT

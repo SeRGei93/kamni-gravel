@@ -14,6 +14,7 @@ import (
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/application/query"
+	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/http/response"
 )
@@ -129,6 +130,14 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Время участников на предыдущем событии (user_id → секунды). Ошибка не
+	// блокирует список — колонка просто останется пустой.
+	prevElapsedByUser, err := h.resultRepo.FindPrevEventElapsedByUser(r.Context(), uint(eventID))
+	if err != nil {
+		log.Printf("Error getting previous event times (column omitted): event_id=%d error=%v", eventID, err)
+		prevElapsedByUser = nil
+	}
+
 	// Конвертируем в DTO с местами и флагом has_gift.
 	allDTOs := make([]*dto.ParticipantDTO, 0, len(participantsWithPlace))
 	for _, pwp := range participantsWithPlace {
@@ -140,6 +149,13 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			participantDTO.PlaceAbsolute = &rwp.PlaceAbsolute
 			participantDTO.PlaceByGender = &rwp.PlaceByGender
 			participantDTO.PlaceByGenderBike = &rwp.PlaceByGenderBike
+		}
+
+		if prevSec, ok := prevElapsedByUser[pwp.Participant.UserID]; ok {
+			sec := prevSec
+			formatted := entity.FormatSeconds(sec)
+			participantDTO.PrevElapsedTimeSec = &sec
+			participantDTO.PrevElapsedTime = &formatted
 		}
 
 		allDTOs = append(allDTOs, participantDTO)

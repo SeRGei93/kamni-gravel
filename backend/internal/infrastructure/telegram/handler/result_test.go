@@ -468,3 +468,6 @@ func (r *resultResultRepoFake) FindWithCriteria(ctx context.Context, resultID ui
 func (r *resultResultRepoFake) FindByEventWithPlaces(ctx context.Context, eventID uint) ([]*repository.ResultWithPlace, error) {
 	return nil, nil
 }
+func (r *resultResultRepoFake) FindPrevEventElapsedByUser(ctx context.Context, eventID uint) (map[int64]int, error) {
+	return nil, nil
+}

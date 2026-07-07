@@ -24,6 +24,8 @@ type ParticipantDTO struct {
 	MovingTime             *string                   `json:"moving_time,omitempty"`  // формат ЧЧ:ММ:СС
 	ElapsedTimeSec         *int                      `json:"elapsed_time_sec,omitempty"`
 	MovingTimeSec          *int                      `json:"moving_time_sec,omitempty"`
+	PrevElapsedTime        *string                   `json:"prev_elapsed_time,omitempty"`     // общее время на предыдущем событии, ЧЧ:ММ:СС
+	PrevElapsedTimeSec     *int                      `json:"prev_elapsed_time_sec,omitempty"` // общее время на предыдущем событии, секунды
 	Notes                  string                    `json:"notes,omitempty"`
 	RegisteredAt           time.Time                 `json:"registered_at"`
 	FinishedAt             *time.Time                `json:"finished_at,omitempty"`

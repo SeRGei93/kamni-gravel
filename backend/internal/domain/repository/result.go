@@ -43,6 +43,12 @@ type ResultRepository interface {
 
 	// FindByEventWithPlaces находит результаты события с рассчитанными местами
 	FindByEventWithPlaces(ctx context.Context, eventID uint) ([]*ResultWithPlace, error)
+
+	// FindPrevEventElapsedByUser возвращает общее время (секунды) актуальных
+	// результатов предыдущего события в разрезе user_id. Предыдущее событие —
+	// ближайшее по дате старта (или дате создания, если старт не задан) до
+	// события eventID. Пустая map, если предыдущего события нет.
+	FindPrevEventElapsedByUser(ctx context.Context, eventID uint) (map[int64]int, error)
 }
 
 // ResultWithPlace представляет результат с рассчитанными местами

@@ -149,6 +149,30 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     render: (p) => textOrDash(p.moving_time),
   },
   {
+    key: 'prev_elapsed_time',
+    label: 'Время прошлого года',
+    defaultVisible: true,
+    render: (p) => textOrDash(p.prev_elapsed_time),
+  },
+  {
+    key: 'result_link',
+    label: 'Strava',
+    defaultVisible: true,
+    render: (p) =>
+      p.result_link ? (
+        <a
+          href={p.result_link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300"
+        >
+          Открыть ↗
+        </a>
+      ) : (
+        <span className={cellMuted}>-</span>
+      ),
+  },
+  {
     key: 'has_gift',
     label: 'Добавил приз',
     defaultVisible: true,

@@ -79,6 +79,8 @@ export interface Participant {
   moving_time?: string; // формат ЧЧ:ММ:СС
   elapsed_time_sec?: number;
   moving_time_sec?: number;
+  prev_elapsed_time?: string; // общее время на предыдущем событии, ЧЧ:ММ:СС
+  prev_elapsed_time_sec?: number;
   notes?: string;
   registered_at: string;
   finished_at?: string;

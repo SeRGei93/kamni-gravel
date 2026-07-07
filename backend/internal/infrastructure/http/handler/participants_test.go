@@ -145,10 +145,15 @@ func (r *participantListParticipantRepoFake) FindByEvent(ctx context.Context, ev
 
 type participantListResultRepoFake struct {
 	repository.ResultRepository
+	prevElapsedByUser map[int64]int
 }
 
 func (r *participantListResultRepoFake) FindByEventWithPlaces(ctx context.Context, eventID uint) ([]*repository.ResultWithPlace, error) {
 	return nil, nil
+}
+
+func (r *participantListResultRepoFake) FindPrevEventElapsedByUser(ctx context.Context, eventID uint) (map[int64]int, error) {
+	return r.prevElapsedByUser, nil
 }
 
 type participantListGiftRepoFake struct {
@@ -174,8 +179,9 @@ func newParticipantsListTestHandler() *ParticipantsHandler {
 		gifts: []*entity.Gift{{ID: 10, UserID: 222, EventID: 77, ReviewStatus: entity.GiftReviewStatusPendingReview}},
 	}
 	return &ParticipantsHandler{
-		participantRepo:        participantRepo,
-		resultRepo:             &participantListResultRepoFake{},
+		participantRepo: participantRepo,
+		// user 111 имеет время на предыдущем событии (1:59:59), остальные — нет.
+		resultRepo:             &participantListResultRepoFake{prevElapsedByUser: map[int64]int{111: 7199}},
 		giftRepo:               giftRepo,
 		getParticipantsHandler: query.NewGetParticipantsHandler(participantRepo),
 	}
@@ -228,6 +234,30 @@ func TestParticipantsHandlerHasGiftFilter(t *testing.T) {
 	}
 	if got.Participants[0].UserID != 222 {
 		t.Fatalf("has_gift filter returned wrong participant: user_id=%d", got.Participants[0].UserID)
+	}
+}
+
+// Список участников должен отдавать время предыдущего события только тем,
+// у кого оно есть (по user_id), в секундах и в формате ЧЧ:ММ:СС.
+func TestParticipantsHandlerPrevEventElapsedTime(t *testing.T) {
+	got := getParticipantsList(t, newParticipantsListTestHandler(), "/api/events/77/participants")
+
+	byUserID := make(map[int64]*dto.ParticipantDTO, len(got.Participants))
+	for _, p := range got.Participants {
+		byUserID[p.UserID] = p
+	}
+
+	withPrev := byUserID[111]
+	if withPrev == nil || withPrev.PrevElapsedTimeSec == nil || withPrev.PrevElapsedTime == nil {
+		t.Fatalf("participant 111 should have prev event time, got %+v", withPrev)
+	}
+	if *withPrev.PrevElapsedTimeSec != 7199 || *withPrev.PrevElapsedTime != "01:59:59" {
+		t.Fatalf("prev event time mismatch: sec=%d formatted=%s", *withPrev.PrevElapsedTimeSec, *withPrev.PrevElapsedTime)
+	}
+
+	withoutPrev := byUserID[222]
+	if withoutPrev == nil || withoutPrev.PrevElapsedTimeSec != nil || withoutPrev.PrevElapsedTime != nil {
+		t.Fatalf("participant 222 should not have prev event time, got %+v", withoutPrev)
 	}
 }
 

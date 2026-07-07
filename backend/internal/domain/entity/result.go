@@ -36,7 +36,7 @@ func (r *Result) ElapsedTimeFormatted() string {
 	if r.ElapsedTimeSec == nil {
 		return ""
 	}
-	return formatSeconds(*r.ElapsedTimeSec)
+	return FormatSeconds(*r.ElapsedTimeSec)
 }
 
 // MovingTimeFormatted возвращает чистое время в формате ЧЧ:ММ:СС
@@ -44,10 +44,11 @@ func (r *Result) MovingTimeFormatted() string {
 	if r.MovingTimeSec == nil {
 		return ""
 	}
-	return formatSeconds(*r.MovingTimeSec)
+	return FormatSeconds(*r.MovingTimeSec)
 }
 
-func formatSeconds(seconds int) string {
+// FormatSeconds форматирует длительность в секундах как ЧЧ:ММ:СС.
+func FormatSeconds(seconds int) string {
 	hours := seconds / 3600
 	minutes := (seconds % 3600) / 60
 	secs := seconds % 60
@@ -84,7 +85,7 @@ func (r *Result) IdleTimeFormatted() string {
 	if idle == nil {
 		return ""
 	}
-	return formatSeconds(*idle)
+	return FormatSeconds(*idle)
 }
 
 // AvgSpeedKmh возвращает среднюю скорость (км/ч) = дистанция / общее время,
