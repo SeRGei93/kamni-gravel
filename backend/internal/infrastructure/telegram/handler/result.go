@@ -113,9 +113,9 @@ func (h *ResultHandler) resolveSubmission(ctx context.Context, userID int64) (su
 		return submissionContext{}, "В данный момент нет активных событий.", false
 	}
 
-	if event.ResultIntakeClosedAt(h.now()) {
+	if event.ResultIntakeClosed() {
 		log.Printf("INFO Telegram result submission blocked: user_id=%d event_id=%d reason=result_intake_closed", userID, event.ID)
-		return submissionContext{}, ResultIntakeClosedText(event, h.now()), false
+		return submissionContext{}, ResultIntakeClosedText(), false
 	}
 
 	texts := entity.NormalizeEventTelegramTexts(event.TelegramTexts)

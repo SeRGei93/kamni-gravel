@@ -101,10 +101,12 @@ func TestStartHandlerHandleUnknownPayloadKeepsMenu(t *testing.T) {
 func TestStartHandlerHandleEndedEventHidesMenu(t *testing.T) {
 	end := time.Now().Add(-time.Hour)
 	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
-		ID:      11,
-		Name:    "Gran Fondo Test",
-		Active:  true,
-		EndDate: &end,
+		ID:          11,
+		Name:        "Gran Fondo Test",
+		Active:      true,
+		StopGifts:   true,
+		StopResults: true,
+		EndDate:     &end,
 	}}, &startParticipantRepoFake{}, "")
 
 	text, markup := h.Handle(context.Background(), &models.Message{
@@ -125,13 +127,51 @@ func TestStartHandlerHandleEndedEventHidesMenu(t *testing.T) {
 	}
 }
 
-func TestStartHandlerHandleEndedEventKeepsMiniappButton(t *testing.T) {
+func TestStartHandlerHandleEndedEventKeepsGiftButton(t *testing.T) {
 	end := time.Now().Add(-time.Hour)
 	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
 		ID:      11,
 		Name:    "Gran Fondo Test",
 		Active:  true,
 		EndDate: &end,
+	}}, &startParticipantRepoFake{}, "")
+
+	text, markup := h.Handle(context.Background(), &models.Message{
+		ID:   10,
+		Chat: models.Chat{ID: 20},
+		From: &models.User{ID: 123, FirstName: "Alex"},
+		Text: "/start",
+	})
+
+	if !strings.Contains(text, "завершено") {
+		t.Fatalf("text should mention ended event, got %q", text)
+	}
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil, want add_gift button")
+	}
+
+	var callbacks []string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			if button.CallbackData != "" {
+				callbacks = append(callbacks, button.CallbackData)
+			}
+		}
+	}
+	if len(callbacks) != 1 || callbacks[0] != "add_gift" {
+		t.Fatalf("callback buttons mismatch: got %v, want [add_gift]", callbacks)
+	}
+}
+
+func TestStartHandlerHandleEndedEventKeepsMiniappButton(t *testing.T) {
+	end := time.Now().Add(-time.Hour)
+	h := NewStartHandler(&startUserRepoFake{}, &startEventRepoFake{event: &entity.Event{
+		ID:          11,
+		Name:        "Gran Fondo Test",
+		Active:      true,
+		StopGifts:   true,
+		StopResults: true,
+		EndDate:     &end,
 	}}, &startParticipantRepoFake{}, "https://example.com/miniapp/gifts")
 
 	text, markup := h.Handle(context.Background(), &models.Message{

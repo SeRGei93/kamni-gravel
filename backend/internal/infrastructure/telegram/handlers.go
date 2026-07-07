@@ -269,19 +269,16 @@ func (b *Bot) handleProxyBroadcastText(ctx context.Context, proxyChatID int64, t
 
 	// Все получатели — зарегистрированные участники активного события,
 	// поэтому прикрепляем к сообщению рассылки главное меню участника.
-	// После завершения события остаётся только кнопка призового фонда.
 	var participantMenu *models.InlineKeyboardMarkup
 	if event, err := b.eventRepo.FindActive(ctx); err == nil && event != nil {
 		menu := keyboard.MainMenu(keyboard.MainMenuOptions{
 			HasActiveEvent: true,
+			EventEnded:     event.HasEndedAt(time.Now()),
 			IsRegistered:   true,
 			MiniappURL:     b.miniappURL,
 			StopGifts:      event.StopGifts,
 			StopResults:    event.StopResults,
 		})
-		if event.HasEndedAt(time.Now()) {
-			menu = keyboard.EventEndedMenu(b.miniappURL)
-		}
 		if len(menu.InlineKeyboard) > 0 {
 			participantMenu = &menu
 		}
@@ -1520,14 +1517,6 @@ func (b *Bot) getStartKeyboard(ctx context.Context, userID int64) *models.Inline
 	if event == nil {
 		return nil
 	}
-	// После завершения события из меню остаётся только призовой фонд.
-	if event.HasEndedAt(time.Now()) {
-		markup := keyboard.EventEndedMenu(b.miniappURL)
-		if len(markup.InlineKeyboard) == 0 {
-			return nil
-		}
-		return &markup
-	}
 
 	isRegistered := false
 	if b.participantRepo != nil {
@@ -1539,14 +1528,19 @@ func (b *Bot) getStartKeyboard(ctx context.Context, userID int64) *models.Inline
 		}
 	}
 
-	// Создаём клавиатуру с действиями
+	// Создаём клавиатуру с действиями. После окончания события остаются
+	// только приём призов/результатов (по флагам) и призовой фонд.
 	markup := keyboard.MainMenu(keyboard.MainMenuOptions{
 		HasActiveEvent: true,
+		EventEnded:     event.HasEndedAt(time.Now()),
 		IsRegistered:   isRegistered,
 		MiniappURL:     b.miniappURL,
 		StopGifts:      event.StopGifts,
 		StopResults:    event.StopResults,
 	})
+	if len(markup.InlineKeyboard) == 0 {
+		return nil
+	}
 	return &markup
 }
 

@@ -46,7 +46,7 @@ func mustResultLink(t *testing.T, raw string) *valueobject.ResultLink {
 	return link
 }
 
-func TestResultHandlerStartSubmitResultEndedEvent(t *testing.T) {
+func TestResultHandlerStartSubmitResultEndedEventStaysOpen(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	now := time.Date(2026, 7, 7, 0, 0, 1, 0, valueobject.MinskLocation())
 	start := now.Add(-24 * time.Hour)
@@ -59,16 +59,14 @@ func TestResultHandlerStartSubmitResultEndedEvent(t *testing.T) {
 		now,
 	)
 
-	text, markup := h.StartSubmitResult(context.Background(), 123)
+	// Окончание события без галочки StopResults не закрывает приём результатов.
+	_, markup := h.StartSubmitResult(context.Background(), 123)
 
-	if markup != nil {
-		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil, want cancel keyboard")
 	}
-	if !strings.Contains(text, "завершено") {
-		t.Fatalf("text should mention ended event, got %q", text)
-	}
-	if got := manager.GetState(123); got != session.StateIdle {
-		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	if got := manager.GetState(123); got != session.StateAwaitingResultLink {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingResultLink)
 	}
 }
 
@@ -97,16 +95,15 @@ func TestResultHandlerStartSubmitResultStoppedResults(t *testing.T) {
 	}
 }
 
-func TestResultHandlerSubmitOrConfirmEndedEvent(t *testing.T) {
+func TestResultHandlerSubmitOrConfirmStoppedResults(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	now := time.Date(2026, 7, 7, 0, 0, 1, 0, valueobject.MinskLocation())
 	start := now.Add(-24 * time.Hour)
-	end := now.Add(-time.Second)
 	resultRepo := &resultResultRepoFake{}
 	h := newResultHandlerWithSubmit(
 		manager,
 		&entity.Participant{ID: 11, EventID: 77},
-		&entity.Event{ID: 77, Active: true, StartDate: &start, EndDate: &end},
+		&entity.Event{ID: 77, Active: true, StartDate: &start, StopResults: true},
 		resultRepo,
 		now,
 	)
@@ -119,11 +116,11 @@ func TestResultHandlerSubmitOrConfirmEndedEvent(t *testing.T) {
 	if participant != nil {
 		t.Fatalf("participant mismatch: got %#v, want nil", participant)
 	}
-	if !strings.Contains(text, "завершено") {
-		t.Fatalf("text should mention ended event, got %q", text)
+	if !strings.Contains(text, "Приём результатов завершён") {
+		t.Fatalf("text should mention closed result intake, got %q", text)
 	}
 	if resultRepo.created != nil {
-		t.Fatal("result must not be created after event end")
+		t.Fatal("result must not be created when intake is stopped")
 	}
 }
 

@@ -313,22 +313,16 @@ func (e *Event) HasEndedAt(now time.Time) bool {
 	return now.After(*e.EndDate)
 }
 
-// GiftIntakeClosedAt проверяет, закрыт ли приём призов: вручную флагом
-// StopGifts или автоматически по окончании события.
-func (e *Event) GiftIntakeClosedAt(now time.Time) bool {
-	if e == nil {
-		return false
-	}
-	return e.StopGifts || e.HasEndedAt(now)
+// GiftIntakeClosed проверяет, закрыт ли приём призов. Приём управляется только
+// флагом StopGifts: окончание события само по себе призы не закрывает.
+func (e *Event) GiftIntakeClosed() bool {
+	return e != nil && e.StopGifts
 }
 
-// ResultIntakeClosedAt проверяет, закрыт ли приём результатов: вручную флагом
-// StopResults или автоматически по окончании события.
-func (e *Event) ResultIntakeClosedAt(now time.Time) bool {
-	if e == nil {
-		return false
-	}
-	return e.StopResults || e.HasEndedAt(now)
+// ResultIntakeClosed проверяет, закрыт ли приём результатов. Приём управляется
+// только флагом StopResults: окончание события само по себе его не закрывает.
+func (e *Event) ResultIntakeClosed() bool {
+	return e != nil && e.StopResults
 }
 
 // SubmissionStartTimeInMinsk возвращает время старта подачи результата в Минске UTC+3.

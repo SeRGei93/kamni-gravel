@@ -44,6 +44,21 @@ func TestMenusPreserveCallbackData(t *testing.T) {
 			want: []string{"register", "event_conditions"},
 		},
 		{
+			name: "ended event keeps gift and result intake by flags",
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true, EventEnded: true, IsRegistered: true}),
+			want: []string{"add_gift", "submit_result"},
+		},
+		{
+			name: "ended event with stopped results keeps gifts",
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true, EventEnded: true, IsRegistered: true, StopResults: true}),
+			want: []string{"add_gift"},
+		},
+		{
+			name: "ended event with everything stopped",
+			menu: MainMenu(MainMenuOptions{HasActiveEvent: true, EventEnded: true, IsRegistered: true, StopGifts: true, StopResults: true}),
+			want: []string{},
+		},
+		{
 			name: "bike type menu",
 			menu: BikeTypeMenu(),
 			want: []string{"bike_gravel", "bike_mtb", "bike_road", "bike_single_speed", "bike_tandem", "cancel"},
@@ -135,12 +150,14 @@ func TestMainMenuAddsOptionalWebAppButton(t *testing.T) {
 	}
 }
 
-func TestEventEndedMenu(t *testing.T) {
-	if menu := EventEndedMenu(""); len(menu.InlineKeyboard) != 0 {
-		t.Fatalf("menu without miniapp URL must be empty, got %#v", menu.InlineKeyboard)
-	}
-
-	menu := EventEndedMenu("https://example.com/miniapp/gifts")
+func TestMainMenuEndedEventKeepsMiniappButton(t *testing.T) {
+	menu := MainMenu(MainMenuOptions{
+		HasActiveEvent: true,
+		EventEnded:     true,
+		StopGifts:      true,
+		StopResults:    true,
+		MiniappURL:     "https://example.com/miniapp/gifts",
+	})
 	if len(menu.InlineKeyboard) != 1 || len(menu.InlineKeyboard[0]) != 1 {
 		t.Fatalf("menu should contain single button, got %#v", menu.InlineKeyboard)
 	}

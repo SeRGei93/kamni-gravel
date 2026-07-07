@@ -391,7 +391,7 @@ func TestGiftHandlerConfirmAddGiftPersistsTelegramUserIDAndPendingStatus(t *test
 	}
 }
 
-func TestGiftHandlerStartAddGiftEndedEvent(t *testing.T) {
+func TestGiftHandlerStartAddGiftEndedEventStaysOpen(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	end := time.Now().Add(-time.Hour)
 	h := NewGiftHandler(
@@ -400,16 +400,14 @@ func TestGiftHandlerStartAddGiftEndedEvent(t *testing.T) {
 		nil,
 	)
 
-	text, markup := h.StartAddGift(context.Background(), 123)
+	// Окончание события без галочки StopGifts не закрывает приём призов.
+	_, markup := h.StartAddGift(context.Background(), 123)
 
-	if markup != nil {
-		t.Fatalf("markup mismatch: got %#v, want nil", markup)
+	if markup == nil {
+		t.Fatal("markup mismatch: got nil, want gift gender keyboard")
 	}
-	if !strings.Contains(text, "завершено") {
-		t.Fatalf("text should mention ended event, got %q", text)
-	}
-	if got := manager.GetState(123); got != session.StateIdle {
-		t.Fatalf("state mismatch: got %s, want %s", got, session.StateIdle)
+	if got := manager.GetState(123); got != session.StateAwaitingGiftGender {
+		t.Fatalf("state mismatch: got %s, want %s", got, session.StateAwaitingGiftGender)
 	}
 }
 
@@ -434,12 +432,11 @@ func TestGiftHandlerStartAddGiftStoppedGifts(t *testing.T) {
 	}
 }
 
-func TestGiftHandlerConfirmAddGiftEndedEvent(t *testing.T) {
+func TestGiftHandlerConfirmAddGiftStoppedGifts(t *testing.T) {
 	manager := session.NewManager(time.Minute)
-	end := time.Now().Add(-time.Hour)
 	h := NewGiftHandler(
 		manager,
-		&giftConfirmEventRepoFake{event: &entity.Event{ID: 77, Active: true, EndDate: &end}},
+		&giftConfirmEventRepoFake{event: &entity.Event{ID: 77, Active: true, StopGifts: true}},
 		nil,
 	)
 	userID := int64(12345)

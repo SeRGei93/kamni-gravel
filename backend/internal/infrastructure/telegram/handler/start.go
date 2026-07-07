@@ -90,17 +90,25 @@ func (h *StartHandler) Handle(ctx context.Context, msg *models.Message) (string,
 		log.Printf("WARN Unrecognized /start payload: user_id=%d payload=%q", userID, payload)
 	}
 
+	isRegistered := h.isUserRegisteredForActiveEvent(ctx, userID, event.ID)
+
 	if event.HasEndedAt(time.Now()) {
-		log.Printf("INFO Start menu hidden: user_id=%d event_id=%d reason=event_ended", userID, event.ID)
-		// Призовой фонд остаётся доступным и после завершения события.
-		markup := keyboard.EventEndedMenu(h.miniappURL)
+		log.Printf("INFO Start menu reduced: user_id=%d event_id=%d reason=event_ended", userID, event.ID)
+		// После окончания события регистрация закрыта, но приём призов и
+		// результатов управляется флагами, а призовой фонд остаётся доступным.
+		markup := keyboard.MainMenu(keyboard.MainMenuOptions{
+			HasActiveEvent: true,
+			EventEnded:     true,
+			IsRegistered:   isRegistered,
+			MiniappURL:     h.miniappURL,
+			StopGifts:      event.StopGifts,
+			StopResults:    event.StopResults,
+		})
 		if len(markup.InlineKeyboard) == 0 {
 			return EventEndedText(event), nil
 		}
 		return EventEndedText(event), &markup
 	}
-
-	isRegistered := h.isUserRegisteredForActiveEvent(ctx, userID, event.ID)
 
 	// Формируем приветственное сообщение
 	text := fmt.Sprintf(`Привет, %s! 👋
@@ -154,22 +162,14 @@ func EventEndedText(event *entity.Event) string {
 }
 
 // GiftIntakeClosedText возвращает вежливое сообщение о закрытии приёма призов.
-func GiftIntakeClosedText(event *entity.Event, now time.Time) string {
-	if event.HasEndedAt(now) {
-		return EventEndedText(event)
-	}
-
+func GiftIntakeClosedText() string {
 	return `🎁 Добавление призов завершено.
 
 Спасибо всем, кто пополнил призовой фонд! ❤️`
 }
 
 // ResultIntakeClosedText возвращает вежливое сообщение о закрытии приёма результатов.
-func ResultIntakeClosedText(event *entity.Event, now time.Time) string {
-	if event.HasEndedAt(now) {
-		return EventEndedText(event)
-	}
-
+func ResultIntakeClosedText() string {
 	return `🏁 Приём результатов завершён.
 
 Спасибо всем участникам! Следите за подведением итогов. ❤️`

@@ -116,9 +116,8 @@ func TestEventHasEndedAtWithoutEndDate(t *testing.T) {
 	}
 }
 
-func TestEventIntakeClosedAt(t *testing.T) {
-	now := time.Date(2026, 7, 6, 12, 0, 0, 0, valueobject.MinskLocation())
-	pastEnd := now.Add(-time.Hour)
+func TestEventIntakeClosed(t *testing.T) {
+	pastEnd := time.Date(2026, 7, 6, 12, 0, 0, 0, valueobject.MinskLocation())
 
 	tests := []struct {
 		name              string
@@ -141,20 +140,18 @@ func TestEventIntakeClosedAt(t *testing.T) {
 			wantResultsClosed: true,
 		},
 		{
-			name:              "event ended closes both",
-			event:             &Event{EndDate: &pastEnd},
-			wantGiftsClosed:   true,
-			wantResultsClosed: true,
+			name:  "event end alone keeps intake open",
+			event: &Event{EndDate: &pastEnd},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.event.GiftIntakeClosedAt(now); got != tt.wantGiftsClosed {
-				t.Fatalf("GiftIntakeClosedAt() = %t, want %t", got, tt.wantGiftsClosed)
+			if got := tt.event.GiftIntakeClosed(); got != tt.wantGiftsClosed {
+				t.Fatalf("GiftIntakeClosed() = %t, want %t", got, tt.wantGiftsClosed)
 			}
-			if got := tt.event.ResultIntakeClosedAt(now); got != tt.wantResultsClosed {
-				t.Fatalf("ResultIntakeClosedAt() = %t, want %t", got, tt.wantResultsClosed)
+			if got := tt.event.ResultIntakeClosed(); got != tt.wantResultsClosed {
+				t.Fatalf("ResultIntakeClosed() = %t, want %t", got, tt.wantResultsClosed)
 			}
 		})
 	}
