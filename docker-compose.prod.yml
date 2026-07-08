@@ -58,7 +58,7 @@ services:
       - API_PORT=8080
       - BOT_TOKEN=${BOT_TOKEN:?BOT_TOKEN is required}
       - PUBLIC_CHAT_ID=${PUBLIC_CHAT_ID:-0}
-      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}/miniapp/gifts}
+      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}/miniapp/leaderboard}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ACCESS_TTL=${JWT_ACCESS_TTL:-15m}
       - JWT_REFRESH_TTL=${JWT_REFRESH_TTL:-168h}
@@ -102,7 +102,7 @@ services:
       - BOT_DEBUG=${BOT_DEBUG:-false}
       - BOT_SESSION_TIMEOUT=${BOT_SESSION_TIMEOUT:-30m}
       - ADMIN_ACTIONS_PASSWORD=${ADMIN_ACTIONS_PASSWORD:-}
-      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}/miniapp/gifts}
+      - MINIAPP_URL=${MINIAPP_URL:-https://${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}/miniapp/leaderboard}
       - FILE_STORAGE_PATH=${FILE_STORAGE_PATH:-/app/storage}
     volumes:
       - event_files:/app/storage

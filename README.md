@@ -83,9 +83,9 @@ MINIAPP_GIFTS_CACHE_TTL=1h
 
 ### Telegram Mini App
 
-`MINIAPP_URL` включает кнопку "Смотреть подарки" в Telegram-боте. Для реального Telegram Mini App URL должен быть публичным HTTPS-адресом frontend-маршрута `/miniapp/gifts`.
+`MINIAPP_URL` включает кнопку запуска Mini App в Telegram-боте. Для реального Telegram Mini App URL должен быть публичным HTTPS-адресом frontend-маршрута `/miniapp/leaderboard` (экран по умолчанию). Маршрут `/miniapp` также редиректит на лидерборд.
 
-Mini App разделён табами на два экрана: **Призы** (`/miniapp/gifts`, каталог одобренных подарков) и **Лидерборд** (`/miniapp/leaderboard`, список участников активного события с местами, полным и чистым временем; тап по строке открывает карточку со всеми метриками результата). Лидерборд отдаёт `GET /api/miniapp/leaderboard`; фильтры по полу и типу велосипеда применяются на клиенте.
+Mini App разделён табами на два экрана: **Лидерборд** (`/miniapp/leaderboard`, открывается по умолчанию — список участников активного события, отправивших результат, с местами, полным и чистым временем; тап по строке открывает карточку со всеми метриками результата) и **Призы** (`/miniapp/gifts`, каталог одобренных подарков). Лидерборд отдаёт `GET /api/miniapp/leaderboard`; фильтры по полу и типу велосипеда применяются на клиенте.
 
 `BOT_MESSAGES_CHAT_ID` включает служебный Telegram-чат для прокси-переписки с пользователями. Значение `0` отключает этот режим.
 
@@ -93,7 +93,7 @@ Mini App разделён табами на два экрана: **Призы** 
 
 ```env
 PUBLIC_DOMAIN=gravel.example.com
-MINIAPP_URL=https://gravel.example.com/miniapp/gifts
+MINIAPP_URL=https://gravel.example.com/miniapp/leaderboard
 NEXT_PUBLIC_API_URL=https://gravel.example.com
 ALLOWED_ORIGINS=https://gravel.example.com
 ```
