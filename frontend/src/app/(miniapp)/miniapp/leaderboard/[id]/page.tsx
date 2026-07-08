@@ -19,7 +19,7 @@ export default function MiniappLeaderboardDetailPage() {
   const params = useParams();
   const participantId = useMemo(() => Number(params.id), [params.id]);
 
-  const { entries, setEntries, gender, bikeType } = useMiniappLeaderboard();
+  const { entries, setEntries } = useMiniappLeaderboard();
   const [isLoading, setIsLoading] = useState(() => entries === null);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,27 +71,32 @@ export default function MiniappLeaderboardDetailPage() {
     };
   }, [entries, setEntries]);
 
-  const { entry, place } = useMemo(() => {
+  const { entry, absolutePlace, genderBikePlace } = useMemo(() => {
+    const empty = {
+      entry: undefined,
+      absolutePlace: null as number | null,
+      genderBikePlace: null as number | null,
+    };
     if (!entries) {
-      return { entry: undefined, place: null as number | null };
+      return empty;
     }
     const found = entries.find((item) => item.id === participantId);
     if (!found) {
-      return { entry: undefined, place: null as number | null };
+      return empty;
     }
-    // Место — как в текущем срезе фильтров (то, что видел пользователь в списке);
-    // если участник не попадает в текущий фильтр — берём абсолютное место.
-    const inView = rankAndFilterLeaderboard(entries, gender, bikeType).find(
-      (row) => row.entry.id === participantId
-    );
-    const displayPlace =
-      inView?.place ??
-      rankAndFilterLeaderboard(entries, "all", "all").find(
+    // Места считаем на клиенте (как и весь лидерборд): абсолютный зачёт и зачёт
+    // по гендеру+типу велосипеда конкретного участника.
+    const placeIn = (gender: typeof found.gender | "all", bikeType: typeof found.bike_type | "all") =>
+      rankAndFilterLeaderboard(entries, gender, bikeType).find(
         (row) => row.entry.id === participantId
-      )?.place ??
-      null;
-    return { entry: found, place: displayPlace };
-  }, [entries, participantId, gender, bikeType]);
+      )?.place ?? null;
+
+    return {
+      entry: found,
+      absolutePlace: placeIn("all", "all"),
+      genderBikePlace: placeIn(found.gender, found.bike_type),
+    };
+  }, [entries, participantId]);
 
   if (isLoading) {
     return (
@@ -113,7 +118,13 @@ export default function MiniappLeaderboardDetailPage() {
     );
   }
 
-  return <LeaderboardDetailView entry={entry} place={place} />;
+  return (
+    <LeaderboardDetailView
+      entry={entry}
+      absolutePlace={absolutePlace}
+      genderBikePlace={genderBikePlace}
+    />
+  );
 }
 
 function MiniappDetailState({ title, text }: { title: string; text: string }) {

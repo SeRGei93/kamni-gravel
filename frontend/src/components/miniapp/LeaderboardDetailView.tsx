@@ -5,7 +5,8 @@ import { bikeTypeLabel, genderFullLabel } from "./leaderboardFormat";
 
 interface LeaderboardDetailViewProps {
   entry: MiniappLeaderboardEntry;
-  place: number | null;
+  absolutePlace: number | null;
+  genderBikePlace: number | null;
 }
 
 interface StatusPill {
@@ -34,11 +35,11 @@ const pillToneClass: Record<StatusPill["tone"], string> = {
 
 export default function LeaderboardDetailView({
   entry,
-  place,
+  absolutePlace,
+  genderBikePlace,
 }: LeaderboardDetailViewProps) {
   const status = resolveStatus(entry);
   const hasResult = entry.is_finished;
-  const submittedAt = formatSubmittedAt(entry.submitted_at);
 
   return (
     <main className="tg-screen min-h-screen">
@@ -59,7 +60,7 @@ export default function LeaderboardDetailView({
             {/* Шапка: место, имя, категория, статус */}
             <div className="flex items-start gap-3">
               <div className="tg-soft-accent flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-base font-semibold tabular-nums">
-                {place ?? "—"}
+                {absolutePlace ?? "—"}
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="tg-title break-words text-lg font-semibold leading-6">
@@ -76,30 +77,14 @@ export default function LeaderboardDetailView({
               </span>
             </div>
 
-            {/* Ссылка на результат и дата отправки */}
-            {(entry.result_link || submittedAt) && (
-              <div className="tg-divider rounded-lg border px-3 py-2.5 text-sm">
-                {entry.result_link && (
-                  <div>
-                    <p className="tg-muted text-xs font-medium">Ссылка на результат</p>
-                    <a
-                      href={entry.result_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="tg-accent mt-1 block break-all text-sm font-medium underline"
-                    >
-                      {entry.result_link}
-                    </a>
-                  </div>
-                )}
-                {submittedAt && (
-                  <div className={entry.result_link ? "mt-3" : ""}>
-                    <p className="tg-muted text-xs font-medium">Дата отправки результата</p>
-                    <p className="tg-title mt-1 text-sm font-medium">{submittedAt}</p>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Места в зачётах */}
+            <div className="tg-divider grid grid-cols-2 overflow-hidden rounded-lg border">
+              <PlaceCell label="Абсолютный зачёт" place={absolutePlace} />
+              <PlaceCell
+                label={`${genderFullLabel(entry.gender)} · ${bikeTypeLabel(entry.bike_type)}`}
+                place={genderBikePlace}
+              />
+            </div>
 
             {/* Метрики заезда */}
             {hasResult ? (
@@ -132,6 +117,17 @@ export default function LeaderboardDetailView({
   );
 }
 
+function PlaceCell({ label, place }: { label: string; place: number | null }) {
+  return (
+    <div className="tg-divider border-r px-3 py-2.5 last:border-r-0">
+      <p className="tg-muted text-[11px] font-medium leading-4">{label}</p>
+      <p className="tg-title mt-1 text-sm font-semibold">
+        {place !== null ? `${place} место` : "—"}
+      </p>
+    </div>
+  );
+}
+
 function Metric({ label, value }: { label: string; value?: string | null }) {
   const display = value && value.length > 0 ? value : "—";
   return (
@@ -152,21 +148,4 @@ function formatCadence(value?: number): string {
 
 function formatCalories(value?: number): string {
   return value !== undefined && value !== null ? `${value} ккал` : "";
-}
-
-function formatSubmittedAt(iso?: string): string {
-  if (!iso) {
-    return "";
-  }
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
