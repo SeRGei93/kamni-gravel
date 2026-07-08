@@ -183,6 +183,136 @@ func TestMiniappGiftsRejectsInvalidFilters(t *testing.T) {
 	}
 }
 
+func TestMiniappLeaderboardRanksFinishersAndListsOthers(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+
+	link, err := valueobject.NewResultLink("https://www.strava.com/activities/123")
+	if err != nil {
+		t.Fatalf("build result link: %v", err)
+	}
+
+	participants := []*entity.Participant{
+		{
+			ID: 1, UserID: 111, EventID: 77,
+			Gender: valueobject.GenderMale, BikeType: valueobject.BikeTypeGravel,
+			Status: valueobject.ParticipantStatusActive,
+			User:   &entity.User{ID: 111, FirstName: "Ivan", LastName: "Petrov"},
+			Result: &entity.Result{
+				ID: 1, ParticipantID: 1, IsCurrent: true, SubmittedAt: now,
+				ResultLink:     link,
+				ElapsedTimeSec: miniappIntPtr(25500), // 07:05:00
+				MovingTimeSec:  miniappIntPtr(25138),
+			},
+		},
+		{
+			ID: 2, UserID: 222, EventID: 77,
+			Gender: valueobject.GenderFemale, BikeType: valueobject.BikeTypeMTB,
+			Status: valueobject.ParticipantStatusActive,
+			User:   &entity.User{ID: 222, FirstName: "Anna", LastName: "K"},
+			Result: &entity.Result{
+				ID: 2, ParticipantID: 2, IsCurrent: true, SubmittedAt: now,
+				ElapsedTimeSec: miniappIntPtr(28800), // 08:00:00
+				MovingTimeSec:  miniappIntPtr(28000),
+			},
+		},
+		{
+			// Сошёл с дистанции: есть результат, но в зачёт не идёт — без места.
+			ID: 3, UserID: 333, EventID: 77,
+			Gender: valueobject.GenderMale, BikeType: valueobject.BikeTypeGravel,
+			Status: valueobject.ParticipantStatusDNF,
+			User:   &entity.User{ID: 333, FirstName: "Max", LastName: "D"},
+			Result: &entity.Result{
+				ID: 3, ParticipantID: 3, IsCurrent: true, SubmittedAt: now,
+				ElapsedTimeSec: miniappIntPtr(20000),
+			},
+		},
+		{
+			// Не финишировал: результата нет — без места.
+			ID: 4, UserID: 444, EventID: 77,
+			Gender: valueobject.GenderMale, BikeType: valueobject.BikeTypeRoad,
+			Status: valueobject.ParticipantStatusActive,
+			User:   &entity.User{ID: 444, FirstName: "Oleg", LastName: "R"},
+		},
+	}
+
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
+		nil, nil,
+		&miniappHandlerParticipantRepoFake{participants: participants},
+	)
+
+	rr := miniappRequest(t, token, now, h.Leaderboard, "/api/miniapp/leaderboard")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got struct {
+		Participants []struct {
+			ID          uint    `json:"id"`
+			Name        string  `json:"name"`
+			Gender      string  `json:"gender"`
+			BikeType    string  `json:"bike_type"`
+			Status      string  `json:"status"`
+			IsFinished  bool    `json:"is_finished"`
+			Place       int     `json:"place"`
+			ElapsedTime *string `json:"elapsed_time"`
+			MovingTime  *string `json:"moving_time"`
+			ResultLink  *string `json:"result_link"`
+		} `json:"participants"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.Total != 4 || len(got.Participants) != 4 {
+		t.Fatalf("expected 4 participants, got total=%d len=%d", got.Total, len(got.Participants))
+	}
+
+	// Финишировавшие идут первыми, отсортированы по общему времени.
+	if got.Participants[0].Place != 1 || got.Participants[0].Name != "Ivan Petrov" {
+		t.Fatalf("first place mismatch: %#v", got.Participants[0])
+	}
+	if got.Participants[0].ElapsedTime == nil || *got.Participants[0].ElapsedTime != "07:05:00" {
+		t.Fatalf("first place elapsed time mismatch: %#v", got.Participants[0].ElapsedTime)
+	}
+	if got.Participants[0].ResultLink == nil || *got.Participants[0].ResultLink != "https://www.strava.com/activities/123" {
+		t.Fatalf("first place result link mismatch: %#v", got.Participants[0].ResultLink)
+	}
+	if got.Participants[1].Place != 2 || got.Participants[1].Name != "Anna K" {
+		t.Fatalf("second place mismatch: %#v", got.Participants[1])
+	}
+
+	// DNF и не финишировавший — без места (0), в конце списка.
+	for _, p := range got.Participants[2:] {
+		if p.Place != 0 {
+			t.Fatalf("non-ranked participant should have place 0, got %#v", p)
+		}
+	}
+
+	// Публичный DTO не должен раскрывать административные/приватные поля.
+	body := rr.Body.String()
+	for _, forbidden := range []string{`"user_id"`, `"notes"`, `"has_gift"`, `"registered_at"`, `"prizes"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("leaderboard response leaked field %s: %s", forbidden, body)
+		}
+	}
+}
+
+func TestMiniappLeaderboardReturnsNotFoundWhenNoActiveEvent(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := newMiniappTestHandler(&miniappEventRepoFake{}, nil, nil, nil)
+
+	rr := miniappRequest(t, token, now, h.Leaderboard, "/api/miniapp/leaderboard")
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	}
+}
+
 func TestMiniappTelegramFileStreamsContent(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()
@@ -250,6 +380,7 @@ func newMiniappTestHandler(
 		eventRepo,
 		query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo),
 		query.NewGetMiniappParticipantCountHandler(participantRepo),
+		query.NewGetParticipantsHandler(participantRepo),
 		miniappFileFetcherFunc(func(ctx context.Context, fileID string) (*http.Response, error) {
 			return nil, fmt.Errorf("unexpected file fetch: %s", fileID)
 		}),
@@ -271,6 +402,8 @@ func miniappRequest(t *testing.T, token string, now time.Time, handlerFunc http.
 	handler.ServeHTTP(rr, req)
 	return rr
 }
+
+func miniappIntPtr(v int) *int { return &v }
 
 type miniappFileFetcherFunc func(ctx context.Context, fileID string) (*http.Response, error)
 

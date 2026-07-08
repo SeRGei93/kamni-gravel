@@ -300,6 +300,7 @@ func NewServer(
 		eventRepo,
 		getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler,
+		getParticipantsHandler,
 		cfg.BotToken,
 		miniappGiftsCache,
 	)
@@ -496,6 +497,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Use(s.telegramWebAppAuth)
 			r.Get("/session", s.miniappHandler.Session)
 			r.Get("/gifts", s.miniappHandler.Gifts)
+			r.Get("/leaderboard", s.miniappHandler.Leaderboard)
 			r.Get("/telegram/files/{fileId}", s.miniappHandler.TelegramFile)
 		})
 

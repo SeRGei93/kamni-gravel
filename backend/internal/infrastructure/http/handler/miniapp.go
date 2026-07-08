@@ -24,6 +24,7 @@ type MiniappHandler struct {
 	eventRepo                         repository.EventRepository
 	getMiniappGiftsHandler            *query.GetMiniappGiftsHandler
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler
+	getParticipantsHandler            *query.GetParticipantsHandler
 	fileFetcher                       miniappFileFetcher
 	giftsCache                        miniappGiftsCache
 }
@@ -54,6 +55,7 @@ func NewMiniappHandler(
 	eventRepo repository.EventRepository,
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
+	getParticipantsHandler *query.GetParticipantsHandler,
 	botToken string,
 	giftsCache miniappGiftsCache,
 ) *MiniappHandler {
@@ -61,6 +63,7 @@ func NewMiniappHandler(
 		eventRepo,
 		getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler,
+		getParticipantsHandler,
 		&telegramFileFetcher{
 			botToken:   botToken,
 			httpClient: http.DefaultClient,
@@ -73,6 +76,7 @@ func newMiniappHandlerWithFileFetcher(
 	eventRepo repository.EventRepository,
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
+	getParticipantsHandler *query.GetParticipantsHandler,
 	fileFetcher miniappFileFetcher,
 	giftsCache miniappGiftsCache,
 ) *MiniappHandler {
@@ -80,6 +84,7 @@ func newMiniappHandlerWithFileFetcher(
 		eventRepo:                         eventRepo,
 		getMiniappGiftsHandler:            getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler: getMiniappParticipantCountHandler,
+		getParticipantsHandler:            getParticipantsHandler,
 		fileFetcher:                       fileFetcher,
 		giftsCache:                        giftsCache,
 	}
@@ -199,6 +204,47 @@ func (h *MiniappHandler) Gifts(w http.ResponseWriter, r *http.Request) {
 		Gifts:            giftDTOs,
 		Total:            len(giftDTOs),
 		ParticipantCount: &participantCount,
+	})
+}
+
+// Leaderboard обрабатывает GET /api/miniapp/leaderboard.
+// Возвращает всех участников активного события с рассчитанным местом и метриками
+// заезда. Фильтрация по полу/типу велосипеда выполняется на клиенте, поэтому
+// эндпоинт отдаёт полный список без query-фильтров.
+func (h *MiniappHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.GetTelegramWebAppUserFromContext(r.Context())
+	if !ok {
+		log.Printf("WARN Miniapp leaderboard failed: reason=missing_telegram_user path=%s", r.URL.Path)
+		response.Unauthorized(w, "Telegram user not found")
+		return
+	}
+
+	event, ok := h.activeEvent(w, r, user.ID)
+	if !ok {
+		return
+	}
+
+	participants, err := h.getParticipantsHandler.Handle(r.Context(), query.GetParticipantsQuery{
+		EventID: event.ID,
+	})
+	if err != nil {
+		log.Printf("ERROR Miniapp leaderboard failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
+		response.InternalServerError(w, "Failed to get leaderboard")
+		return
+	}
+
+	entries := make([]*dto.MiniappLeaderboardEntryDTO, 0, len(participants))
+	for _, pwp := range participants {
+		if pwp == nil || pwp.Participant == nil {
+			continue
+		}
+		entries = append(entries, dto.NewMiniappLeaderboardEntry(pwp.Participant, pwp.Place))
+	}
+
+	log.Printf("INFO Miniapp leaderboard requested: telegram_user_id=%d event_id=%d participant_count=%d", user.ID, event.ID, len(entries))
+	response.Success(w, dto.MiniappLeaderboardResponse{
+		Participants: entries,
+		Total:        len(entries),
 	})
 }
 
