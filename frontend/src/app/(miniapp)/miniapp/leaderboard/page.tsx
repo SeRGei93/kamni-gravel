@@ -7,6 +7,7 @@ import LeaderboardFilters from "@/components/miniapp/LeaderboardFilters";
 import LeaderboardTable from "@/components/miniapp/LeaderboardTable";
 import { useMiniappLeaderboard } from "@/components/miniapp/MiniappLeaderboardContext";
 import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
+import { useIsomorphicLayoutEffect } from "@/hooks/useIsomorphicLayoutEffect";
 import { rankAndFilterLeaderboard } from "@/utils/leaderboard";
 import {
   expandTelegramWebApp,
@@ -25,6 +26,7 @@ export default function MiniappLeaderboardPage() {
     setSession,
     entries,
     setEntries,
+    scrollYRef,
   } = useMiniappLeaderboard();
 
   const [isSessionLoading, setIsSessionLoading] = useState(() => session === null);
@@ -129,6 +131,16 @@ export default function MiniappLeaderboardPage() {
     () => rankAndFilterLeaderboard(entries ?? [], gender, bikeType),
     [entries, gender, bikeType]
   );
+
+  // Восстанавливаем позицию прокрутки при возврате с карточки и сохраняем её при
+  // уходе. Данные списка уже в кеше контекста, поэтому таблица отрисована
+  // синхронно на маунте — высоты страницы хватает для точного восстановления.
+  useIsomorphicLayoutEffect(() => {
+    window.scrollTo(0, scrollYRef.current);
+    return () => {
+      scrollYRef.current = window.scrollY;
+    };
+  }, [scrollYRef]);
 
   if (isSessionLoading) {
     return <MiniappShellState title="Лидерборд" text="Загружаем активное событие" />;

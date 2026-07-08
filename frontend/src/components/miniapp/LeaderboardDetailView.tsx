@@ -47,6 +47,7 @@ export default function LeaderboardDetailView({
         <div className="mx-auto flex w-full max-w-md items-center gap-3">
           <Link
             href="/miniapp/leaderboard"
+            scroll={false}
             className="tg-link-button inline-flex rounded-lg border px-3 py-2 text-sm font-medium"
           >
             Назад

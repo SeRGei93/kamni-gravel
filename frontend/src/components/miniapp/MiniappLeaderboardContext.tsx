@@ -5,7 +5,9 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 import type {
@@ -38,6 +40,8 @@ interface MiniappLeaderboardContextValue {
   entries: MiniappLeaderboardEntry[] | null;
   setEntries: (value: MiniappLeaderboardEntry[]) => void;
   getEntry: (id: number) => MiniappLeaderboardEntry | undefined;
+  // Позиция прокрутки списка, чтобы восстановить её при возврате с карточки.
+  scrollYRef: MutableRefObject<number>;
 }
 
 const MiniappLeaderboardContext =
@@ -75,6 +79,7 @@ export function MiniappLeaderboardProvider({ children }: { children: ReactNode }
   );
   const [session, setSession] = useState<MiniappSessionResponse | null>(null);
   const [entries, setEntriesState] = useState<MiniappLeaderboardEntry[] | null>(null);
+  const scrollYRef = useRef(0);
 
   const setGender = useCallback((value: LeaderboardGenderFilter) => {
     setGenderState(value);
@@ -106,6 +111,7 @@ export function MiniappLeaderboardProvider({ children }: { children: ReactNode }
       entries,
       setEntries,
       getEntry,
+      scrollYRef,
     }),
     [gender, setGender, bikeType, setBikeType, session, entries, setEntries, getEntry]
   );
