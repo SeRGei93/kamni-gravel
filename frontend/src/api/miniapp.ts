@@ -2,6 +2,7 @@ import type {
   BikeTypeFilter,
   GenderFilter,
   GiftListResponse,
+  MiniappLeaderboardResponse,
   MiniappSessionResponse,
 } from '@/types';
 import { getTelegramInitData } from '@/utils/telegramWebApp';
@@ -121,6 +122,13 @@ export const miniappApi = {
   async getGifts(filters: MiniappGiftFilters = {}): Promise<GiftListResponse> {
     return miniappRequest<GiftListResponse>(
       `${MINIAPP_PREFIX}/gifts${buildGiftQuery(filters)}`,
+      { method: 'GET' }
+    );
+  },
+
+  async getLeaderboard(): Promise<MiniappLeaderboardResponse> {
+    return miniappRequest<MiniappLeaderboardResponse>(
+      `${MINIAPP_PREFIX}/leaderboard`,
       { method: 'GET' }
     );
   },

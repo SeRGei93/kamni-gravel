@@ -261,6 +261,43 @@ export interface MiniappSessionResponse {
   event: MiniappEvent;
 }
 
+// Публичная запись лидерборда Mini App. Зеркалит backend
+// MiniappLeaderboardEntryDTO — только публичные поля участника (без user_id,
+// notes, has_gift, призов и даты регистрации).
+export interface MiniappLeaderboardEntry {
+  id: number;
+  name: string;
+  gender: Gender;
+  bike_type: BikeType;
+  status: ParticipantStatus;
+  is_finished: boolean;
+  place: number; // место в абсолютном зачёте (0 если нет)
+
+  elapsed_time?: string; // полное время, ЧЧ:ММ:СС
+  elapsed_time_sec?: number;
+  moving_time?: string; // чистое время, ЧЧ:ММ:СС
+  moving_time_sec?: number;
+  idle_time?: string; // простой, ЧЧ:ММ:СС
+
+  result_link?: string; // ссылка на результат (Strava)
+  submitted_at?: string; // дата отправки результата (ISO 8601)
+
+  ride_date?: string; // YYYY-MM-DD
+  distance_meters?: number;
+  avg_speed_kmh?: number;
+  avg_moving_speed_kmh?: number;
+  peak_speed_kmh?: number;
+  avg_heart_rate?: number;
+  max_heart_rate?: number;
+  avg_cadence?: number;
+  calories?: number;
+}
+
+export interface MiniappLeaderboardResponse {
+  participants: MiniappLeaderboardEntry[];
+  total: number;
+}
+
 export interface Nomination {
   id: number;
   event_id: number;
