@@ -267,8 +267,15 @@ func TestMiniappLeaderboardRanksFinishersAndListsOthers(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	if got.Total != 4 || len(got.Participants) != 4 {
-		t.Fatalf("expected 4 participants, got total=%d len=%d", got.Total, len(got.Participants))
+	// Участник без результата (#4, Oleg) исключён; остаются два финишировавших
+	// и DNF с результатом (#3).
+	if got.Total != 3 || len(got.Participants) != 3 {
+		t.Fatalf("expected 3 participants, got total=%d len=%d", got.Total, len(got.Participants))
+	}
+	for _, p := range got.Participants {
+		if p.Name == "Oleg R" {
+			t.Fatalf("participant without result must be excluded from leaderboard: %#v", p)
+		}
 	}
 
 	// Финишировавшие идут первыми, отсортированы по общему времени.
@@ -285,11 +292,9 @@ func TestMiniappLeaderboardRanksFinishersAndListsOthers(t *testing.T) {
 		t.Fatalf("second place mismatch: %#v", got.Participants[1])
 	}
 
-	// DNF и не финишировавший — без места (0), в конце списка.
-	for _, p := range got.Participants[2:] {
-		if p.Place != 0 {
-			t.Fatalf("non-ranked participant should have place 0, got %#v", p)
-		}
+	// DNF с результатом остаётся, но без места (0).
+	if got.Participants[2].Place != 0 || got.Participants[2].Name != "Max D" {
+		t.Fatalf("DNF-with-result participant mismatch: %#v", got.Participants[2])
 	}
 
 	// Публичный DTO не должен раскрывать административные/приватные поля.

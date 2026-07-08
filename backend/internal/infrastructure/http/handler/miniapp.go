@@ -238,6 +238,11 @@ func (h *MiniappHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
 		if pwp == nil || pwp.Participant == nil {
 			continue
 		}
+		// Показываем только участников, отправивших результат: без результата
+		// (IsFinished == false) в лидерборде не отображаем.
+		if !pwp.Participant.IsFinished() {
+			continue
+		}
 		entries = append(entries, dto.NewMiniappLeaderboardEntry(pwp.Participant, pwp.Place))
 	}
 
