@@ -1255,6 +1255,29 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /miniapp/leaderboard:
+    get:
+      tags: [Miniapp]
+      summary: Лидерборд участников активного события
+      description: >-
+        Возвращает всех участников активного события с рассчитанным местом
+        (финишировавшие в зачёте отсортированы по общему времени) и метриками
+        заезда. Фильтрация по полу и типу велосипеда выполняется на клиенте.
+        Требует X-Telegram-Init-Data из Telegram.WebApp.initData.
+      security:
+        - TelegramWebAppInitData: []
+      responses:
+        '200':
+          description: Список участников лидерборда
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiniappLeaderboardResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /miniapp/telegram/files/{fileId}:
     get:
       tags: [Miniapp]
@@ -1569,6 +1592,84 @@ components:
           type: string
         description:
           type: string
+
+    MiniappLeaderboardResponse:
+      type: object
+      properties:
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MiniappLeaderboardEntry'
+        total:
+          type: integer
+
+    MiniappLeaderboardEntry:
+      type: object
+      description: >-
+        Публичное представление участника лидерборда. Содержит только публичные
+        поля — без user_id, notes, has_gift, призов и даты регистрации.
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: Отображаемое имя (имя+фамилия, иначе username, иначе «Участник»).
+        gender:
+          type: string
+          enum: [male, female]
+        bike_type:
+          type: string
+          enum: [gravel, mtb, road, single_speed, tandem]
+        status:
+          type: string
+          enum: [active, dnf, disqualified]
+        is_finished:
+          type: boolean
+        place:
+          type: integer
+          description: Место в абсолютном зачёте (0 если участник не в зачёте).
+        elapsed_time:
+          type: string
+          description: Полное время, ЧЧ:ММ:СС.
+        elapsed_time_sec:
+          type: integer
+        moving_time:
+          type: string
+          description: Чистое время, ЧЧ:ММ:СС.
+        moving_time_sec:
+          type: integer
+        idle_time:
+          type: string
+          description: Простой, ЧЧ:ММ:СС.
+        result_link:
+          type: string
+          description: Ссылка на результат (Strava).
+        submitted_at:
+          type: string
+          format: date-time
+          description: Дата отправки результата.
+        ride_date:
+          type: string
+          description: Дата проезда, YYYY-MM-DD.
+        distance_meters:
+          type: integer
+        avg_speed_kmh:
+          type: number
+          format: float
+        avg_moving_speed_kmh:
+          type: number
+          format: float
+        peak_speed_kmh:
+          type: number
+          format: float
+        avg_heart_rate:
+          type: integer
+        max_heart_rate:
+          type: integer
+        avg_cadence:
+          type: integer
+        calories:
+          type: integer
 
     EventTelegramTexts:
       type: object
