@@ -309,3 +309,36 @@ export const TOGGLEABLE_COLUMN_KEYS: string[] = PARTICIPANT_COLUMNS.filter(
 export const DEFAULT_VISIBLE_KEYS: string[] = PARTICIPANT_COLUMNS.filter(
   (c) => !c.alwaysVisible && c.defaultVisible,
 ).map((c) => c.key);
+
+// Числовые и временные колонки, по которым доступна серверная сортировка.
+// ВНИМАНИЕ: этот набор ключей должен ТОЧНО совпадать с компараторами бэкенда
+// (participantSortComparators в participants.go) — иначе параметр sort уйдёт на
+// сервер и будет молча проигнорирован.
+export const SORTABLE_COLUMN_KEYS: ReadonlySet<string> = new Set<string>([
+  'user_id',
+  'place',
+  'prizes_count',
+  'place_absolute',
+  'place_by_gender',
+  'place_by_gender_bike',
+  'elapsed_time',
+  'moving_time',
+  'prev_elapsed_time',
+  'idle_time',
+  'distance_km',
+  'peak_speed_kmh',
+  'avg_speed_kmh',
+  'avg_moving_speed_kmh',
+  'calories',
+  'avg_heart_rate',
+  'max_heart_rate',
+  'avg_cadence',
+  'started_at',
+  'ride_finished_at',
+  'ride_date',
+]);
+
+/** Можно ли сортировать список по этой колонке. */
+export function isSortableColumn(key: string): boolean {
+  return SORTABLE_COLUMN_KEYS.has(key);
+}

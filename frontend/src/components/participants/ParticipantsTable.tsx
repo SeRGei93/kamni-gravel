@@ -2,14 +2,22 @@
 
 import React from 'react';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../ui/table';
+import { ArrowUpIcon, ArrowDownIcon } from '@/icons';
+import type { SortOrder } from '@/api/participants';
 import type { Participant } from '@/types';
-import type { ParticipantColumn } from './participantColumns';
+import { isSortableColumn, type ParticipantColumn } from './participantColumns';
 
 interface ParticipantsTableProps {
   participants: Participant[];
   /** Разрешённые видимые колонки (в порядке отображения). */
   columns: ParticipantColumn[];
   isLoading?: boolean;
+  /** Ключ активной колонки сортировки (null — сортировки нет). */
+  sortKey?: string | null;
+  /** Направление активной сортировки. */
+  sortOrder?: SortOrder;
+  /** Клик по управлению сортировкой в шапке (page реализует тристейт). */
+  onSortChange?: (key: string) => void;
 }
 
 function alignClass(align?: ParticipantColumn['align']): string {
@@ -22,6 +30,9 @@ export default function ParticipantsTable({
   participants,
   columns,
   isLoading,
+  sortKey = null,
+  sortOrder = 'asc',
+  onSortChange,
 }: ParticipantsTableProps) {
   if (isLoading) {
     return (
@@ -56,7 +67,12 @@ export default function ParticipantsTable({
                     column.align,
                   )} text-theme-xs dark:text-gray-400`}
                 >
-                  {column.label}
+                  <ColumnHeader
+                    column={column}
+                    isActive={sortKey === column.key}
+                    sortOrder={sortOrder}
+                    onSortChange={onSortChange}
+                  />
                 </TableCell>
               ))}
             </TableRow>
@@ -88,5 +104,60 @@ export default function ParticipantsTable({
         </Table>
       </div>
     </div>
+  );
+}
+
+/** Заголовок колонки: обычный текст или кнопка сортировки с иконкой. */
+function ColumnHeader({
+  column,
+  isActive,
+  sortOrder,
+  onSortChange,
+}: {
+  column: ParticipantColumn;
+  isActive: boolean;
+  sortOrder: SortOrder;
+  onSortChange?: (key: string) => void;
+}) {
+  if (!onSortChange || !isSortableColumn(column.key)) {
+    return <>{column.label}</>;
+  }
+
+  const stateLabel = isActive
+    ? sortOrder === 'asc'
+      ? 'по возрастанию'
+      : 'по убыванию'
+    : 'не отсортировано';
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSortChange(column.key)}
+      title={`Сортировать по «${column.label}»`}
+      aria-label={`Сортировать по «${column.label}» (${stateLabel})`}
+      className={`inline-flex select-none items-center gap-1 transition-colors hover:text-gray-700 dark:hover:text-gray-200 ${
+        isActive ? 'text-gray-700 dark:text-gray-200' : ''
+      }`}
+    >
+      <span>{column.label}</span>
+      <SortIndicator isActive={isActive} sortOrder={sortOrder} />
+    </button>
+  );
+}
+
+function SortIndicator({
+  isActive,
+  sortOrder,
+}: {
+  isActive: boolean;
+  sortOrder: SortOrder;
+}) {
+  if (!isActive) {
+    return <ArrowDownIcon className="size-3.5 opacity-30" aria-hidden="true" />;
+  }
+  return sortOrder === 'asc' ? (
+    <ArrowUpIcon className="size-3.5" aria-hidden="true" />
+  ) : (
+    <ArrowDownIcon className="size-3.5" aria-hidden="true" />
   );
 }

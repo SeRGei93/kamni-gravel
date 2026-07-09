@@ -12,6 +12,9 @@ import type {
 const PARTICIPANTS_PREFIX = '/api/participants';
 const EVENTS_PREFIX = '/api/events';
 
+/** Направление сортировки списка участников. */
+export type SortOrder = 'asc' | 'desc';
+
 export const participantsApi = {
   // getByEvent возвращает ВСЕХ участников события (без пагинации) — для номинаций и
   // глобального поиска. Не передавайте page/page_size.
@@ -44,6 +47,8 @@ export const participantsApi = {
       is_finished?: boolean;
       has_gift?: boolean;
       q?: string;
+      sort?: string;
+      order?: SortOrder;
       page: number;
       page_size: number;
     }
@@ -56,6 +61,10 @@ export const participantsApi = {
     if (params.has_gift !== undefined)
       search.append('has_gift', String(params.has_gift));
     if (params.q) search.append('q', params.q);
+    if (params.sort) {
+      search.append('sort', params.sort);
+      search.append('order', params.order ?? 'asc');
+    }
     search.append('page', String(params.page));
     search.append('page_size', String(params.page_size));
     return get<ParticipantListResponse>(
