@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { participantsApi, type SortOrder } from '@/api/participants';
+import { participantsApi } from '@/api/participants';
 import { eventsApi } from '@/api/events';
 import { extractActiveEvent } from '@/utils/events';
 import { type HasGiftFilter } from '@/utils/participants';
@@ -20,6 +20,7 @@ import ParticipantsFilter, {
 } from '@/components/participants/ParticipantsFilter';
 import PaginationControls from '@/components/tables/PaginationControls';
 import { usePaginationParams } from '@/hooks/usePaginationParams';
+import { useSortParams } from '@/hooks/useSortParams';
 
 function hasGiftFilterToParam(value: HasGiftFilter): boolean | undefined {
   if (value === 'yes') return true;
@@ -44,9 +45,9 @@ export default function ParticipantsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // Сортировка (server-side). null — сортировки нет (порядок по умолчанию).
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  // Сортировка (server-side) хранится в URL (?sort=&order=), поэтому переживает
+  // перезагрузку страницы. null — сортировки нет (порядок по умолчанию).
+  const { sortKey, sortOrder, setSort } = useSortParams();
 
   // Настраиваемые колонки (набор сохраняется в localStorage).
   const { isVisible, toggle, reset } = useColumnPreferences(
@@ -176,7 +177,7 @@ export default function ParticipantsPage() {
     }
     if (page !== 1) setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [genderFilter, bikeTypeFilter, isFinishedFilter, hasGiftFilter, debouncedSearch, sortKey, sortOrder]);
+  }, [genderFilter, bikeTypeFilter, isFinishedFilter, hasGiftFilter, debouncedSearch]);
 
   // Загрузка участников при изменении фильтров/страницы
   useEffect(() => {
@@ -187,29 +188,26 @@ export default function ParticipantsPage() {
   const handleSortChange = useCallback(
     (key: string) => {
       if (sortKey !== key) {
-        setSortKey(key);
-        setSortOrder('asc');
+        setSort(key, 'asc');
         return;
       }
       if (sortOrder === 'asc') {
-        setSortOrder('desc');
+        setSort(key, 'desc');
         return;
       }
       // Был desc — сбрасываем сортировку к порядку по умолчанию.
-      setSortKey(null);
-      setSortOrder('asc');
+      setSort(null);
     },
-    [sortKey, sortOrder],
+    [sortKey, sortOrder, setSort],
   );
 
   // Скрыли активную колонку сортировки через настройки — сбрасываем сортировку,
   // чтобы не осталось «невидимой» активной сортировки без контрола в шапке.
   useEffect(() => {
     if (sortKey && !visibleColumns.some((column) => column.key === sortKey)) {
-      setSortKey(null);
-      setSortOrder('asc');
+      setSort(null);
     }
-  }, [visibleColumns, sortKey]);
+  }, [visibleColumns, sortKey, setSort]);
 
   return (
     <div className="space-y-6">
