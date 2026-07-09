@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -104,6 +107,8 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		hasGiftFilter = &hg
 	}
 	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	sortKey := r.URL.Query().Get("sort")
+	sortOrder := r.URL.Query().Get("order")
 
 	// Вызываем query handler (фильтры по велосипеду/полу/финишу + расчёт мест)
 	participantsWithPlace, err := h.getParticipantsHandler.Handle(r.Context(), queryParams)
@@ -173,6 +178,10 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		filtered = append(filtered, d)
 	}
 
+	// Сортировка (server-side, до пагинации) по числовым/временным колонкам,
+	// чтобы порядок охватывал все страницы отфильтрованного набора.
+	sortParticipantDTOs(filtered, sortKey, sortOrder)
+
 	total := len(filtered)
 
 	// Пагинация (срез страницы) поверх отфильтрованного набора.
@@ -198,8 +207,8 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		resp.PageSize = page.PageSize
 	}
 
-	log.Printf("DEBUG Participants list served: event_id=%d paginated=%t total=%d page=%d page_size=%d returned=%d has_gift=%v q=%q",
-		eventID, paginate, total, page.Page, page.PageSize, len(pageItems), hasGiftFilter, searchQuery)
+	log.Printf("DEBUG Participants list served: event_id=%d paginated=%t total=%d page=%d page_size=%d returned=%d has_gift=%v q=%q sort=%q order=%q",
+		eventID, paginate, total, page.Page, page.PageSize, len(pageItems), hasGiftFilter, searchQuery, sortKey, sortOrder)
 
 	response.Success(w, resp)
 }
@@ -220,6 +229,126 @@ func participantMatchesSearch(d *dto.ParticipantDTO, queryLower string) bool {
 		return true
 	}
 	return false
+}
+
+// participantSorter описывает сортировку списка участников по одной колонке.
+type participantSorter struct {
+	// missing сообщает, что значение отсутствует (уходит в конец при любом порядке).
+	missing func(*dto.ParticipantDTO) bool
+	// compare сравнивает два значения по возрастанию: <0, 0, >0.
+	compare func(a, b *dto.ParticipantDTO) int
+}
+
+// participantSortComparators — множество сортируемых колонок. Ключи ДОЛЖНЫ
+// совпадать с колонками, помеченными `sortable` на фронтенде (participantColumns).
+var participantSortComparators = map[string]participantSorter{
+	"place":                placeSorter(),
+	"place_absolute":       intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceAbsolute }),
+	"place_by_gender":      intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceByGender }),
+	"place_by_gender_bike": intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceByGenderBike }),
+	"prizes_count":         intValSorter(func(d *dto.ParticipantDTO) int { return d.PrizesCount }),
+	"user_id":              int64ValSorter(func(d *dto.ParticipantDTO) int64 { return d.UserID }),
+	"distance_km":          intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.DistanceMeters }),
+	"calories":             intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.Calories }),
+	"avg_heart_rate":       intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.AvgHeartRate }),
+	"max_heart_rate":       intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.MaxHeartRate }),
+	"avg_cadence":          intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.AvgCadence }),
+	"elapsed_time":         intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.ElapsedTimeSec }),
+	"moving_time":          intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.MovingTimeSec }),
+	"prev_elapsed_time":    intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PrevElapsedTimeSec }),
+	"idle_time":            intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.IdleTimeSec }),
+	"peak_speed_kmh":       floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.PeakSpeedKmh }),
+	"avg_speed_kmh":        floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgSpeedKmh }),
+	"avg_moving_speed_kmh": floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgMovingSpeedKmh }),
+	"started_at":           timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.StartedAt }),
+	"ride_finished_at":     timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.RideFinishedAt }),
+	"ride_date":            strPtrSorter(func(d *dto.ParticipantDTO) *string { return d.RideDate }),
+}
+
+// sortParticipantDTOs стабильно сортирует список по колонке sortKey. Пустой
+// ключ оставляет порядок по умолчанию; неизвестный ключ игнорируется (WARN).
+// Отсутствующие значения всегда уходят в конец, независимо от направления.
+func sortParticipantDTOs(items []*dto.ParticipantDTO, sortKey, order string) {
+	if sortKey == "" {
+		return
+	}
+	sorter, ok := participantSortComparators[sortKey]
+	if !ok {
+		log.Printf("WARN Participants list unknown sort key ignored: sort=%q", sortKey)
+		return
+	}
+
+	desc := order == "desc"
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		aMissing, bMissing := sorter.missing(a), sorter.missing(b)
+		if aMissing || bMissing {
+			if aMissing && bMissing {
+				return false
+			}
+			// Непустое значение всегда идёт раньше пустого, при любом направлении.
+			return bMissing
+		}
+
+		c := sorter.compare(a, b)
+		if c == 0 {
+			return false
+		}
+		if desc {
+			return c > 0
+		}
+		return c < 0
+	})
+}
+
+func intPtrSorter(get func(*dto.ParticipantDTO) *int) participantSorter {
+	return participantSorter{
+		missing: func(d *dto.ParticipantDTO) bool { return get(d) == nil },
+		compare: func(a, b *dto.ParticipantDTO) int { return cmp.Compare(*get(a), *get(b)) },
+	}
+}
+
+func floatPtrSorter(get func(*dto.ParticipantDTO) *float64) participantSorter {
+	return participantSorter{
+		missing: func(d *dto.ParticipantDTO) bool { return get(d) == nil },
+		compare: func(a, b *dto.ParticipantDTO) int { return cmp.Compare(*get(a), *get(b)) },
+	}
+}
+
+func timePtrSorter(get func(*dto.ParticipantDTO) *time.Time) participantSorter {
+	return participantSorter{
+		missing: func(d *dto.ParticipantDTO) bool { return get(d) == nil },
+		compare: func(a, b *dto.ParticipantDTO) int { return get(a).Compare(*get(b)) },
+	}
+}
+
+func strPtrSorter(get func(*dto.ParticipantDTO) *string) participantSorter {
+	return participantSorter{
+		missing: func(d *dto.ParticipantDTO) bool { s := get(d); return s == nil || *s == "" },
+		compare: func(a, b *dto.ParticipantDTO) int { return cmp.Compare(*get(a), *get(b)) },
+	}
+}
+
+func intValSorter(get func(*dto.ParticipantDTO) int) participantSorter {
+	return participantSorter{
+		missing: func(*dto.ParticipantDTO) bool { return false },
+		compare: func(a, b *dto.ParticipantDTO) int { return cmp.Compare(get(a), get(b)) },
+	}
+}
+
+func int64ValSorter(get func(*dto.ParticipantDTO) int64) participantSorter {
+	return participantSorter{
+		missing: func(*dto.ParticipantDTO) bool { return false },
+		compare: func(a, b *dto.ParticipantDTO) int { return cmp.Compare(get(a), get(b)) },
+	}
+}
+
+// placeSorter трактует место 0 («нет места») как отсутствующее — уходит в конец.
+func placeSorter() participantSorter {
+	return participantSorter{
+		missing: func(d *dto.ParticipantDTO) bool { return d.Place == 0 },
+		compare: func(a, b *dto.ParticipantDTO) int { return cmp.Compare(a.Place, b.Place) },
+	}
 }
 
 func (h *ParticipantsHandler) getGiftUserIDsByEvent(ctx context.Context, eventID uint) (map[int64]struct{}, error) {
