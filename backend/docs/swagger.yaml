@@ -513,6 +513,46 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/Gender'
+        - name: sort
+          in: query
+          description: >-
+            Колонка серверной сортировки (числовые/временные). Сортировка
+            применяется ко всему отфильтрованному набору ДО пагинации;
+            отсутствующие значения всегда уходят в конец. Неизвестный ключ
+            игнорируется (порядок по умолчанию).
+          schema:
+            type: string
+            enum:
+              [
+                place,
+                place_absolute,
+                place_by_gender,
+                place_by_gender_bike,
+                prizes_count,
+                user_id,
+                distance_km,
+                calories,
+                avg_heart_rate,
+                max_heart_rate,
+                avg_cadence,
+                elapsed_time,
+                moving_time,
+                prev_elapsed_time,
+                idle_time,
+                peak_speed_kmh,
+                avg_speed_kmh,
+                avg_moving_speed_kmh,
+                started_at,
+                ride_finished_at,
+                ride_date,
+              ]
+        - name: order
+          in: query
+          description: Направление сортировки (по умолчанию asc). Действует только вместе с sort.
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
       responses:
         '200':
           description: Список участников
