@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { participantsApi } from '@/api/participants';
 import { eventsApi } from '@/api/events';
 import { extractActiveEvent } from '@/utils/events';
@@ -21,6 +21,7 @@ import ParticipantsFilter, {
 import PaginationControls from '@/components/tables/PaginationControls';
 import { usePaginationParams } from '@/hooks/usePaginationParams';
 import { useSortParams } from '@/hooks/useSortParams';
+import { useFilterParams } from '@/hooks/useFilterParams';
 
 function hasGiftFilterToParam(value: HasGiftFilter): boolean | undefined {
   if (value === 'yes') return true;
@@ -37,13 +38,11 @@ export default function ParticipantsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Фильтры
-  const [genderFilter, setGenderFilter] = useState<string>('');
-  const [bikeTypeFilter, setBikeTypeFilter] = useState<string>('');
-  const [isFinishedFilter, setIsFinishedFilter] = useState<string>('');
-  const [hasGiftFilter, setHasGiftFilter] = useState<HasGiftFilter>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Фильтры хранятся в URL — переживают перезагрузку и шарятся ссылкой.
+  const { gender, bikeType, isFinished, hasGift, q, setFilters } = useFilterParams();
+  // Локальное состояние поля поиска для мгновенного ввода; в URL значение
+  // коммитится дебаунсом. Инициализируем из URL при загрузке страницы.
+  const [searchInput, setSearchInput] = useState(q);
 
   // Сортировка (server-side) хранится в URL (?sort=&order=), поэтому переживает
   // перезагрузку страницы. null — сортировки нет (порядок по умолчанию).
@@ -66,26 +65,36 @@ export default function ParticipantsPage() {
   // Применённые фильтры для поповера «Фильтр».
   const appliedFilters = useMemo<ParticipantFilters>(
     () => ({
-      gender: genderFilter,
-      bikeType: bikeTypeFilter,
-      isFinished: isFinishedFilter,
-      hasGift: hasGiftFilter,
+      gender,
+      bikeType,
+      isFinished,
+      hasGift,
     }),
-    [genderFilter, bikeTypeFilter, isFinishedFilter, hasGiftFilter],
+    [gender, bikeType, isFinished, hasGift],
   );
 
-  const handleApplyFilters = useCallback((next: ParticipantFilters) => {
-    setGenderFilter(next.gender);
-    setBikeTypeFilter(next.bikeType);
-    setIsFinishedFilter(next.isFinished);
-    setHasGiftFilter(next.hasGift as HasGiftFilter);
-  }, []);
+  const handleApplyFilters = useCallback(
+    (next: ParticipantFilters) => {
+      setFilters({
+        gender: next.gender,
+        bikeType: next.bikeType,
+        isFinished: next.isFinished,
+        hasGift: next.hasGift as HasGiftFilter,
+      });
+    },
+    [setFilters],
+  );
 
-  // Дебаунс поискового запроса (поиск выполняется на сервере, по всему списку).
+  // Дебаунс поиска: значение коммитится в URL (server-side поиск по всему списку).
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    const timer = setTimeout(() => {
+      const trimmed = searchInput.trim();
+      if (trimmed !== q) {
+        setFilters({ q: trimmed });
+      }
+    }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchInput, q, setFilters]);
 
   const loadActiveEvent = useCallback(async () => {
     try {
@@ -121,12 +130,11 @@ export default function ParticipantsPage() {
       setError(null);
 
       const response = await participantsApi.listByEvent(activeEventId, {
-        gender: genderFilter || undefined,
-        bike_type: bikeTypeFilter || undefined,
-        is_finished:
-          isFinishedFilter === '' ? undefined : isFinishedFilter === 'true',
-        has_gift: hasGiftFilterToParam(hasGiftFilter),
-        q: debouncedSearch || undefined,
+        gender: gender || undefined,
+        bike_type: bikeType || undefined,
+        is_finished: isFinished === '' ? undefined : isFinished === 'true',
+        has_gift: hasGiftFilterToParam(hasGift),
+        q: q || undefined,
         sort: sortKey ?? undefined,
         order: sortKey ? sortOrder : undefined,
         page,
@@ -150,11 +158,11 @@ export default function ParticipantsPage() {
       setIsLoading(false);
     }
   }, [
-    bikeTypeFilter,
-    genderFilter,
-    isFinishedFilter,
-    hasGiftFilter,
-    debouncedSearch,
+    gender,
+    bikeType,
+    isFinished,
+    hasGift,
+    q,
     sortKey,
     sortOrder,
     activeEventId,
@@ -166,18 +174,6 @@ export default function ParticipantsPage() {
   useEffect(() => {
     loadActiveEvent();
   }, [loadActiveEvent]);
-
-  // Сброс на первую страницу при изменении любого фильтра/поиска
-  // (но не на первом рендере, чтобы не сбивать deep-link на страницу).
-  const didMountRef = useRef(false);
-  useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
-    if (page !== 1) setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [genderFilter, bikeTypeFilter, isFinishedFilter, hasGiftFilter, debouncedSearch]);
 
   // Загрузка участников при изменении фильтров/страницы
   useEffect(() => {
@@ -253,8 +249,8 @@ export default function ParticipantsPage() {
           <input
             type="text"
             placeholder="Поиск по имени или username..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-4 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
           />
         </div>
