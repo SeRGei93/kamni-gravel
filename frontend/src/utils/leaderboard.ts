@@ -51,7 +51,18 @@ export function rankAndFilterLeaderboard(
 
   const ranked = filtered
     .filter(isRankedEntry)
-    .sort((left, right) => (left.elapsed_time_sec ?? 0) - (right.elapsed_time_sec ?? 0));
+    .sort((left, right) => {
+      const byElapsed = (left.elapsed_time_sec ?? 0) - (right.elapsed_time_sec ?? 0);
+      if (byElapsed !== 0) {
+        return byElapsed;
+      }
+      // Тай-брейк: при равном общем времени выше тот, у кого меньше чистое время
+      // (время в движении); отсутствующее чистое время уходит в конец.
+      return (
+        (left.moving_time_sec ?? Number.MAX_SAFE_INTEGER) -
+        (right.moving_time_sec ?? Number.MAX_SAFE_INTEGER)
+      );
+    });
 
   const others = filtered
     .filter((entry) => !isRankedEntry(entry))

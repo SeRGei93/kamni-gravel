@@ -96,8 +96,10 @@ func (h *GetParticipantsHandler) calculatePlaces(participants []*entity.Particip
 		}
 	}
 
-	// Сортируем финишировавших по времени (по возрастанию)
-	sort.Slice(finished, func(i, j int) bool {
+	// Сортируем финишировавших по общему времени (по возрастанию). При равном
+	// общем времени тай-брейк по чистому времени (время в движении): меньше —
+	// выше; отсутствующее чистое время уходит в конец.
+	sort.SliceStable(finished, func(i, j int) bool {
 		timeI := finished[i].GetElapsedTimeSec()
 		timeJ := finished[j].GetElapsedTimeSec()
 		if timeI == nil {
@@ -106,7 +108,18 @@ func (h *GetParticipantsHandler) calculatePlaces(participants []*entity.Particip
 		if timeJ == nil {
 			return true
 		}
-		return *timeI < *timeJ
+		if *timeI != *timeJ {
+			return *timeI < *timeJ
+		}
+		movingI := finished[i].GetMovingTimeSec()
+		movingJ := finished[j].GetMovingTimeSec()
+		if movingI == nil {
+			return false
+		}
+		if movingJ == nil {
+			return true
+		}
+		return *movingI < *movingJ
 	})
 
 	// Создаём результат с местами

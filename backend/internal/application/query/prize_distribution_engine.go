@@ -174,6 +174,13 @@ func buildPrizeParticipantContexts(
 		if leftElapsed != rightElapsed {
 			return leftElapsed < rightElapsed
 		}
+		// Тай-брейк: при равном общем времени выше тот, у кого меньше чистое
+		// время (время в движении). Отсутствующее чистое время — в конец.
+		leftMoving := resultMovingForSort(left)
+		rightMoving := resultMovingForSort(right)
+		if leftMoving != rightMoving {
+			return leftMoving < rightMoving
+		}
 		if left.ID != right.ID {
 			return left.ID < right.ID
 		}
@@ -209,6 +216,15 @@ func resultElapsedForSort(result *entity.Result) int {
 		return math.MaxInt
 	}
 	return *result.ElapsedTimeSec
+}
+
+// resultMovingForSort возвращает чистое время (время в движении) для тай-брейка
+// при равном общем времени; отсутствующее значение уходит в конец сортировки.
+func resultMovingForSort(result *entity.Result) int {
+	if result.MovingTimeSec == nil {
+		return math.MaxInt
+	}
+	return *result.MovingTimeSec
 }
 
 func prizeParticipantDisplayName(participant *entity.Participant) string {

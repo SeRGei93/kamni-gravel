@@ -335,14 +335,14 @@ func (r *resultRepository) FindByEventWithPlaces(ctx context.Context, eventID ui
 			r.id, r.participant_id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at,
 			r.started_at, r.finished_at, r.distance_meters, r.avg_heart_rate, r.max_heart_rate, r.peak_speed_kmh, r.avg_cadence, r.calories,
 			p.gender, p.bike_type,
-			ROW_NUMBER() OVER (PARTITION BY p.event_id ORDER BY r.elapsed_time_sec) as place_absolute,
-			ROW_NUMBER() OVER (PARTITION BY p.event_id, p.gender ORDER BY r.elapsed_time_sec) as place_by_gender,
-			ROW_NUMBER() OVER (PARTITION BY p.event_id, p.gender, p.bike_type ORDER BY r.elapsed_time_sec) as place_by_gender_bike
+			ROW_NUMBER() OVER (PARTITION BY p.event_id ORDER BY r.elapsed_time_sec, r.moving_time_sec NULLS LAST) as place_absolute,
+			ROW_NUMBER() OVER (PARTITION BY p.event_id, p.gender ORDER BY r.elapsed_time_sec, r.moving_time_sec NULLS LAST) as place_by_gender,
+			ROW_NUMBER() OVER (PARTITION BY p.event_id, p.gender, p.bike_type ORDER BY r.elapsed_time_sec, r.moving_time_sec NULLS LAST) as place_by_gender_bike
 		FROM results r
 		JOIN participants p ON r.participant_id = p.id
 		WHERE p.event_id = $1 AND r.is_current = true AND r.elapsed_time_sec IS NOT NULL
 		  AND p.status = 'active'
-		ORDER BY r.elapsed_time_sec
+		ORDER BY r.elapsed_time_sec, r.moving_time_sec NULLS LAST
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, eventID)

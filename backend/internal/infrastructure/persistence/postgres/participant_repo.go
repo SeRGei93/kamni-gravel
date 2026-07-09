@@ -140,7 +140,7 @@ func (r *participantRepository) GetFinishedByEvent(ctx context.Context, eventID 
 		JOIN users u ON u.id = p.user_id
 		JOIN results r ON r.participant_id = p.id AND r.is_current = true
 		WHERE p.event_id = $1 AND r.elapsed_time_sec IS NOT NULL
-		ORDER BY r.elapsed_time_sec ASC
+		ORDER BY r.elapsed_time_sec ASC, r.moving_time_sec ASC NULLS LAST
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, eventID)
