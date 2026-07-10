@@ -27,7 +27,7 @@ const fixedNavigationItems: MiniappNavigationItem[] = [
 ];
 
 const navigationItemClass =
-  "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[10px] font-semibold leading-3 transition active:scale-[0.96]";
+  "flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-[9px] font-semibold leading-3 transition active:scale-[0.96]";
 
 export default function MiniappTabs() {
   const pathname = usePathname() ?? "";
@@ -52,9 +52,9 @@ export default function MiniappTabs() {
   return (
     <nav
       aria-label="Навигация Mini App"
-      className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+      className="fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
     >
-      <div className="tg-liquid-glass-nav mx-auto flex w-full max-w-md items-stretch rounded-[1.75rem] border p-1.5">
+      <div className="tg-liquid-glass-nav mx-auto flex w-full max-w-md items-stretch rounded-2xl border p-1">
         {navigationItems.map((item) => {
           const isMyResultRoute = myResultHref !== null && pathname === myResultHref;
           const isActive =
@@ -85,7 +85,7 @@ export default function MiniappTabs() {
 
 function NavigationIcon({ icon }: { icon: NavigationIcon }) {
   const commonProps = {
-    className: "h-5 w-5 shrink-0",
+    className: "h-4 w-4 shrink-0",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: 1.8,

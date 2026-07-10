@@ -792,7 +792,7 @@ span.flatpickr-weekday,
 @supports (background: color-mix(in srgb, black, transparent)) {
   .tg-liquid-glass-nav {
     border-color: color-mix(in srgb, var(--tg-separator-color) 72%, white 28%);
-    background: color-mix(in srgb, var(--tg-header-bg-color) 72%, transparent);
+    background: color-mix(in srgb, var(--tg-header-bg-color) 66%, transparent);
     -webkit-backdrop-filter: blur(22px) saturate(150%);
     backdrop-filter: blur(22px) saturate(150%);
   }
@@ -824,7 +824,7 @@ span.flatpickr-weekday,
 
 @supports (background: color-mix(in srgb, black, transparent)) {
   .tg-liquid-glass-nav-active {
-    background: color-mix(in srgb, var(--tg-section-bg-color) 58%, transparent);
+    background: color-mix(in srgb, var(--tg-section-bg-color) 54%, transparent);
   }
 }
 
