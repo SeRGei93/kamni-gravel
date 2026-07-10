@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { miniappApi } from "@/api/miniapp";
 import LeaderboardDetailView from "@/components/miniapp/LeaderboardDetailView";
 import { useMiniappLeaderboard } from "@/components/miniapp/MiniappLeaderboardContext";
@@ -10,6 +10,7 @@ import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
 import { rankAndFilterLeaderboard } from "@/utils/leaderboard";
 import {
   expandTelegramWebApp,
+  getTelegramWebApp,
   isTelegramWebAppAvailable,
   readyTelegramWebApp,
   waitForTelegramInitData,
@@ -17,6 +18,7 @@ import {
 
 export default function MiniappLeaderboardDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const participantId = useMemo(() => Number(params.id), [params.id]);
 
   const { entries, setEntries } = useMiniappLeaderboard();
@@ -28,7 +30,24 @@ export default function MiniappLeaderboardDetailPage() {
       readyTelegramWebApp();
       expandTelegramWebApp();
     }
-  }, []);
+
+    const backButton = getTelegramWebApp()?.BackButton;
+    if (!backButton) {
+      return;
+    }
+
+    const handleBack = () => {
+      router.push("/miniapp/leaderboard", { scroll: false });
+    };
+
+    backButton.onClick(handleBack);
+    backButton.show();
+
+    return () => {
+      backButton.offClick(handleBack);
+      backButton.hide();
+    };
+  }, [router]);
 
   // Если список ещё не загружен (глубокий переход / перезагрузка) — подтягиваем
   // лидерборд один раз и кешируем в контексте, дальше берём участника из кеша.

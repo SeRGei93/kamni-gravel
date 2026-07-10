@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { MiniappLeaderboardEntry } from "@/types";
 import { formatDistanceKm, formatSpeed } from "@/utils/format";
 import { bikeTypeLabel, genderFullLabel } from "./leaderboardFormat";
@@ -45,18 +44,6 @@ export default function LeaderboardDetailView({
 
   return (
     <main className="tg-screen min-h-screen">
-      <section className="tg-topbar border-b px-3 py-3">
-        <div className="mx-auto flex w-full max-w-md items-center gap-3">
-          <Link
-            href="/miniapp/leaderboard"
-            scroll={false}
-            className="tg-link-button inline-flex rounded-lg border px-3 py-2 text-sm font-medium"
-          >
-            Назад
-          </Link>
-        </div>
-      </section>
-
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
         <article className="tg-card overflow-hidden rounded-xl border">
           <div className="space-y-4 p-4">
@@ -82,7 +69,7 @@ export default function LeaderboardDetailView({
 
             {/* Места в зачётах */}
             <div className="tg-divider grid grid-cols-3 overflow-hidden rounded-lg border">
-              <PlaceCell label="Абсолютный зачёт" place={absolutePlace} />
+              <PlaceCell label="Абсолют" place={absolutePlace} />
               <PlaceCell label={genderFullLabel(entry.gender)} place={genderPlace} />
               <PlaceCell
                 label={`${genderFullLabel(entry.gender)} · ${bikeTypeLabel(entry.bike_type)}`}

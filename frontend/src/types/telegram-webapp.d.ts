@@ -22,6 +22,15 @@ declare global {
     openTelegramLink?: (url: string) => void;
     setHeaderColor?: (color: string) => void;
     setBackgroundColor?: (color: string) => void;
+    BackButton?: TelegramWebAppBackButton;
+  }
+
+  interface TelegramWebAppBackButton {
+    isVisible: boolean;
+    onClick: (callback: () => void) => TelegramWebAppBackButton;
+    offClick: (callback: () => void) => TelegramWebAppBackButton;
+    show: () => TelegramWebAppBackButton;
+    hide: () => TelegramWebAppBackButton;
   }
 
   interface TelegramWebAppInitDataUnsafe {
