@@ -782,19 +782,18 @@ span.flatpickr-weekday,
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border-color: var(--tg-separator-color);
-  background: var(--tg-header-bg-color);
+  background: var(--tg-secondary-bg-color);
   box-shadow:
-    0 12px 30px rgb(0 0 0 / 24%),
-    inset 0 1px 0 rgb(255 255 255 / 14%);
+    0 12px 28px rgb(0 0 0 / 42%),
+    0 3px 8px rgb(0 0 0 / 22%),
+    inset 0 1px 0 rgb(255 255 255 / 16%);
 }
 
 @supports (background: color-mix(in srgb, black, transparent)) {
   .tg-liquid-glass-nav {
-    border-color: color-mix(in srgb, var(--tg-separator-color) 60%, white 40%);
-    background: color-mix(in srgb, var(--tg-header-bg-color) 66%, transparent);
-    -webkit-backdrop-filter: blur(28px) saturate(160%);
-    backdrop-filter: blur(28px) saturate(160%);
+    background: color-mix(in srgb, var(--tg-secondary-bg-color) 88%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
   }
 }
 
@@ -806,9 +805,9 @@ span.flatpickr-weekday,
   left: 12%;
   height: 45%;
   border-radius: inherit;
-  background: linear-gradient(180deg, rgb(255 255 255 / 16%), transparent);
+  background: linear-gradient(180deg, rgb(255 255 255 / 12%), transparent);
   content: "";
-  filter: blur(8px);
+  filter: blur(7px);
   pointer-events: none;
 }
 
@@ -818,15 +817,16 @@ span.flatpickr-weekday,
 }
 
 .tg-liquid-glass-nav-active {
-  background: rgb(255 255 255 / 10%);
+  margin-inline: 0.25rem;
+  background: rgb(255 255 255 / 6%);
   box-shadow:
-    0 4px 14px rgb(0 0 0 / 12%),
-    inset 0 1px 0 rgb(255 255 255 / 16%);
+    0 2px 8px rgb(0 0 0 / 10%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
 }
 
 @supports (background: color-mix(in srgb, black, transparent)) {
   .tg-liquid-glass-nav-active {
-    background: color-mix(in srgb, var(--tg-section-bg-color) 54%, transparent);
+    background: color-mix(in srgb, var(--tg-section-bg-color) 95%, white 5%);
   }
 }
 

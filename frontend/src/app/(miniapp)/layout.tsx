@@ -17,7 +17,7 @@ export default function MiniappLayout({
       <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
       <MiniappTheme />
       <div
-        className="tg-miniapp min-h-screen pb-[calc(env(safe-area-inset-bottom)+4.25rem)] antialiased"
+        className="tg-miniapp min-h-screen pb-[calc(env(safe-area-inset-bottom)+4.75rem)] antialiased"
         style={defaultTelegramDarkThemeStyle}
       >
         <MiniappSessionProvider>
