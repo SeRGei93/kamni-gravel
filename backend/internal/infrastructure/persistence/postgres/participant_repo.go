@@ -51,8 +51,8 @@ func (r *participantRepository) Update(ctx context.Context, p *entity.Participan
 
 	query := `
 		UPDATE participants
-		SET bike_type = $1, gender = $2, notes = $3, status = $4
-		WHERE id = $5
+		SET bike_type = $1, gender = $2, notes = $3, status = $4, prev_elapsed_time_sec = $5
+		WHERE id = $6
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -60,6 +60,7 @@ func (r *participantRepository) Update(ctx context.Context, p *entity.Participan
 		p.Gender,
 		p.Notes,
 		status,
+		p.PrevElapsedTimeSec,
 		p.ID,
 	)
 
@@ -68,7 +69,7 @@ func (r *participantRepository) Update(ctx context.Context, p *entity.Participan
 
 func (r *participantRepository) FindByID(ctx context.Context, id uint) (*entity.Participant, error) {
 	query := `
-		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at,
+		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at, p.prev_elapsed_time_sec,
 		       u.username, u.first_name, u.last_name,
 		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at
 		FROM participants p
@@ -82,7 +83,7 @@ func (r *participantRepository) FindByID(ctx context.Context, id uint) (*entity.
 
 func (r *participantRepository) FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) (*entity.Participant, error) {
 	query := `
-		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at,
+		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at, p.prev_elapsed_time_sec,
 		       u.username, u.first_name, u.last_name,
 		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at
 		FROM participants p
@@ -96,7 +97,7 @@ func (r *participantRepository) FindByUserAndEvent(ctx context.Context, userID i
 
 func (r *participantRepository) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
 	query := `
-		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at,
+		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at, p.prev_elapsed_time_sec,
 		       u.username, u.first_name, u.last_name,
 		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at,
 		       r.started_at, r.finished_at, r.distance_meters, r.avg_heart_rate, r.max_heart_rate, r.peak_speed_kmh, r.avg_cadence, r.calories
@@ -132,7 +133,7 @@ func (r *participantRepository) FindByEvent(ctx context.Context, eventID uint) (
 
 func (r *participantRepository) GetFinishedByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
 	query := `
-		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at,
+		SELECT p.id, p.user_id, p.event_id, p.bike_type, p.gender, p.status, p.notes, p.registered_at, p.prev_elapsed_time_sec,
 		       u.username, u.first_name, u.last_name,
 		       r.id, r.result_link, r.elapsed_time_sec, r.moving_time_sec, r.is_current, r.submitted_at,
 		       r.started_at, r.finished_at, r.distance_meters, r.avg_heart_rate, r.max_heart_rate, r.peak_speed_kmh, r.avg_cadence, r.calories
@@ -272,6 +273,7 @@ func (r *participantRepository) scanParticipant(row *sql.Row) (*entity.Participa
 		&status,
 		&p.Notes,
 		&p.RegisteredAt,
+		&p.PrevElapsedTimeSec,
 		&p.User.Username,
 		&p.User.FirstName,
 		&p.User.LastName,
@@ -323,7 +325,7 @@ func (r *participantRepository) scanParticipant(row *sql.Row) (*entity.Participa
 
 // scanParticipantFromRows сканирует одну строку списка участников.
 // ВНИМАНИЕ: помощник общий для FindByEvent и GetFinishedByEvent — оба SELECT
-// ДОЛЖНЫ выбирать одни и те же 25 колонок в этом же порядке. Изменение списка
+// ДОЛЖНЫ выбирать одни и те же 26 колонок в этом же порядке. Изменение списка
 // колонок в одном запросе без второго сломает сканирование другого.
 func (r *participantRepository) scanParticipantFromRows(rows *sql.Rows) (*entity.Participant, error) {
 	p := &entity.Participant{User: &entity.User{}}
@@ -351,6 +353,7 @@ func (r *participantRepository) scanParticipantFromRows(rows *sql.Rows) (*entity
 		&status,
 		&p.Notes,
 		&p.RegisteredAt,
+		&p.PrevElapsedTimeSec,
 		&p.User.Username,
 		&p.User.FirstName,
 		&p.User.LastName,

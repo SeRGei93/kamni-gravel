@@ -59,6 +59,23 @@ function dateTimeOrDash(iso?: string | null): React.ReactNode {
   return <span className={cellText}>{new Date(iso).toLocaleString('ru-RU')}</span>;
 }
 
+/**
+ * Дельта к прошлому году (уже со знаком с бэкенда): положительная — быстрее
+ * в этом году (зелёная), отрицательная — медленнее (красная).
+ */
+export function prevDeltaCell(delta?: string | null, deltaSec?: number | null): React.ReactNode {
+  if (!delta || deltaSec === undefined || deltaSec === null) {
+    return <span className={cellMuted}>-</span>;
+  }
+  const color =
+    deltaSec > 0
+      ? 'text-success-600 dark:text-success-400'
+      : deltaSec < 0
+        ? 'text-error-600 dark:text-error-400'
+        : '';
+  return <span className={color ? `text-theme-sm ${color}` : cellText}>{delta}</span>;
+}
+
 // Упорядоченный реестр колонок. Порядок здесь определяет порядок в таблице и
 // в выпадающем списке настроек.
 export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
@@ -153,6 +170,12 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     label: 'Время прошлого года',
     defaultVisible: true,
     render: (p) => textOrDash(p.prev_elapsed_time),
+  },
+  {
+    key: 'prev_elapsed_delta',
+    label: 'Δ к прошлому году',
+    defaultVisible: true,
+    render: (p) => prevDeltaCell(p.prev_elapsed_delta, p.prev_elapsed_delta_sec),
   },
   {
     key: 'result_link',
@@ -257,6 +280,12 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     render: (p) => textOrDash(formatSpeed(p.avg_moving_speed_kmh)),
   },
   {
+    key: 'peak_avg_speed_delta_kmh',
+    label: 'Пиковая − средняя',
+    defaultVisible: false,
+    render: (p) => textOrDash(formatSpeed(p.peak_avg_speed_delta_kmh)),
+  },
+  {
     key: 'idle_time',
     label: 'Простой',
     defaultVisible: false,
@@ -324,11 +353,13 @@ export const SORTABLE_COLUMN_KEYS: ReadonlySet<string> = new Set<string>([
   'elapsed_time',
   'moving_time',
   'prev_elapsed_time',
+  'prev_elapsed_delta',
   'idle_time',
   'distance_km',
   'peak_speed_kmh',
   'avg_speed_kmh',
   'avg_moving_speed_kmh',
+  'peak_avg_speed_delta_kmh',
   'calories',
   'avg_heart_rate',
   'max_heart_rate',

@@ -143,6 +143,15 @@ func (r *participantListParticipantRepoFake) FindByEvent(ctx context.Context, ev
 	return r.participants, nil
 }
 
+func (r *participantListParticipantRepoFake) FindByID(ctx context.Context, id uint) (*entity.Participant, error) {
+	for _, p := range r.participants {
+		if p.ID == id {
+			return p, nil
+		}
+	}
+	return nil, repository.ErrParticipantNotFound
+}
+
 type participantListResultRepoFake struct {
 	repository.ResultRepository
 	prevElapsedByUser map[int64]int
@@ -167,10 +176,16 @@ func (r *participantListGiftRepoFake) FindByEvent(ctx context.Context, eventID u
 	return r.gifts, nil
 }
 
+func (r *participantListGiftRepoFake) FindByEventAndReviewStatus(ctx context.Context, eventID uint, status entity.GiftReviewStatus) ([]*entity.Gift, error) {
+	return nil, nil
+}
+
 func newParticipantsListTestHandler() *ParticipantsHandler {
+	aliceElapsed := 7200
 	participantRepo := &participantListParticipantRepoFake{
 		participants: []*entity.Participant{
-			{ID: 1, UserID: 111, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale, User: &entity.User{ID: 111, Username: "alice"}},
+			{ID: 1, UserID: 111, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale, User: &entity.User{ID: 111, Username: "alice"},
+				Result: &entity.Result{ID: 9, ParticipantID: 1, IsCurrent: true, ElapsedTimeSec: &aliceElapsed}},
 			{ID: 2, UserID: 222, EventID: 77, BikeType: valueobject.BikeTypeMTB, Gender: valueobject.GenderFemale, User: &entity.User{ID: 222, Username: "bob_with_gift"}},
 			{ID: 3, UserID: 333, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale, User: &entity.User{ID: 333, Username: "carol"}},
 		},
@@ -254,10 +269,69 @@ func TestParticipantsHandlerPrevEventElapsedTime(t *testing.T) {
 	if *withPrev.PrevElapsedTimeSec != 7199 || *withPrev.PrevElapsedTime != "01:59:59" {
 		t.Fatalf("prev event time mismatch: sec=%d formatted=%s", *withPrev.PrevElapsedTimeSec, *withPrev.PrevElapsedTime)
 	}
+	// У 111 есть и прошлое (7199), и текущее (7200) время → дельта −1 сек.
+	if withPrev.PrevElapsedDeltaSec == nil || *withPrev.PrevElapsedDeltaSec != -1 {
+		t.Fatalf("prev delta sec mismatch: %v", withPrev.PrevElapsedDeltaSec)
+	}
+	if withPrev.PrevElapsedDelta == nil || *withPrev.PrevElapsedDelta != "-00:00:01" {
+		t.Fatalf("prev delta formatted mismatch: %v", withPrev.PrevElapsedDelta)
+	}
+	// Вычисленное (не ручное) значение не должно попадать в manual-поле.
+	if withPrev.PrevElapsedTimeManualSec != nil {
+		t.Fatalf("computed prev time must not be exposed as manual: %v", *withPrev.PrevElapsedTimeManualSec)
+	}
 
 	withoutPrev := byUserID[222]
 	if withoutPrev == nil || withoutPrev.PrevElapsedTimeSec != nil || withoutPrev.PrevElapsedTime != nil {
 		t.Fatalf("participant 222 should not have prev event time, got %+v", withoutPrev)
+	}
+	if withoutPrev.PrevElapsedDeltaSec != nil || withoutPrev.PrevElapsedDelta != nil {
+		t.Fatalf("participant 222 should not have prev delta, got %+v", withoutPrev)
+	}
+}
+
+// Ручное «время прошлого года» на участнике имеет приоритет над значением,
+// вычисленным по предыдущему событию, и отдаётся отдельным manual-полем.
+func TestParticipantsHandlerManualPrevElapsedTimeOverridesComputed(t *testing.T) {
+	manual := 28800 // 08:00:00 вручную
+	elapsed := 25500
+	participantRepo := &participantListParticipantRepoFake{
+		participants: []*entity.Participant{
+			{ID: 1, UserID: 111, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale,
+				User:               &entity.User{ID: 111, Username: "alice"},
+				PrevElapsedTimeSec: &manual,
+				Result:             &entity.Result{ID: 9, ParticipantID: 1, IsCurrent: true, ElapsedTimeSec: &elapsed}},
+		},
+	}
+	h := &ParticipantsHandler{
+		participantRepo: participantRepo,
+		// Вычисленное значение с прошлого события отличается — должно игнорироваться.
+		resultRepo:             &participantListResultRepoFake{prevElapsedByUser: map[int64]int{111: 7199}},
+		giftRepo:               &participantListGiftRepoFake{},
+		getParticipantsHandler: query.NewGetParticipantsHandler(participantRepo),
+	}
+
+	got := getParticipantsList(t, h, "/api/events/77/participants")
+	if len(got.Participants) != 1 {
+		t.Fatalf("expected 1 participant, got %d", len(got.Participants))
+	}
+	p := got.Participants[0]
+
+	if p.PrevElapsedTimeSec == nil || *p.PrevElapsedTimeSec != manual {
+		t.Fatalf("manual prev time should win: %v", p.PrevElapsedTimeSec)
+	}
+	if p.PrevElapsedTime == nil || *p.PrevElapsedTime != "08:00:00" {
+		t.Fatalf("manual prev time formatted mismatch: %v", p.PrevElapsedTime)
+	}
+	if p.PrevElapsedTimeManualSec == nil || *p.PrevElapsedTimeManualSec != manual {
+		t.Fatalf("manual field should be populated: %v", p.PrevElapsedTimeManualSec)
+	}
+	// Дельта считается от ручного значения: 28800 − 25500 = +3300 (+00:55:00).
+	if p.PrevElapsedDeltaSec == nil || *p.PrevElapsedDeltaSec != 3300 {
+		t.Fatalf("delta from manual mismatch: %v", p.PrevElapsedDeltaSec)
+	}
+	if p.PrevElapsedDelta == nil || *p.PrevElapsedDelta != "+00:55:00" {
+		t.Fatalf("delta formatted mismatch: %v", p.PrevElapsedDelta)
 	}
 }
 
@@ -371,6 +445,10 @@ func TestParticipantsHandlerListIncludesRideMetrics(t *testing.T) {
 	if wr.AvgMovingSpeedKmh == nil {
 		t.Error("avg_moving_speed_kmh should be computed for participant with result")
 	}
+	// Пиковая − средняя: 45.5 − (50 км / 2 ч) = 20.5 км/ч.
+	if wr.PeakAvgSpeedDeltaKmh == nil || *wr.PeakAvgSpeedDeltaKmh != 20.5 {
+		t.Errorf("peak_avg_speed_delta_kmh mismatch: got %v, want 20.5", wr.PeakAvgSpeedDeltaKmh)
+	}
 
 	wo := byID[2]
 	if wo == nil {
@@ -378,7 +456,59 @@ func TestParticipantsHandlerListIncludesRideMetrics(t *testing.T) {
 	}
 	if wo.StartedAt != nil || wo.RideFinishedAt != nil || wo.DistanceMeters != nil ||
 		wo.AvgHeartRate != nil || wo.PeakSpeedKmh != nil || wo.RideDate != nil ||
-		wo.AvgSpeedKmh != nil || wo.AvgMovingSpeedKmh != nil {
+		wo.AvgSpeedKmh != nil || wo.AvgMovingSpeedKmh != nil || wo.PeakAvgSpeedDeltaKmh != nil {
 		t.Error("participant without result should have nil ride metrics and computed fields")
+	}
+}
+
+// Detail-эндпоинт должен отдавать «время прошлого года» и дельту так же,
+// как список (вычисленное значение по предыдущему событию).
+func TestParticipantsHandlerGetByIDIncludesPrevElapsedTime(t *testing.T) {
+	elapsed := 7200
+	participantRepo := &participantListParticipantRepoFake{
+		participants: []*entity.Participant{
+			{ID: 1, UserID: 111, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale,
+				User:   &entity.User{ID: 111, Username: "alice"},
+				Result: &entity.Result{ID: 9, ParticipantID: 1, IsCurrent: true, ElapsedTimeSec: &elapsed}},
+		},
+	}
+	resultRepo := &participantListResultRepoFake{prevElapsedByUser: map[int64]int{111: 7199}}
+	giftRepo := &participantListGiftRepoFake{}
+	h := &ParticipantsHandler{
+		participantRepo:             participantRepo,
+		resultRepo:                  resultRepo,
+		giftRepo:                    giftRepo,
+		getParticipantByIDHandler:   query.NewGetParticipantByIDHandler(participantRepo),
+		getPrizeDistributionHandler: query.NewGetPrizeDistributionHandler(resultRepo, giftRepo, participantRepo, nil),
+	}
+
+	router := chi.NewRouter()
+	router.Get("/api/participants/{id}", h.GetByID)
+	req := httptest.NewRequest(http.MethodGet, "/api/participants/1", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var got dto.ParticipantDTO
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.PrevElapsedTimeSec == nil || *got.PrevElapsedTimeSec != 7199 {
+		t.Fatalf("prev elapsed sec mismatch: %v", got.PrevElapsedTimeSec)
+	}
+	if got.PrevElapsedTime == nil || *got.PrevElapsedTime != "01:59:59" {
+		t.Fatalf("prev elapsed formatted mismatch: %v", got.PrevElapsedTime)
+	}
+	if got.PrevElapsedDeltaSec == nil || *got.PrevElapsedDeltaSec != -1 {
+		t.Fatalf("prev delta sec mismatch: %v", got.PrevElapsedDeltaSec)
+	}
+	if got.PrevElapsedDelta == nil || *got.PrevElapsedDelta != "-00:00:01" {
+		t.Fatalf("prev delta formatted mismatch: %v", got.PrevElapsedDelta)
+	}
+	if got.PrevElapsedTimeManualSec != nil {
+		t.Fatalf("computed prev time must not be exposed as manual: %v", *got.PrevElapsedTimeManualSec)
 	}
 }

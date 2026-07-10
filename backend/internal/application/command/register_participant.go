@@ -20,6 +20,8 @@ var (
 	ErrInvalidBikeType   = errors.New("invalid bike type")
 	ErrInvalidGender     = errors.New("invalid gender")
 	ErrInvalidStatus     = errors.New("invalid participant status")
+	// ErrInvalidPrevElapsedTime — отрицательное ручное «время прошлого года».
+	ErrInvalidPrevElapsedTime = errors.New("invalid prev elapsed time")
 )
 
 // RegisterParticipantCommand представляет команду регистрации участника на событие

@@ -18,6 +18,9 @@ type UpdateParticipantCommand struct {
 	Gender        *string
 	Notes         *string
 	Status        *string
+	// Ручное «время прошлого года» в секундах:
+	// nil — не менять, 0 — очистить, >0 — установить.
+	PrevElapsedTimeSec *int
 }
 
 // UpdateParticipantHandler обрабатывает обновление участника
@@ -61,6 +64,18 @@ func (h *UpdateParticipantHandler) Handle(ctx context.Context, cmd UpdatePartici
 
 	if cmd.Notes != nil {
 		participant.Notes = *cmd.Notes
+	}
+
+	if cmd.PrevElapsedTimeSec != nil {
+		switch {
+		case *cmd.PrevElapsedTimeSec < 0:
+			return nil, ErrInvalidPrevElapsedTime
+		case *cmd.PrevElapsedTimeSec == 0:
+			participant.PrevElapsedTimeSec = nil
+		default:
+			sec := *cmd.PrevElapsedTimeSec
+			participant.PrevElapsedTimeSec = &sec
+		}
 	}
 
 	if cmd.Status != nil {

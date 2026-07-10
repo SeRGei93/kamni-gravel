@@ -17,7 +17,6 @@ import (
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/application/query"
-	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/infrastructure/http/response"
 )
@@ -156,11 +155,12 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 			participantDTO.PlaceByGenderBike = &rwp.PlaceByGenderBike
 		}
 
-		if prevSec, ok := prevElapsedByUser[pwp.Participant.UserID]; ok {
-			sec := prevSec
-			formatted := entity.FormatSeconds(sec)
-			participantDTO.PrevElapsedTimeSec = &sec
-			participantDTO.PrevElapsedTime = &formatted
+		// Ручное «время прошлого года» уже выставлено в FromParticipant и
+		// имеет приоритет над вычисленным по предыдущему событию.
+		if participantDTO.PrevElapsedTimeSec == nil {
+			if prevSec, ok := prevElapsedByUser[pwp.Participant.UserID]; ok {
+				participantDTO.SetPrevElapsed(prevSec)
+			}
 		}
 
 		allDTOs = append(allDTOs, participantDTO)
@@ -242,27 +242,29 @@ type participantSorter struct {
 // participantSortComparators — множество сортируемых колонок. Ключи ДОЛЖНЫ
 // совпадать с колонками, помеченными `sortable` на фронтенде (participantColumns).
 var participantSortComparators = map[string]participantSorter{
-	"place":                placeSorter(),
-	"place_absolute":       intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceAbsolute }),
-	"place_by_gender":      intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceByGender }),
-	"place_by_gender_bike": intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceByGenderBike }),
-	"prizes_count":         intValSorter(func(d *dto.ParticipantDTO) int { return d.PrizesCount }),
-	"user_id":              int64ValSorter(func(d *dto.ParticipantDTO) int64 { return d.UserID }),
-	"distance_km":          intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.DistanceMeters }),
-	"calories":             intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.Calories }),
-	"avg_heart_rate":       intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.AvgHeartRate }),
-	"max_heart_rate":       intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.MaxHeartRate }),
-	"avg_cadence":          intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.AvgCadence }),
-	"elapsed_time":         intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.ElapsedTimeSec }),
-	"moving_time":          intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.MovingTimeSec }),
-	"prev_elapsed_time":    intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PrevElapsedTimeSec }),
-	"idle_time":            intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.IdleTimeSec }),
-	"peak_speed_kmh":       floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.PeakSpeedKmh }),
-	"avg_speed_kmh":        floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgSpeedKmh }),
-	"avg_moving_speed_kmh": floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgMovingSpeedKmh }),
-	"started_at":           timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.StartedAt }),
-	"ride_finished_at":     timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.RideFinishedAt }),
-	"ride_date":            strPtrSorter(func(d *dto.ParticipantDTO) *string { return d.RideDate }),
+	"place":                    placeSorter(),
+	"place_absolute":           intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceAbsolute }),
+	"place_by_gender":          intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceByGender }),
+	"place_by_gender_bike":     intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PlaceByGenderBike }),
+	"prizes_count":             intValSorter(func(d *dto.ParticipantDTO) int { return d.PrizesCount }),
+	"user_id":                  int64ValSorter(func(d *dto.ParticipantDTO) int64 { return d.UserID }),
+	"distance_km":              intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.DistanceMeters }),
+	"calories":                 intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.Calories }),
+	"avg_heart_rate":           intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.AvgHeartRate }),
+	"max_heart_rate":           intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.MaxHeartRate }),
+	"avg_cadence":              intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.AvgCadence }),
+	"elapsed_time":             intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.ElapsedTimeSec }),
+	"moving_time":              intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.MovingTimeSec }),
+	"prev_elapsed_time":        intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PrevElapsedTimeSec }),
+	"prev_elapsed_delta":       intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.PrevElapsedDeltaSec }),
+	"idle_time":                intPtrSorter(func(d *dto.ParticipantDTO) *int { return d.IdleTimeSec }),
+	"peak_speed_kmh":           floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.PeakSpeedKmh }),
+	"avg_speed_kmh":            floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgSpeedKmh }),
+	"avg_moving_speed_kmh":     floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgMovingSpeedKmh }),
+	"peak_avg_speed_delta_kmh": floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.PeakAvgSpeedDeltaKmh }),
+	"started_at":               timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.StartedAt }),
+	"ride_finished_at":         timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.RideFinishedAt }),
+	"ride_date":                strPtrSorter(func(d *dto.ParticipantDTO) *string { return d.RideDate }),
 }
 
 // sortParticipantDTOs стабильно сортирует список по колонке sortKey. Пустой
@@ -393,6 +395,16 @@ func (h *ParticipantsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	// Конвертируем в DTO
 	participantDTO := dto.FromParticipant(participant)
 
+	// «Время прошлого года»: ручное значение уже выставлено в FromParticipant;
+	// иначе берём вычисленное по предыдущему событию. Ошибка не блокирует ответ.
+	if participantDTO.PrevElapsedTimeSec == nil {
+		if prevElapsedByUser, err := h.resultRepo.FindPrevEventElapsedByUser(r.Context(), participant.EventID); err != nil {
+			log.Printf("Error getting previous event times (field omitted): event_id=%d participant_id=%d error=%v", participant.EventID, participant.ID, err)
+		} else if prevSec, ok := prevElapsedByUser[participant.UserID]; ok {
+			participantDTO.SetPrevElapsed(prevSec)
+		}
+	}
+
 	// Получаем места и matched_gift через prize distribution
 	resultsWithPlaces, err := h.resultRepo.FindByEventWithPlaces(r.Context(), participant.EventID)
 	if err == nil {
@@ -495,6 +507,8 @@ type UpdateParticipantRequest struct {
 	Gender   *string `json:"gender,omitempty"`
 	Notes    *string `json:"notes,omitempty"`
 	Status   *string `json:"status,omitempty"`
+	// Ручное «время прошлого года» в секундах: 0 — удалить ручное значение.
+	PrevElapsedTimeSec *int `json:"prev_elapsed_time_sec,omitempty"`
 }
 
 // Update обрабатывает PUT /api/participants/:id - обновление участника
@@ -515,17 +529,18 @@ func (h *ParticipantsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Вызываем command handler
 	participant, err := h.updateParticipantHandler.Handle(r.Context(), command.UpdateParticipantCommand{
-		ParticipantID: uint(id),
-		BikeType:      req.BikeType,
-		Gender:        req.Gender,
-		Notes:         req.Notes,
-		Status:        req.Status,
+		ParticipantID:      uint(id),
+		BikeType:           req.BikeType,
+		Gender:             req.Gender,
+		Notes:              req.Notes,
+		Status:             req.Status,
+		PrevElapsedTimeSec: req.PrevElapsedTimeSec,
 	})
 	if err != nil {
 		log.Printf("Error updating participant: %v", err)
 		if err.Error() == "participant not found" {
 			response.NotFound(w, err.Error())
-		} else if err == command.ErrInvalidBikeType || err == command.ErrInvalidGender || err == command.ErrInvalidStatus {
+		} else if err == command.ErrInvalidBikeType || err == command.ErrInvalidGender || err == command.ErrInvalidStatus || err == command.ErrInvalidPrevElapsedTime {
 			response.BadRequest(w, err.Error())
 		} else {
 			response.InternalServerError(w, "Failed to update participant")

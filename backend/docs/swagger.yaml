@@ -538,10 +538,12 @@ paths:
                 elapsed_time,
                 moving_time,
                 prev_elapsed_time,
+                prev_elapsed_delta,
                 idle_time,
                 peak_speed_kmh,
                 avg_speed_kmh,
                 avg_moving_speed_kmh,
+                peak_avg_speed_delta_kmh,
                 started_at,
                 ride_finished_at,
                 ride_date,
@@ -642,6 +644,16 @@ paths:
                   $ref: '#/components/schemas/Gender'
                 notes:
                   type: string
+                status:
+                  type: string
+                  enum: [active, dnf, disqualified]
+                prev_elapsed_time_sec:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    Ручное «время прошлого года» в секундах. Имеет приоритет над
+                    значением, вычисленным по предыдущему событию. 0 — удалить
+                    ручное значение (вернуться к вычисленному).
       responses:
         '200':
           description: Участник обновлён
@@ -1776,6 +1788,34 @@ components:
         moving_time_sec:
           type: integer
           description: Время в пути в секундах
+        status:
+          type: string
+          enum: [active, dnf, disqualified]
+        prev_elapsed_time:
+          type: string
+          nullable: true
+          description: Время прошлого года (ручное > вычисленное), ЧЧ:ММ:СС
+        prev_elapsed_time_sec:
+          type: integer
+          nullable: true
+          description: Время прошлого года (ручное > вычисленное), секунды
+        prev_elapsed_time_manual_sec:
+          type: integer
+          nullable: true
+          description: Ручное «время прошлого года» в секундах (для формы правки)
+        prev_elapsed_delta:
+          type: string
+          nullable: true
+          description: "Вычисляется на сервере: прошлый год − общее время, ±ЧЧ:ММ:СС (плюс = быстрее в этом году)"
+        prev_elapsed_delta_sec:
+          type: integer
+          nullable: true
+          description: "Вычисляется на сервере: прошлый год − общее время, секунды"
+        peak_avg_speed_delta_kmh:
+          type: number
+          format: double
+          nullable: true
+          description: "Вычисляется на сервере: пиковая − средняя скорость, км/ч"
         notes:
           type: string
         registered_at:
@@ -1897,6 +1937,11 @@ components:
           format: double
           nullable: true
           description: "Вычисляется на сервере: средняя скорость в движении = дистанция / время движения, км/ч"
+        peak_avg_speed_delta_kmh:
+          type: number
+          format: double
+          nullable: true
+          description: "Вычисляется на сервере: пиковая − средняя скорость, км/ч"
 
     CreateManualResultRequest:
       type: object

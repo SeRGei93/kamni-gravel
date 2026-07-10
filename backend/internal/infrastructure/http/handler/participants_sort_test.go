@@ -10,6 +10,7 @@ import (
 func sortIntPtr(v int) *int              { return &v }
 func sortStrPtr(v string) *string        { return &v }
 func sortTimePtr(v time.Time) *time.Time { return &v }
+func sortFloatPtr(v float64) *float64    { return &v }
 
 // idsOf возвращает порядок id после сортировки — удобно сравнивать.
 func idsOf(items []*dto.ParticipantDTO) []uint {
@@ -127,6 +128,53 @@ func TestSortParticipantDTOsTimestampAndDate(t *testing.T) {
 	sortParticipantDTOs(byDate, "ride_date", "asc")
 	if got := idsOf(byDate); !equalIDs(got, []uint{2, 1, 3}) {
 		t.Fatalf("ride_date asc mismatch: %v", got)
+	}
+}
+
+// Дельта к прошлому году может быть отрицательной (медленнее) — порядок
+// учитывает знак, отсутствующие значения уходят в конец.
+func TestSortParticipantDTOsPrevElapsedDelta(t *testing.T) {
+	build := func() []*dto.ParticipantDTO {
+		return []*dto.ParticipantDTO{
+			{ID: 1, PrevElapsedDeltaSec: sortIntPtr(-120)}, // медленнее на 2 мин
+			{ID: 2, PrevElapsedDeltaSec: sortIntPtr(3300)}, // быстрее на 55 мин
+			{ID: 3, PrevElapsedDeltaSec: nil},
+			{ID: 4, PrevElapsedDeltaSec: sortIntPtr(0)},
+		}
+	}
+
+	asc := build()
+	sortParticipantDTOs(asc, "prev_elapsed_delta", "asc")
+	if got := idsOf(asc); !equalIDs(got, []uint{1, 4, 2, 3}) {
+		t.Fatalf("prev_elapsed_delta asc mismatch: %v", got)
+	}
+
+	desc := build()
+	sortParticipantDTOs(desc, "prev_elapsed_delta", "desc")
+	if got := idsOf(desc); !equalIDs(got, []uint{2, 4, 1, 3}) {
+		t.Fatalf("prev_elapsed_delta desc mismatch: %v", got)
+	}
+}
+
+func TestSortParticipantDTOsPeakAvgSpeedDelta(t *testing.T) {
+	build := func() []*dto.ParticipantDTO {
+		return []*dto.ParticipantDTO{
+			{ID: 1, PeakAvgSpeedDeltaKmh: sortFloatPtr(30.9)},
+			{ID: 2, PeakAvgSpeedDeltaKmh: nil},
+			{ID: 3, PeakAvgSpeedDeltaKmh: sortFloatPtr(12.4)},
+		}
+	}
+
+	asc := build()
+	sortParticipantDTOs(asc, "peak_avg_speed_delta_kmh", "asc")
+	if got := idsOf(asc); !equalIDs(got, []uint{3, 1, 2}) {
+		t.Fatalf("peak_avg_speed_delta_kmh asc mismatch: %v", got)
+	}
+
+	desc := build()
+	sortParticipantDTOs(desc, "peak_avg_speed_delta_kmh", "desc")
+	if got := idsOf(desc); !equalIDs(got, []uint{1, 3, 2}) {
+		t.Fatalf("peak_avg_speed_delta_kmh desc mismatch: %v", got)
 	}
 }
 

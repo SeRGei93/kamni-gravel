@@ -17,6 +17,10 @@ type Participant struct {
 	Notes        string
 	RegisteredAt time.Time
 
+	// Ручное «время прошлого года» в секундах; имеет приоритет над значением,
+	// вычисляемым по результату участника на предыдущем событии.
+	PrevElapsedTimeSec *int
+
 	// Связанные сущности (для удобства, заполняются через JOIN)
 	User   *User
 	Result *Result // Текущий актуальный результат (is_current = true)

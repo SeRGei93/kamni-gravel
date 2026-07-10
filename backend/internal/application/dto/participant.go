@@ -9,34 +9,37 @@ import (
 
 // ParticipantDTO представляет DTO участника для API
 type ParticipantDTO struct {
-	ID                     uint                      `json:"id"`
-	UserID                 int64                     `json:"user_id"`
-	Username               string                    `json:"username"`
-	FirstName              string                    `json:"first_name"`
-	LastName               string                    `json:"last_name"`
-	EventID                uint                      `json:"event_id"`
-	BikeType               string                    `json:"bike_type"`
-	Gender                 string                    `json:"gender"`
-	Status                 string                    `json:"status"` // active / dnf / disqualified
-	ResultLink             *string                   `json:"result_link,omitempty"`
-	IsFinished             bool                      `json:"is_finished"`
-	ElapsedTime            *string                   `json:"elapsed_time,omitempty"` // формат ЧЧ:ММ:СС
-	MovingTime             *string                   `json:"moving_time,omitempty"`  // формат ЧЧ:ММ:СС
-	ElapsedTimeSec         *int                      `json:"elapsed_time_sec,omitempty"`
-	MovingTimeSec          *int                      `json:"moving_time_sec,omitempty"`
-	PrevElapsedTime        *string                   `json:"prev_elapsed_time,omitempty"`     // общее время на предыдущем событии, ЧЧ:ММ:СС
-	PrevElapsedTimeSec     *int                      `json:"prev_elapsed_time_sec,omitempty"` // общее время на предыдущем событии, секунды
-	Notes                  string                    `json:"notes,omitempty"`
-	RegisteredAt           time.Time                 `json:"registered_at"`
-	FinishedAt             *time.Time                `json:"finished_at,omitempty"`
-	Place                  int                       `json:"place,omitempty"`                    // место в зачёте (0 если нет) - устаревшее, используйте place_absolute
-	PlaceAbsolute          *int                      `json:"place_absolute,omitempty"`           // место в абсолютном зачёте
-	PlaceByGender          *int                      `json:"place_by_gender,omitempty"`          // место в зачёте по гендеру
-	PlaceByGenderBike      *int                      `json:"place_by_gender_bike,omitempty"`     // место в зачёте по гендеру+тип велосипеда
-	HasGift                bool                      `json:"has_gift"`                           // добавил ли подарок
-	PrizesCount            int                       `json:"prizes_count"`                       // количество полученных призов
-	MatchedGifts           []*GiftDTO                `json:"matched_gifts,omitempty"`            // все подобранные подарки
-	MatchedGiftAssignments []*PrizeGiftAssignmentDTO `json:"matched_gift_assignments,omitempty"` // назначения слотов подарков
+	ID                       uint                      `json:"id"`
+	UserID                   int64                     `json:"user_id"`
+	Username                 string                    `json:"username"`
+	FirstName                string                    `json:"first_name"`
+	LastName                 string                    `json:"last_name"`
+	EventID                  uint                      `json:"event_id"`
+	BikeType                 string                    `json:"bike_type"`
+	Gender                   string                    `json:"gender"`
+	Status                   string                    `json:"status"` // active / dnf / disqualified
+	ResultLink               *string                   `json:"result_link,omitempty"`
+	IsFinished               bool                      `json:"is_finished"`
+	ElapsedTime              *string                   `json:"elapsed_time,omitempty"` // формат ЧЧ:ММ:СС
+	MovingTime               *string                   `json:"moving_time,omitempty"`  // формат ЧЧ:ММ:СС
+	ElapsedTimeSec           *int                      `json:"elapsed_time_sec,omitempty"`
+	MovingTimeSec            *int                      `json:"moving_time_sec,omitempty"`
+	PrevElapsedTime          *string                   `json:"prev_elapsed_time,omitempty"`            // время прошлого года (ручное > вычисленное), ЧЧ:ММ:СС
+	PrevElapsedTimeSec       *int                      `json:"prev_elapsed_time_sec,omitempty"`        // время прошлого года (ручное > вычисленное), секунды
+	PrevElapsedTimeManualSec *int                      `json:"prev_elapsed_time_manual_sec,omitempty"` // ручное время прошлого года, секунды (для формы правки)
+	PrevElapsedDelta         *string                   `json:"prev_elapsed_delta,omitempty"`           // прошлый год − общее время, ±ЧЧ:ММ:СС (плюс = быстрее)
+	PrevElapsedDeltaSec      *int                      `json:"prev_elapsed_delta_sec,omitempty"`       // прошлый год − общее время, секунды
+	Notes                    string                    `json:"notes,omitempty"`
+	RegisteredAt             time.Time                 `json:"registered_at"`
+	FinishedAt               *time.Time                `json:"finished_at,omitempty"`
+	Place                    int                       `json:"place,omitempty"`                    // место в зачёте (0 если нет) - устаревшее, используйте place_absolute
+	PlaceAbsolute            *int                      `json:"place_absolute,omitempty"`           // место в абсолютном зачёте
+	PlaceByGender            *int                      `json:"place_by_gender,omitempty"`          // место в зачёте по гендеру
+	PlaceByGenderBike        *int                      `json:"place_by_gender_bike,omitempty"`     // место в зачёте по гендеру+тип велосипеда
+	HasGift                  bool                      `json:"has_gift"`                           // добавил ли подарок
+	PrizesCount              int                       `json:"prizes_count"`                       // количество полученных призов
+	MatchedGifts             []*GiftDTO                `json:"matched_gifts,omitempty"`            // все подобранные подарки
+	MatchedGiftAssignments   []*PrizeGiftAssignmentDTO `json:"matched_gift_assignments,omitempty"` // назначения слотов подарков
 
 	// Метрики заезда из текущего результата (опциональны; см. dto.ResultDTO).
 	// ВНИМАНИЕ: FinishedAt выше — это дата отправки результата (submitted_at).
@@ -52,11 +55,28 @@ type ParticipantDTO struct {
 	Calories       *int       `json:"calories,omitempty"`         // Калории
 
 	// Вычисляемые поля заезда (только для чтения; считаются на сервере)
-	RideDate          *string  `json:"ride_date,omitempty"`            // Дата проезда, YYYY-MM-DD
-	IdleTimeSec       *int     `json:"idle_time_sec,omitempty"`        // Простой в секундах
-	IdleTime          *string  `json:"idle_time,omitempty"`            // Простой, ЧЧ:ММ:СС
-	AvgSpeedKmh       *float64 `json:"avg_speed_kmh,omitempty"`        // Средняя скорость, км/ч
-	AvgMovingSpeedKmh *float64 `json:"avg_moving_speed_kmh,omitempty"` // Средняя скорость в движении, км/ч
+	RideDate             *string  `json:"ride_date,omitempty"`                // Дата проезда, YYYY-MM-DD
+	IdleTimeSec          *int     `json:"idle_time_sec,omitempty"`            // Простой в секундах
+	IdleTime             *string  `json:"idle_time,omitempty"`                // Простой, ЧЧ:ММ:СС
+	AvgSpeedKmh          *float64 `json:"avg_speed_kmh,omitempty"`            // Средняя скорость, км/ч
+	AvgMovingSpeedKmh    *float64 `json:"avg_moving_speed_kmh,omitempty"`     // Средняя скорость в движении, км/ч
+	PeakAvgSpeedDeltaKmh *float64 `json:"peak_avg_speed_delta_kmh,omitempty"` // Пиковая − средняя скорость, км/ч
+}
+
+// SetPrevElapsed выставляет «время прошлого года» и, если известно текущее
+// общее время, дельту prev − current (положительная = быстрее в этом году).
+func (d *ParticipantDTO) SetPrevElapsed(sec int) {
+	formatted := entity.FormatSeconds(sec)
+	d.PrevElapsedTimeSec = &sec
+	d.PrevElapsedTime = &formatted
+
+	if d.ElapsedTimeSec == nil {
+		return
+	}
+	delta := sec - *d.ElapsedTimeSec
+	deltaFormatted := entity.FormatSignedSeconds(delta)
+	d.PrevElapsedDeltaSec = &delta
+	d.PrevElapsedDelta = &deltaFormatted
 }
 
 // FromParticipant создаёт DTO из entity.Participant
@@ -121,7 +141,15 @@ func FromParticipant(p *entity.Participant) *ParticipantDTO {
 			dto.IdleTime = rd.IdleTime
 			dto.AvgSpeedKmh = rd.AvgSpeedKmh
 			dto.AvgMovingSpeedKmh = rd.AvgMovingSpeedKmh
+			dto.PeakAvgSpeedDeltaKmh = rd.PeakAvgSpeedDeltaKmh
 		}
+	}
+
+	// Ручное «время прошлого года» имеет приоритет над вычисленным (последнее
+	// добавляется обработчиками через SetPrevElapsed только когда поле пусто).
+	if p.PrevElapsedTimeSec != nil {
+		dto.PrevElapsedTimeManualSec = p.PrevElapsedTimeSec
+		dto.SetPrevElapsed(*p.PrevElapsedTimeSec)
 	}
 
 	return dto

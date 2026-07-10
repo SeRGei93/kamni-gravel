@@ -79,8 +79,11 @@ export interface Participant {
   moving_time?: string; // формат ЧЧ:ММ:СС
   elapsed_time_sec?: number;
   moving_time_sec?: number;
-  prev_elapsed_time?: string; // общее время на предыдущем событии, ЧЧ:ММ:СС
+  prev_elapsed_time?: string; // время прошлого года (ручное > вычисленное), ЧЧ:ММ:СС
   prev_elapsed_time_sec?: number;
+  prev_elapsed_time_manual_sec?: number; // ручное время прошлого года (для формы правки)
+  prev_elapsed_delta?: string; // прошлый год − общее время, ±ЧЧ:ММ:СС (плюс = быстрее)
+  prev_elapsed_delta_sec?: number;
   notes?: string;
   registered_at: string;
   finished_at?: string;
@@ -109,6 +112,7 @@ export interface Participant {
   idle_time?: string; // ЧЧ:ММ:СС
   avg_speed_kmh?: number;
   avg_moving_speed_kmh?: number;
+  peak_avg_speed_delta_kmh?: number; // пиковая − средняя скорость, км/ч
 }
 
 export interface ParticipantDetail extends Participant {
@@ -415,6 +419,7 @@ export interface UpdateParticipantRequest {
   gender?: Gender;
   notes?: string;
   status?: ParticipantStatus;
+  prev_elapsed_time_sec?: number; // ручное время прошлого года; 0 = удалить ручное значение
 }
 
 // LockStatus — состояние блокировки редактирования участника (in-memory лок на бэкенде).
@@ -458,6 +463,7 @@ export interface Result {
   idle_time?: string; // формат ЧЧ:ММ:СС
   avg_speed_kmh?: number;
   avg_moving_speed_kmh?: number;
+  peak_avg_speed_delta_kmh?: number; // пиковая − средняя скорость, км/ч
 }
 
 export interface ResultListResponse {

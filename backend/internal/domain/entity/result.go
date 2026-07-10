@@ -55,6 +55,18 @@ func FormatSeconds(seconds int) string {
 	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, secs)
 }
 
+// FormatSignedSeconds форматирует разницу длительностей как ±ЧЧ:ММ:СС
+// (ноль — без знака).
+func FormatSignedSeconds(seconds int) string {
+	if seconds < 0 {
+		return "-" + FormatSeconds(-seconds)
+	}
+	if seconds > 0 {
+		return "+" + FormatSeconds(seconds)
+	}
+	return FormatSeconds(0)
+}
+
 // ComputedElapsedSec возвращает общее время как разницу финиша и старта,
 // если оба значения заданы; иначе nil. Используется командой как источник
 // общего времени, когда старт и финиш введены.
@@ -99,6 +111,17 @@ func (r *Result) AvgSpeedKmh() *float64 {
 // время; иначе nil.
 func (r *Result) AvgMovingSpeedKmh() *float64 {
 	return speedKmh(r.DistanceMeters, r.MovingTimeSec)
+}
+
+// PeakAvgSpeedDeltaKmh возвращает разницу «пиковая − средняя скорость» (км/ч),
+// если заданы пиковая скорость и вычислима средняя; иначе nil.
+func (r *Result) PeakAvgSpeedDeltaKmh() *float64 {
+	avg := r.AvgSpeedKmh()
+	if r.PeakSpeedKmh == nil || avg == nil {
+		return nil
+	}
+	delta := *r.PeakSpeedKmh - *avg
+	return &delta
 }
 
 // speedKmh считает скорость в км/ч из дистанции (метры) и времени (секунды).

@@ -30,11 +30,12 @@ type ResultDTO struct {
 	Calories       *int       `json:"calories,omitempty"`        // Калории
 
 	// Вычисляемые поля (только для чтения; считаются на сервере)
-	RideDate          *string  `json:"ride_date,omitempty"`            // Дата проезда, YYYY-MM-DD
-	IdleTimeSec       *int     `json:"idle_time_sec,omitempty"`        // Простой в секундах
-	IdleTime          *string  `json:"idle_time,omitempty"`            // Простой, ЧЧ:ММ:СС
-	AvgSpeedKmh       *float64 `json:"avg_speed_kmh,omitempty"`        // Средняя скорость, км/ч
-	AvgMovingSpeedKmh *float64 `json:"avg_moving_speed_kmh,omitempty"` // Средняя скорость в движении, км/ч
+	RideDate             *string  `json:"ride_date,omitempty"`                // Дата проезда, YYYY-MM-DD
+	IdleTimeSec          *int     `json:"idle_time_sec,omitempty"`            // Простой в секундах
+	IdleTime             *string  `json:"idle_time,omitempty"`                // Простой, ЧЧ:ММ:СС
+	AvgSpeedKmh          *float64 `json:"avg_speed_kmh,omitempty"`            // Средняя скорость, км/ч
+	AvgMovingSpeedKmh    *float64 `json:"avg_moving_speed_kmh,omitempty"`     // Средняя скорость в движении, км/ч
+	PeakAvgSpeedDeltaKmh *float64 `json:"peak_avg_speed_delta_kmh,omitempty"` // Пиковая − средняя скорость, км/ч
 }
 
 // FromResult создаёт DTO из entity.Result
@@ -89,6 +90,7 @@ func FromResult(r *entity.Result) *ResultDTO {
 	}
 	dto.AvgSpeedKmh = r.AvgSpeedKmh()
 	dto.AvgMovingSpeedKmh = r.AvgMovingSpeedKmh()
+	dto.PeakAvgSpeedDeltaKmh = r.PeakAvgSpeedDeltaKmh()
 
 	// Добавляем критерии
 	if len(r.Criteria) > 0 {
