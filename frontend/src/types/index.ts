@@ -263,6 +263,7 @@ export interface MiniappEvent {
 export interface MiniappSessionResponse {
   user: MiniappTelegramUser;
   event: MiniappEvent;
+  my_result_participant_id?: number;
 }
 
 // Публичная запись лидерборда Mini App. Зеркалит backend

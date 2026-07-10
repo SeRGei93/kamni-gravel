@@ -74,6 +74,28 @@ func TestGetParticipantsTieBreakPutsMissingMovingTimeLast(t *testing.T) {
 	}
 }
 
+func TestGetParticipantByUserAndEventReturnsOnlyRequestedParticipant(t *testing.T) {
+	participants := []*entity.Participant{
+		{ID: 1, UserID: 11, EventID: 77},
+		{ID: 2, UserID: 22, EventID: 77},
+	}
+	handler := NewGetParticipantByUserAndEventHandler(
+		&tieBreakParticipantRepoFake{participants: participants},
+	)
+
+	participant, err := handler.Handle(context.Background(), GetParticipantByUserAndEventQuery{
+		UserID:  22,
+		EventID: 77,
+	})
+
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if participant == nil || participant.ID != 2 {
+		t.Fatalf("participant mismatch: %#v", participant)
+	}
+}
+
 func makeFinisher(id uint, name string, gender valueobject.Gender, elapsedSec, movingSec int) *entity.Participant {
 	elapsed := elapsedSec
 	moving := movingSec
@@ -109,6 +131,11 @@ func (r *tieBreakParticipantRepoFake) FindByID(ctx context.Context, id uint) (*e
 	return nil, nil
 }
 func (r *tieBreakParticipantRepoFake) FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) (*entity.Participant, error) {
+	for _, participant := range r.participants {
+		if participant.UserID == userID && participant.EventID == eventID {
+			return participant, nil
+		}
+	}
 	return nil, nil
 }
 func (r *tieBreakParticipantRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {

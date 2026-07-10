@@ -171,3 +171,38 @@ func (h *GetParticipantByIDHandler) Handle(ctx context.Context, query GetPartici
 	}
 	return participant, nil
 }
+
+// GetParticipantByUserAndEventQuery представляет запрос на получение участника
+// текущего Telegram-пользователя в активном событии.
+type GetParticipantByUserAndEventQuery struct {
+	UserID  int64
+	EventID uint
+}
+
+// GetParticipantByUserAndEventHandler обрабатывает поиск участника по
+// Telegram user_id и событию без загрузки всего лидерборда.
+type GetParticipantByUserAndEventHandler struct {
+	participantRepo repository.ParticipantRepository
+}
+
+// NewGetParticipantByUserAndEventHandler создаёт handler поиска участника
+// текущего пользователя в событии.
+func NewGetParticipantByUserAndEventHandler(
+	participantRepo repository.ParticipantRepository,
+) *GetParticipantByUserAndEventHandler {
+	return &GetParticipantByUserAndEventHandler{
+		participantRepo: participantRepo,
+	}
+}
+
+// Handle выполняет поиск участника по пользователю и событию.
+func (h *GetParticipantByUserAndEventHandler) Handle(
+	ctx context.Context,
+	query GetParticipantByUserAndEventQuery,
+) (*entity.Participant, error) {
+	participant, err := h.participantRepo.FindByUserAndEvent(ctx, query.UserID, query.EventID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find participant by user and event: %w", err)
+	}
+	return participant, nil
+}

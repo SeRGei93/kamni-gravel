@@ -25,6 +25,7 @@ type MiniappHandler struct {
 	getMiniappGiftsHandler            *query.GetMiniappGiftsHandler
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler
 	getParticipantsHandler            *query.GetParticipantsHandler
+	getParticipantByUserHandler       *query.GetParticipantByUserAndEventHandler
 	resultRepo                        repository.ResultRepository
 	fileFetcher                       miniappFileFetcher
 	giftsCache                        miniappGiftsCache
@@ -57,6 +58,7 @@ func NewMiniappHandler(
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	getParticipantsHandler *query.GetParticipantsHandler,
+	getParticipantByUserHandler *query.GetParticipantByUserAndEventHandler,
 	resultRepo repository.ResultRepository,
 	botToken string,
 	giftsCache miniappGiftsCache,
@@ -66,6 +68,7 @@ func NewMiniappHandler(
 		getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler,
 		getParticipantsHandler,
+		getParticipantByUserHandler,
 		resultRepo,
 		&telegramFileFetcher{
 			botToken:   botToken,
@@ -80,6 +83,7 @@ func newMiniappHandlerWithFileFetcher(
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	getParticipantsHandler *query.GetParticipantsHandler,
+	getParticipantByUserHandler *query.GetParticipantByUserAndEventHandler,
 	resultRepo repository.ResultRepository,
 	fileFetcher miniappFileFetcher,
 	giftsCache miniappGiftsCache,
@@ -89,6 +93,7 @@ func newMiniappHandlerWithFileFetcher(
 		getMiniappGiftsHandler:            getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler: getMiniappParticipantCountHandler,
 		getParticipantsHandler:            getParticipantsHandler,
+		getParticipantByUserHandler:       getParticipantByUserHandler,
 		resultRepo:                        resultRepo,
 		fileFetcher:                       fileFetcher,
 		giftsCache:                        giftsCache,
@@ -96,8 +101,9 @@ func newMiniappHandlerWithFileFetcher(
 }
 
 type MiniappSessionResponse struct {
-	User  MiniappTelegramUserDTO `json:"user"`
-	Event MiniappEventDTO        `json:"event"`
+	User                  MiniappTelegramUserDTO `json:"user"`
+	Event                 MiniappEventDTO        `json:"event"`
+	MyResultParticipantID *uint                  `json:"my_result_participant_id,omitempty"`
 }
 
 type MiniappTelegramUserDTO struct {
@@ -130,11 +136,36 @@ func (h *MiniappHandler) Session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("INFO Miniapp session requested: telegram_user_id=%d event_id=%d", user.ID, event.ID)
-	response.Success(w, MiniappSessionResponse{
-		User:  miniappTelegramUserDTO(user),
-		Event: miniappEventDTO(event),
+	participant, err := h.getParticipantByUserHandler.Handle(r.Context(), query.GetParticipantByUserAndEventQuery{
+		UserID:  user.ID,
+		EventID: event.ID,
 	})
+	if err != nil {
+		log.Printf("ERROR [FIX] Miniapp session participant lookup failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
+		response.InternalServerError(w, "Failed to find current participant")
+		return
+	}
+
+	myResultParticipantID := miniappMyResultParticipantID(participant)
+	log.Printf("INFO [FIX] Miniapp session resolved: telegram_user_id=%d event_id=%d has_my_result=%t", user.ID, event.ID, myResultParticipantID != nil)
+	response.Success(w, MiniappSessionResponse{
+		User:                  miniappTelegramUserDTO(user),
+		Event:                 miniappEventDTO(event),
+		MyResultParticipantID: myResultParticipantID,
+	})
+}
+
+// miniappMyResultParticipantID возвращает только ID текущего пользователя с
+// опубликованным результатом. Так Mini App показывает «Мой результат» лишь
+// когда карточка уже доступна в публичном лидерборде, не раскрывая user_id
+// других участников.
+func miniappMyResultParticipantID(participant *entity.Participant) *uint {
+	if participant == nil || !participant.IsFinished() {
+		return nil
+	}
+
+	participantID := participant.ID
+	return &participantID
 }
 
 // Gifts обрабатывает GET /api/miniapp/gifts.

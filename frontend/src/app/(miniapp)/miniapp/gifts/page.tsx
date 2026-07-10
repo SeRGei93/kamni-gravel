@@ -6,13 +6,13 @@ import GiftCatalogTable from "@/components/miniapp/GiftCatalogTable";
 import GiftEmptyState from "@/components/miniapp/GiftEmptyState";
 import GiftFilters from "@/components/miniapp/GiftFilters";
 import { useMiniappCatalog } from "@/components/miniapp/MiniappCatalogContext";
+import { useMiniappSession } from "@/components/miniapp/MiniappSessionContext";
 import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
 import type { GenderFilter, Gift } from "@/types";
 import {
   expandTelegramWebApp,
   isTelegramWebAppAvailable,
   readyTelegramWebApp,
-  waitForTelegramInitData,
 } from "@/utils/telegramWebApp";
 import { getGiftFirstFixedPlace } from "@/utils/giftPlaceRule";
 
@@ -24,11 +24,10 @@ export default function MiniappGiftsPage() {
     setGender,
     bikeType,
     setBikeType,
-    session,
-    setSession,
     getCatalogSnapshot,
     setCatalogSnapshot,
   } = useMiniappCatalog();
+  const { session, isLoading: isSessionLoading, error: sessionError } = useMiniappSession();
 
   const catalogKey = `${gender}|${bikeType}`;
 
@@ -41,7 +40,6 @@ export default function MiniappGiftsPage() {
     () => getCatalogSnapshot(catalogKey)?.participantCount
   );
   // Если сессия уже в контексте (возврат с карточки) — не показываем загрузку.
-  const [isSessionLoading, setIsSessionLoading] = useState(() => session === null);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,53 +50,6 @@ export default function MiniappGiftsPage() {
       expandTelegramWebApp();
     }
   }, []);
-
-  useEffect(() => {
-    // Сессию грузим один раз и кешируем в контексте.
-    if (session) {
-      setIsSessionLoading(false);
-      return;
-    }
-
-    let ignore = false;
-
-    async function loadSession() {
-      setIsSessionLoading(true);
-      setError(null);
-
-      try {
-        // Дожидаемся инициализации Telegram SDK: без initData (гонка с загрузкой
-        // telegram-web-app.js) бэкенд вернёт 401 и каталог не откроется.
-        await waitForTelegramInitData();
-        if (isTelegramWebAppAvailable()) {
-          readyTelegramWebApp();
-          expandTelegramWebApp();
-        }
-
-        const data = await miniappApi.getSession();
-        if (!ignore) {
-          setSession(data);
-        }
-      } catch (loadError) {
-        console.warn("[miniapp] Session load failed", {
-          message: loadError instanceof Error ? loadError.message : "Unknown error",
-        });
-        if (!ignore) {
-          setError("Не удалось открыть каталог призов");
-        }
-      } finally {
-        if (!ignore) {
-          setIsSessionLoading(false);
-        }
-      }
-    }
-
-    loadSession();
-
-    return () => {
-      ignore = true;
-    };
-  }, [session, setSession]);
 
   useEffect(() => {
     if (!session) {
@@ -176,8 +127,14 @@ export default function MiniappGiftsPage() {
     return <MiniappShellState title="Каталог призов" text="Загружаем активное событие" />;
   }
 
-  if (error) {
-    return <MiniappShellState title="Каталог недоступен" text={error} tone="error" />;
+  if (sessionError || error) {
+    return (
+      <MiniappShellState
+        title="Каталог недоступен"
+        text={sessionError ?? error ?? "Не удалось открыть каталог призов"}
+        tone="error"
+      />
+    );
   }
 
   if (!session) {

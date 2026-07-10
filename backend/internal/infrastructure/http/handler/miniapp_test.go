@@ -50,6 +50,38 @@ func TestMiniappSessionReturnsTelegramUserAndActiveEvent(t *testing.T) {
 	}
 }
 
+func TestMiniappSessionIncludesCurrentUsersFinishedResult(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{
+			activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true},
+		},
+		nil,
+		nil,
+		&miniappHandlerParticipantRepoFake{
+			participants: []*entity.Participant{
+				{ID: 11, UserID: 42, EventID: 77, Result: &entity.Result{}},
+				{ID: 12, UserID: 84, EventID: 77, Result: &entity.Result{}},
+			},
+		},
+	)
+
+	rr := miniappRequest(t, token, now, h.Session, "/api/miniapp/session")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got MiniappSessionResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.MyResultParticipantID == nil || *got.MyResultParticipantID != 11 {
+		t.Fatalf("my result participant mismatch: %#v", got.MyResultParticipantID)
+	}
+}
+
 func TestMiniappSessionReturnsNotFoundWhenNoActiveEvent(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()
@@ -397,6 +429,7 @@ func newMiniappTestHandler(
 		query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo),
 		query.NewGetMiniappParticipantCountHandler(participantRepo),
 		query.NewGetParticipantsHandler(participantRepo),
+		query.NewGetParticipantByUserAndEventHandler(participantRepo),
 		&miniappResultRepoFake{},
 		miniappFileFetcherFunc(func(ctx context.Context, fileID string) (*http.Response, error) {
 			return nil, fmt.Errorf("unexpected file fetch: %s", fileID)
@@ -564,6 +597,11 @@ func (r *miniappHandlerParticipantRepoFake) FindByID(ctx context.Context, id uin
 	return nil, nil
 }
 func (r *miniappHandlerParticipantRepoFake) FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) (*entity.Participant, error) {
+	for _, participant := range r.participants {
+		if participant.UserID == userID && participant.EventID == eventID {
+			return participant, nil
+		}
+	}
 	return nil, nil
 }
 func (r *miniappHandlerParticipantRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {

@@ -13,7 +13,6 @@ import {
 import type {
   BikeTypeFilter,
   MiniappLeaderboardEntry,
-  MiniappSessionResponse,
 } from "@/types";
 
 // Состояние лидерборда Mini App живёт в провайдере на уровне layout группы
@@ -35,8 +34,6 @@ interface MiniappLeaderboardContextValue {
   setGender: (value: LeaderboardGenderFilter) => void;
   bikeType: BikeTypeFilter;
   setBikeType: (value: BikeTypeFilter) => void;
-  session: MiniappSessionResponse | null;
-  setSession: (value: MiniappSessionResponse | null) => void;
   entries: MiniappLeaderboardEntry[] | null;
   setEntries: (value: MiniappLeaderboardEntry[]) => void;
   getEntry: (id: number) => MiniappLeaderboardEntry | undefined;
@@ -77,7 +74,6 @@ export function MiniappLeaderboardProvider({ children }: { children: ReactNode }
   const [bikeType, setBikeTypeState] = useState<BikeTypeFilter>(() =>
     readStoredFilter(BIKE_TYPE_STORAGE_KEY, DEFAULT_BIKE_TYPE)
   );
-  const [session, setSession] = useState<MiniappSessionResponse | null>(null);
   const [entries, setEntriesState] = useState<MiniappLeaderboardEntry[] | null>(null);
   const scrollYRef = useRef(0);
 
@@ -106,14 +102,12 @@ export function MiniappLeaderboardProvider({ children }: { children: ReactNode }
       setGender,
       bikeType,
       setBikeType,
-      session,
-      setSession,
       entries,
       setEntries,
       getEntry,
       scrollYRef,
     }),
-    [gender, setGender, bikeType, setBikeType, session, entries, setEntries, getEntry]
+    [gender, setGender, bikeType, setBikeType, entries, setEntries, getEntry]
   );
 
   return (

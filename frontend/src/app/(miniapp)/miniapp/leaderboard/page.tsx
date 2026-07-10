@@ -6,6 +6,7 @@ import LeaderboardEmptyState from "@/components/miniapp/LeaderboardEmptyState";
 import LeaderboardFilters from "@/components/miniapp/LeaderboardFilters";
 import LeaderboardTable from "@/components/miniapp/LeaderboardTable";
 import { useMiniappLeaderboard } from "@/components/miniapp/MiniappLeaderboardContext";
+import { useMiniappSession } from "@/components/miniapp/MiniappSessionContext";
 import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
 import { useIsomorphicLayoutEffect } from "@/hooks/useIsomorphicLayoutEffect";
 import { rankAndFilterLeaderboard } from "@/utils/leaderboard";
@@ -13,7 +14,6 @@ import {
   expandTelegramWebApp,
   isTelegramWebAppAvailable,
   readyTelegramWebApp,
-  waitForTelegramInitData,
 } from "@/utils/telegramWebApp";
 
 export default function MiniappLeaderboardPage() {
@@ -22,14 +22,12 @@ export default function MiniappLeaderboardPage() {
     setGender,
     bikeType,
     setBikeType,
-    session,
-    setSession,
     entries,
     setEntries,
     scrollYRef,
   } = useMiniappLeaderboard();
+  const { session, isLoading: isSessionLoading, error: sessionError } = useMiniappSession();
 
-  const [isSessionLoading, setIsSessionLoading] = useState(() => session === null);
   const [isListLoading, setIsListLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,51 +37,6 @@ export default function MiniappLeaderboardPage() {
       expandTelegramWebApp();
     }
   }, []);
-
-  useEffect(() => {
-    if (session) {
-      setIsSessionLoading(false);
-      return;
-    }
-
-    let ignore = false;
-
-    async function loadSession() {
-      setIsSessionLoading(true);
-      setError(null);
-
-      try {
-        // Ждём инициализации Telegram SDK: без initData бэкенд вернёт 401.
-        await waitForTelegramInitData();
-        if (isTelegramWebAppAvailable()) {
-          readyTelegramWebApp();
-          expandTelegramWebApp();
-        }
-
-        const data = await miniappApi.getSession();
-        if (!ignore) {
-          setSession(data);
-        }
-      } catch (loadError) {
-        console.warn("[miniapp] Leaderboard session load failed", {
-          message: loadError instanceof Error ? loadError.message : "Unknown error",
-        });
-        if (!ignore) {
-          setError("Не удалось открыть лидерборд");
-        }
-      } finally {
-        if (!ignore) {
-          setIsSessionLoading(false);
-        }
-      }
-    }
-
-    loadSession();
-
-    return () => {
-      ignore = true;
-    };
-  }, [session, setSession]);
 
   useEffect(() => {
     if (!session) {
@@ -146,8 +99,14 @@ export default function MiniappLeaderboardPage() {
     return <MiniappShellState title="Лидерборд" text="Загружаем активное событие" />;
   }
 
-  if (error) {
-    return <MiniappShellState title="Лидерборд недоступен" text={error} tone="error" />;
+  if (sessionError || error) {
+    return (
+      <MiniappShellState
+        title="Лидерборд недоступен"
+        text={sessionError ?? error ?? "Не удалось открыть лидерборд"}
+        tone="error"
+      />
+    );
   }
 
   if (!session) {

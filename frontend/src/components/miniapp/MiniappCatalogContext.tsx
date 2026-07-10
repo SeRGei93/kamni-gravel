@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { MiniappGenderFilter } from "@/components/miniapp/GiftFilters";
-import type { BikeTypeFilter, Gift, MiniappSessionResponse } from "@/types";
+import type { BikeTypeFilter, Gift } from "@/types";
 
 // Состояние каталога Mini App живёт в провайдере, который рендерится в layout
 // группы (miniapp). Layout НЕ размонтируется при переходе на карточку приза и
@@ -36,8 +36,6 @@ interface MiniappCatalogContextValue {
   setGender: (value: MiniappGenderFilter) => void;
   bikeType: BikeTypeFilter;
   setBikeType: (value: BikeTypeFilter) => void;
-  session: MiniappSessionResponse | null;
-  setSession: (value: MiniappSessionResponse | null) => void;
   getCatalogSnapshot: (key: string) => CatalogSnapshot | undefined;
   setCatalogSnapshot: (key: string, snapshot: CatalogSnapshot) => void;
 }
@@ -74,7 +72,6 @@ export function MiniappCatalogProvider({ children }: { children: ReactNode }) {
   const [bikeType, setBikeTypeState] = useState<BikeTypeFilter>(() =>
     readStoredFilter(BIKE_TYPE_STORAGE_KEY, DEFAULT_BIKE_TYPE)
   );
-  const [session, setSession] = useState<MiniappSessionResponse | null>(null);
   // Кеш списков призов по ключу фильтра держим в ref: его изменение не должно
   // вызывать ререндер провайдера, читаем синхронно при маунте страницы.
   const catalogCacheRef = useRef<Map<string, CatalogSnapshot>>(new Map());
@@ -104,12 +101,10 @@ export function MiniappCatalogProvider({ children }: { children: ReactNode }) {
       setGender,
       bikeType,
       setBikeType,
-      session,
-      setSession,
       getCatalogSnapshot,
       setCatalogSnapshot,
     }),
-    [gender, setGender, bikeType, setBikeType, session, getCatalogSnapshot, setCatalogSnapshot]
+    [gender, setGender, bikeType, setBikeType, getCatalogSnapshot, setCatalogSnapshot]
   );
 
   return (

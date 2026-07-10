@@ -93,13 +93,17 @@ export default function LeaderboardDetailView({
                   label="Ср. скорость в движении"
                   value={formatSpeed(entry.avg_moving_speed_kmh)}
                 />
-                <Metric label="Дата проезда" value={entry.ride_date} />
-                <Metric label="Дистанция" value={formatDistanceKm(entry.distance_meters)} />
                 <Metric label="Пиковая скорость" value={formatSpeed(entry.peak_speed_kmh)} />
                 <Metric label="Средний пульс" value={formatHeartRate(entry.avg_heart_rate)} />
                 <Metric label="Максимальный пульс" value={formatHeartRate(entry.max_heart_rate)} />
                 <Metric label="Средний каденс" value={formatCadence(entry.avg_cadence)} />
-                <Metric label="Калории" value={formatCalories(entry.calories)} />
+                <Metric
+                  label="Калории"
+                  value={formatCalories(entry.calories)}
+                  className="col-span-full"
+                />
+                <Metric label="Дата проезда" value={entry.ride_date} />
+                <Metric label="Дистанция" value={formatDistanceKm(entry.distance_meters)} />
               </div>
             ) : (
               <p className="tg-divider tg-muted rounded-lg border px-3 py-2.5 text-sm font-medium">
@@ -128,15 +132,17 @@ function Metric({
   label,
   value,
   valueClassName,
+  className,
 }: {
   label: string;
   value?: string | null;
   valueClassName?: string;
+  className?: string;
 }) {
   const display = value && value.length > 0 ? value : "—";
   const textColorClassName = valueClassName ?? "tg-title";
   return (
-    <div className="tg-divider border-b border-r px-3 py-2.5 last:border-r-0">
+    <div className={`tg-divider border-b border-r px-3 py-2.5 last:border-r-0 ${className ?? ""}`}>
       <p className="tg-muted text-[11px] font-medium leading-4">{label}</p>
       <p className={`${textColorClassName} mt-1 break-words text-sm font-semibold leading-5`}>
         {display}
