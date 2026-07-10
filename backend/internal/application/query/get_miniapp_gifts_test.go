@@ -104,6 +104,7 @@ func TestGetMiniappGiftsHandlerFiltersGenderAndBikeTypeSemantics(t *testing.T) {
 			{ID: 3, EventID: 77, GenderFilter: "female", BikeTypeFilter: "gravel", ReviewStatus: entity.GiftReviewStatusApproved},
 			{ID: 4, EventID: 77, GenderFilter: "male", BikeTypeFilter: "mtb", ReviewStatus: entity.GiftReviewStatusApproved},
 			{ID: 5, EventID: 77, GenderFilter: "male", BikeTypeFilter: "gravel", ReviewStatus: entity.GiftReviewStatusPendingReview},
+			{ID: 6, EventID: 77, GenderFilter: "male", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved},
 		},
 	}
 	handler := NewGetMiniappGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})
@@ -119,6 +120,46 @@ func TestGetMiniappGiftsHandlerFiltersGenderAndBikeTypeSemantics(t *testing.T) {
 
 	if got := miniappGiftIDs(gifts); !equalUintSlices(got, []uint{2}) {
 		t.Fatalf("filtered gift IDs mismatch: got %v, want %v", got, []uint{2})
+	}
+}
+
+func TestGetMiniappGiftsHandlerExcludesAnyBikePrizeFromConcreteBikeCatalogs(t *testing.T) {
+	giftRepo := &miniappGiftRepoFake{
+		gifts: []*entity.Gift{
+			{ID: 1, EventID: 77, GenderFilter: "all", BikeTypeFilter: "all", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 2, EventID: 77, GenderFilter: "all", BikeTypeFilter: "gravel", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 3, EventID: 77, GenderFilter: "all", BikeTypeFilter: "mtb", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 4, EventID: 77, GenderFilter: "all", BikeTypeFilter: "road", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 5, EventID: 77, GenderFilter: "all", BikeTypeFilter: "single_speed", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 6, EventID: 77, GenderFilter: "all", BikeTypeFilter: "tandem", ReviewStatus: entity.GiftReviewStatusApproved},
+		},
+	}
+	handler := NewGetMiniappGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})
+
+	for _, testCase := range []struct {
+		bikeType string
+		giftID   uint
+	}{
+		{bikeType: "gravel", giftID: 2},
+		{bikeType: "mtb", giftID: 3},
+		{bikeType: "road", giftID: 4},
+		{bikeType: "single_speed", giftID: 5},
+		{bikeType: "tandem", giftID: 6},
+	} {
+		t.Run(testCase.bikeType, func(t *testing.T) {
+			gifts, err := handler.Handle(context.Background(), GetMiniappGiftsQuery{
+				EventID:  77,
+				Gender:   "all",
+				BikeType: testCase.bikeType,
+			})
+			if err != nil {
+				t.Fatalf("Handle error: %v", err)
+			}
+
+			if got := miniappGiftIDs(gifts); !equalUintSlices(got, []uint{testCase.giftID}) {
+				t.Fatalf("gift IDs mismatch: got %v, want [%d]", got, testCase.giftID)
+			}
+		})
 	}
 }
 

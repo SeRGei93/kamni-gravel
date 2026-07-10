@@ -2,19 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { miniappApi } from "@/api/miniapp";
 import GiftDetailView from "@/components/miniapp/GiftDetailView";
 import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
 import type { GenderFilter, Gift } from "@/types";
 import {
   expandTelegramWebApp,
+  getTelegramWebApp,
   isTelegramWebAppAvailable,
   readyTelegramWebApp,
 } from "@/utils/telegramWebApp";
 
 export default function MiniappGiftDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const giftId = useMemo(() => Number(params.id), [params.id]);
   const [gift, setGift] = useState<Gift | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,7 +27,24 @@ export default function MiniappGiftDetailPage() {
       readyTelegramWebApp();
       expandTelegramWebApp();
     }
-  }, []);
+
+    const backButton = getTelegramWebApp()?.BackButton;
+    if (!backButton) {
+      return;
+    }
+
+    const handleBack = () => {
+      router.push("/miniapp/gifts", { scroll: false });
+    };
+
+    backButton.onClick(handleBack);
+    backButton.show();
+
+    return () => {
+      backButton.offClick(handleBack);
+      backButton.hide();
+    };
+  }, [router]);
 
   useEffect(() => {
     let ignore = false;

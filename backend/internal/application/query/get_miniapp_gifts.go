@@ -120,7 +120,10 @@ func matchesMiniappBikeTypeFilter(giftFilter, selectedFilter string) bool {
 		giftFilter = "all"
 	}
 
-	return selectedFilter == "all" || giftFilter == "all" || giftFilter == selectedFilter
+	// «Любой» — широкий просмотр каталога. При выборе конкретного типа
+	// велосипеда показываем только призы с таким же типом, чтобы не смешивать
+	// их с призами общего зачёта.
+	return selectedFilter == "all" || giftFilter == selectedFilter
 }
 
 func normalizeMiniappGenderFilter(value string) (string, error) {

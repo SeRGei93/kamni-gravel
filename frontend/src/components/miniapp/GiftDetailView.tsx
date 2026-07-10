@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
 import type { BikeTypeFilter, GenderFilter, Gift, GiftAttachment } from "@/types";
 import { getCriteriaTypeLabel } from "@/utils/criteria";
@@ -32,17 +31,6 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
 
   return (
     <main className="tg-screen min-h-screen">
-      <section className="tg-topbar border-b px-3 py-3">
-        <div className="mx-auto flex w-full max-w-md items-center gap-3">
-          <Link
-            href="/miniapp/gifts"
-            className="tg-link-button inline-flex rounded-lg border px-3 py-2 text-sm font-medium"
-          >
-            Назад
-          </Link>
-        </div>
-      </section>
-
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
         <article className="tg-card overflow-hidden rounded-xl border">
           <GiftPhotoGallery giftId={gift.id} photos={photos} />
