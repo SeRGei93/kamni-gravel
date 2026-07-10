@@ -6,6 +6,7 @@ interface LeaderboardDetailViewProps {
   entry: MiniappLeaderboardEntry;
   absolutePlace: number | null;
   genderPlace: number | null;
+  bikePlace: number | null;
   genderBikePlace: number | null;
 }
 
@@ -37,6 +38,7 @@ export default function LeaderboardDetailView({
   entry,
   absolutePlace,
   genderPlace,
+  bikePlace,
   genderBikePlace,
 }: LeaderboardDetailViewProps) {
   const status = resolveStatus(entry);
@@ -68,9 +70,10 @@ export default function LeaderboardDetailView({
             </div>
 
             {/* Места в зачётах */}
-            <div className="tg-divider grid grid-cols-3 overflow-hidden rounded-lg border">
-              <PlaceCell label="Абсолют" place={absolutePlace} />
-              <PlaceCell label={genderFullLabel(entry.gender)} place={genderPlace} />
+            <div className="tg-divider grid grid-cols-2 overflow-hidden rounded-lg border">
+              <PlaceCell label="Абсолют" place={absolutePlace} className="border-b border-r" />
+              <PlaceCell label={genderFullLabel(entry.gender)} place={genderPlace} className="border-b" />
+              <PlaceCell label={bikeTypeLabel(entry.bike_type)} place={bikePlace} className="border-r" />
               <PlaceCell
                 label={`${genderFullLabel(entry.gender)} · ${bikeTypeLabel(entry.bike_type)}`}
                 place={genderBikePlace}
@@ -117,9 +120,17 @@ export default function LeaderboardDetailView({
   );
 }
 
-function PlaceCell({ label, place }: { label: string; place: number | null }) {
+function PlaceCell({
+  label,
+  place,
+  className,
+}: {
+  label: string;
+  place: number | null;
+  className?: string;
+}) {
   return (
-    <div className="tg-divider border-r px-3 py-2.5 last:border-r-0">
+    <div className={`tg-divider px-3 py-2.5 ${className ?? ""}`}>
       <p className="tg-muted text-[11px] font-medium leading-4">{label}</p>
       <p className="tg-title mt-1 text-sm font-semibold">
         {place !== null ? `${place} место` : "—"}

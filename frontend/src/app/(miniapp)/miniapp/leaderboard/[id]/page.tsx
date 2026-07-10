@@ -90,11 +90,12 @@ export default function MiniappLeaderboardDetailPage() {
     };
   }, [entries, setEntries]);
 
-  const { entry, absolutePlace, genderPlace, genderBikePlace } = useMemo(() => {
+  const { entry, absolutePlace, genderPlace, bikePlace, genderBikePlace } = useMemo(() => {
     const empty = {
       entry: undefined,
       absolutePlace: null as number | null,
       genderPlace: null as number | null,
+      bikePlace: null as number | null,
       genderBikePlace: null as number | null,
     };
     if (!entries) {
@@ -105,7 +106,7 @@ export default function MiniappLeaderboardDetailPage() {
       return empty;
     }
     // Места считаем на клиенте (как и весь лидерборд): абсолютный зачёт,
-    // зачёт по гендеру и зачёт по гендеру+типу велосипеда участника.
+    // по гендеру, по типу велосипеда и по их сочетанию.
     const placeIn = (gender: typeof found.gender | "all", bikeType: typeof found.bike_type | "all") =>
       rankAndFilterLeaderboard(entries, gender, bikeType).find(
         (row) => row.entry.id === participantId
@@ -115,6 +116,7 @@ export default function MiniappLeaderboardDetailPage() {
       entry: found,
       absolutePlace: placeIn("all", "all"),
       genderPlace: placeIn(found.gender, "all"),
+      bikePlace: placeIn("all", found.bike_type),
       genderBikePlace: placeIn(found.gender, found.bike_type),
     };
   }, [entries, participantId]);
@@ -144,6 +146,7 @@ export default function MiniappLeaderboardDetailPage() {
       entry={entry}
       absolutePlace={absolutePlace}
       genderPlace={genderPlace}
+      bikePlace={bikePlace}
       genderBikePlace={genderBikePlace}
     />
   );

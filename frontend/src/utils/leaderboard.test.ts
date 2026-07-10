@@ -31,4 +31,19 @@ describe('rankAndFilterLeaderboard', () => {
       { id: 3, place: 2 },
     ]);
   });
+
+  it('assigns places in the bike standings without filtering by gender', () => {
+    const entries = [
+      leaderboardEntry({ id: 1, gender: 'male', bike_type: 'mtb', elapsed_time_sec: 10_000 }),
+      leaderboardEntry({ id: 2, gender: 'female', bike_type: 'mtb', elapsed_time_sec: 9_000 }),
+      leaderboardEntry({ id: 3, gender: 'male', bike_type: 'gravel', elapsed_time_sec: 8_000 }),
+    ];
+
+    const rows = rankAndFilterLeaderboard(entries, 'all', 'mtb');
+
+    expect(rows.map(({ entry, place }) => ({ id: entry.id, place }))).toEqual([
+      { id: 2, place: 1 },
+      { id: 1, place: 2 },
+    ]);
+  });
 });
