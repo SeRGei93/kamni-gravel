@@ -13,6 +13,7 @@ import type {
   Result,
   PrizeGiftAssignment,
   ParticipantStatus,
+  BikeType,
 } from '@/types';
 import { PARTICIPANT_STATUS_LABELS } from '@/types';
 import Badge from '@/components/ui/badge/Badge';
@@ -23,6 +24,7 @@ import TextArea from '@/components/form/input/TextArea';
 import TimeInput from '@/components/participants/TimeInput';
 import Label from '@/components/form/Label';
 import ResultCriteriaManager from '@/components/participants/ResultCriteriaManager';
+import MatchedGiftModal from '@/components/participants/MatchedGiftModal';
 import { getCriteriaColor } from '@/utils/criteria';
 import { fromMinskDateTimeInput, toMinskDateTimeInput } from '@/utils/minskTime';
 import { secondsToTimeString } from '@/utils/time';
@@ -42,6 +44,11 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
   single_speed: 'Фикс',
   tandem: 'Тандем',
 };
+
+// Опции Select собраны из того же словаря, что и бейдж, — подписи совпадают.
+const BIKE_TYPE_OPTIONS: { value: string; label: string }[] = Object.entries(
+  BIKE_TYPE_LABELS
+).map(([value, label]) => ({ value, label }));
 
 const STATUS_BADGE_COLOR: Record<ParticipantStatus, 'success' | 'warning' | 'error'> = {
   active: 'success',
@@ -69,14 +76,32 @@ function formatPrizeAssignment(assignment: PrizeGiftAssignment): string {
 }
 
 // Ячейка «подпись + значение» для блока результата. Скрывается, если значение пустое.
-function Metric({ label, value }: { label: string; value?: string | null }) {
+function Metric({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value?: string | null;
+  valueClassName?: string;
+}) {
   if (!value) return null;
   return (
     <div>
       <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">{label}</p>
-      <p className="text-sm font-medium text-gray-800 dark:text-white/90">{value}</p>
+      <p className={`text-sm font-medium ${valueClassName ?? 'text-gray-800 dark:text-white/90'}`}>
+        {value}
+      </p>
     </div>
   );
+}
+
+// Класс цвета для дельты к прошлому году: плюс — быстрее (зелёный), минус — медленнее.
+function prevDeltaClassName(deltaSec?: number): string | undefined {
+  if (deltaSec === undefined || deltaSec === 0) return undefined;
+  return deltaSec > 0
+    ? 'text-success-600 dark:text-success-400'
+    : 'text-error-600 dark:text-error-400';
 }
 
 // Парсит необязательное числовое поле формы (поддерживает запятую как десятичный разделитель).
@@ -131,6 +156,11 @@ export default function ParticipantDetailPage() {
   const [isEditingStatus, setIsEditingStatus] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [statusValue, setStatusValue] = useState<ParticipantStatus>('active');
+  const [isEditingBikeType, setIsEditingBikeType] = useState(false);
+  const [isSavingBikeType, setIsSavingBikeType] = useState(false);
+  const [bikeTypeValue, setBikeTypeValue] = useState<BikeType>('gravel');
+  // Открытый в модалке подобранный приз (null — модалка закрыта).
+  const [openedGift, setOpenedGift] = useState<{ giftId: number; note?: string } | null>(null);
   const [isDeletingParticipant, setIsDeletingParticipant] = useState(false);
 
   // Редактируемые поля участника
@@ -139,6 +169,10 @@ export default function ParticipantDetailPage() {
   // Редактируемые поля результата
   const [elapsedTimeSec, setElapsedTimeSec] = useState<number | undefined>();
   const [movingTimeSec, setMovingTimeSec] = useState<number | undefined>();
+  // Ручное «время прошлого года» — хранится на участнике, но правится в форме
+  // результата. Инициализируется ТОЛЬКО из manual-поля (не из эффективного
+  // prev_elapsed_time_sec, куда попадает и вычисленное значение).
+  const [prevYearElapsedSec, setPrevYearElapsedSec] = useState<number | undefined>();
   const [resultLink, setResultLink] = useState('');
   const [isEditingResult, setIsEditingResult] = useState(false);
   const [isSavingResult, setIsSavingResult] = useState(false);
@@ -189,6 +223,7 @@ export default function ParticipantDetailPage() {
 
       setElapsedTimeSec(participantData.elapsed_time_sec);
       setMovingTimeSec(participantData.moving_time_sec);
+      setPrevYearElapsedSec(participantData.prev_elapsed_time_manual_sec);
       setResultLink(participantData.result_link || '');
       fillMetricFieldsFromResult(current);
       setNotes(participantData.notes || '');
@@ -297,6 +332,41 @@ export default function ParticipantDetailPage() {
     endEdit();
   };
 
+  // Вход в редактирование типа велосипеда: захватываем лок участника.
+  const handleStartBikeTypeEdit = async () => {
+    if (!participant) return;
+    if (!(await beginEdit())) return;
+    setActionError(null);
+    setBikeTypeValue(participant.bike_type);
+    setIsEditingBikeType(true);
+  };
+
+  const handleSaveBikeType = async () => {
+    if (!participant) return;
+
+    try {
+      setIsSavingBikeType(true);
+      setActionError(null);
+      await participantsApi.update(participantId, { bike_type: bikeTypeValue });
+      setIsEditingBikeType(false);
+      endEdit();
+      await loadParticipant(); // тип влияет на место «гендер+тип», категории и призы
+    } catch (err) {
+      const detail = describeApiError(err);
+      setActionError(
+        `Ошибка сохранения типа велосипеда${detail ? `: ${detail}` : ''}. Попробуйте ещё раз.`
+      );
+      console.error('Failed to update participant bike type:', err);
+    } finally {
+      setIsSavingBikeType(false);
+    }
+  };
+
+  const handleCancelBikeTypeEdit = () => {
+    setIsEditingBikeType(false);
+    endEdit();
+  };
+
   // Получаем ID текущего результата (для обновления времени)
   const getCurrentResultId = async (): Promise<number | null> => {
     try {
@@ -314,6 +384,7 @@ export default function ParticipantDetailPage() {
     setResultError(null);
     setElapsedTimeSec(participant.elapsed_time_sec);
     setMovingTimeSec(participant.moving_time_sec);
+    setPrevYearElapsedSec(participant.prev_elapsed_time_manual_sec);
     setResultLink(participant.result_link || '');
     fillMetricFieldsFromResult(currentResult);
     setIsEditingResult(true);
@@ -324,6 +395,7 @@ export default function ParticipantDetailPage() {
     setResultError(null);
     setElapsedTimeSec(undefined);
     setMovingTimeSec(undefined);
+    setPrevYearElapsedSec(participant?.prev_elapsed_time_manual_sec);
     setResultLink('');
     fillMetricFieldsFromResult(null);
     setIsEditingResult(true);
@@ -393,6 +465,27 @@ export default function ParticipantDetailPage() {
         });
       }
 
+      // Ручное «время прошлого года» хранится на участнике, а не в результате.
+      // Отдельный try/catch: результат уже сохранён, при ошибке форма остаётся
+      // открытой и повторное сохранение повторит только этот шаг (и update результата).
+      if (prevYearElapsedSec !== participant.prev_elapsed_time_manual_sec) {
+        try {
+          await participantsApi.update(participantId, {
+            prev_elapsed_time_sec: prevYearElapsedSec ?? 0, // 0 = удалить ручное значение
+          });
+        } catch (err) {
+          const detail = describeApiError(err);
+          setResultError(
+            `Результат сохранён, но время прошлого года сохранить не удалось${detail ? `: ${detail}` : ''}. Попробуйте ещё раз.`
+          );
+          console.error('Failed to save prev year elapsed time:', {
+            participant_id: participant.id,
+            error: err,
+          });
+          return;
+        }
+      }
+
       setIsEditingResult(false);
       endEdit();
       await loadParticipant();
@@ -416,6 +509,7 @@ export default function ParticipantDetailPage() {
     if (!participant) return;
     setElapsedTimeSec(participant.elapsed_time_sec);
     setMovingTimeSec(participant.moving_time_sec);
+    setPrevYearElapsedSec(participant.prev_elapsed_time_manual_sec);
     setResultLink(participant.result_link || '');
     fillMetricFieldsFromResult(currentResult);
     setResultError(null);
@@ -594,9 +688,49 @@ export default function ParticipantDetailPage() {
                 <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
                   Тип велосипеда
                 </p>
-                <Badge color="light" size="sm">
-                  {BIKE_TYPE_LABELS[participant.bike_type]}
-                </Badge>
+                {isEditingBikeType ? (
+                  <div className="space-y-2">
+                    <Select
+                      options={BIKE_TYPE_OPTIONS}
+                      defaultValue={bikeTypeValue}
+                      onChange={(value) => setBikeTypeValue(value as BikeType)}
+                      placeholder="Выберите тип"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        startIcon={<CloseLineIcon />}
+                        onClick={handleCancelBikeTypeEdit}
+                        disabled={isSavingBikeType}
+                      >
+                        Отмена
+                      </Button>
+                      <Button
+                        size="sm"
+                        startIcon={<CheckLineIcon />}
+                        onClick={handleSaveBikeType}
+                        disabled={isSavingBikeType}
+                      >
+                        {isSavingBikeType ? 'Сохранение...' : 'Сохранить'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Badge color="light" size="sm">
+                      {BIKE_TYPE_LABELS[participant.bike_type]}
+                    </Badge>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      startIcon={<PencilIcon />}
+                      title="Изменить тип велосипеда"
+                      onClick={handleStartBikeTypeEdit}
+                      disabled={isLockedByOther}
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
@@ -605,6 +739,62 @@ export default function ParticipantDetailPage() {
                 <p className="text-sm font-medium text-gray-800 dark:text-white/90">
                   {new Date(participant.registered_at).toLocaleDateString('ru-RU')}
                 </p>
+              </div>
+              <div>
+                <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">
+                  Статус участия
+                </p>
+                {isEditingStatus ? (
+                  <div className="space-y-2">
+                    <Select
+                      options={STATUS_OPTIONS}
+                      defaultValue={statusValue}
+                      onChange={(value) => setStatusValue(value as ParticipantStatus)}
+                      placeholder="Выберите статус"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      «Сошёл с дистанции» и «Дисквалификация» исключают участника из
+                      зачёта и призов по местам. Сошедшие сохраняют право на призы по
+                      критериям, дисквалифицированные исключаются из всех призов.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        startIcon={<CloseLineIcon />}
+                        onClick={handleCancelStatusEdit}
+                        disabled={isSavingStatus}
+                      >
+                        Отмена
+                      </Button>
+                      <Button
+                        size="sm"
+                        startIcon={<CheckLineIcon />}
+                        onClick={handleSaveStatus}
+                        disabled={isSavingStatus}
+                      >
+                        {isSavingStatus ? 'Сохранение...' : 'Сохранить'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      color={STATUS_BADGE_COLOR[participant.status] ?? 'light'}
+                      size="sm"
+                    >
+                      {PARTICIPANT_STATUS_LABELS[participant.status] ?? participant.status}
+                    </Badge>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      startIcon={<PencilIcon />}
+                      title="Изменить статус участия"
+                      onClick={handleStartStatusEdit}
+                      disabled={isLockedByOther}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -661,68 +851,6 @@ export default function ParticipantDetailPage() {
                   )}
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Статус участия */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
-                Статус участия
-              </h3>
-              {!isEditingStatus ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  startIcon={<PencilIcon />}
-                  onClick={handleStartStatusEdit}
-                  disabled={isLockedByOther}
-                >
-                  Изменить
-                </Button>
-              ) : (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    startIcon={<CloseLineIcon />}
-                    onClick={handleCancelStatusEdit}
-                    disabled={isSavingStatus}
-                  >
-                    Отмена
-                  </Button>
-                  <Button
-                    size="sm"
-                    startIcon={<CheckLineIcon />}
-                    onClick={handleSaveStatus}
-                    disabled={isSavingStatus}
-                  >
-                    {isSavingStatus ? 'Сохранение...' : 'Сохранить'}
-                  </Button>
-                </div>
-              )}
-            </div>
-            {isEditingStatus ? (
-              <div className="space-y-2">
-                <Select
-                  options={STATUS_OPTIONS}
-                  defaultValue={statusValue}
-                  onChange={(value) => setStatusValue(value as ParticipantStatus)}
-                  placeholder="Выберите статус"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  «Сошёл с дистанции» и «Дисквалификация» исключают участника из
-                  зачёта и призов по местам. Сошедшие сохраняют право на призы по
-                  критериям, дисквалифицированные исключаются из всех призов.
-                </p>
-              </div>
-            ) : (
-              <Badge
-                color={STATUS_BADGE_COLOR[participant.status] ?? 'light'}
-                size="sm"
-              >
-                {PARTICIPANT_STATUS_LABELS[participant.status] ?? participant.status}
-              </Badge>
             )}
           </div>
 
@@ -886,6 +1014,7 @@ export default function ParticipantDetailPage() {
                           <Label>Время старта</Label>
                           <Input
                             type="datetime-local"
+                            step={1}
                             value={startedAt}
                             onChange={(event) => setStartedAt(event.target.value)}
                           />
@@ -894,6 +1023,7 @@ export default function ParticipantDetailPage() {
                           <Label>Время финиша</Label>
                           <Input
                             type="datetime-local"
+                            step={1}
                             value={finishedAt}
                             onChange={(event) => setFinishedAt(event.target.value)}
                           />
@@ -912,6 +1042,25 @@ export default function ParticipantDetailPage() {
                           value={movingTimeSec}
                           onChange={setMovingTimeSec}
                         />
+                      </div>
+
+                      {/* Ручное время прошлого года (хранится на участнике) */}
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <TimeInput
+                            label="Время прошлого года (вручную)"
+                            value={prevYearElapsedSec}
+                            onChange={setPrevYearElapsedSec}
+                          />
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {participant.prev_elapsed_time_manual_sec === undefined &&
+                            participant.prev_elapsed_time
+                              ? `Пусто — используется время с прошлого события: ${participant.prev_elapsed_time}. `
+                              : ''}
+                            Ручное значение перекрывает автоматическое; очистите поле,
+                            чтобы вернуться к автоматическому.
+                          </p>
+                        </div>
                       </div>
 
                       {/* Метрики из Стравы */}
@@ -1031,6 +1180,16 @@ export default function ParticipantDetailPage() {
                       <Metric label="Дистанция" value={formatDistanceKm(currentResult?.distance_meters)} />
                       <Metric label="Пиковая скорость" value={formatSpeed(currentResult?.peak_speed_kmh)} />
                       <Metric
+                        label="Пиковая − средняя"
+                        value={formatSpeed(currentResult?.peak_avg_speed_delta_kmh)}
+                      />
+                      <Metric label="Время прошлого года" value={participant.prev_elapsed_time} />
+                      <Metric
+                        label="Δ к прошлому году"
+                        value={participant.prev_elapsed_delta}
+                        valueClassName={prevDeltaClassName(participant.prev_elapsed_delta_sec)}
+                      />
+                      <Metric
                         label="Средний пульс"
                         value={currentResult?.avg_heart_rate !== undefined ? `${currentResult.avg_heart_rate} уд/мин` : undefined}
                       />
@@ -1115,7 +1274,17 @@ export default function ParticipantDetailPage() {
             {participant.matched_gift_assignments && participant.matched_gift_assignments.length > 0 ? (
               <div className="space-y-3">
                 {participant.matched_gift_assignments.map((assignment, index) => (
-                  <div key={`${assignment.gift_id}-${assignment.target_rank || 'none'}-${index}`} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <button
+                    key={`${assignment.gift_id}-${assignment.target_rank || 'none'}-${index}`}
+                    type="button"
+                    onClick={() =>
+                      setOpenedGift({
+                        giftId: assignment.gift_id,
+                        note: formatPrizeAssignment(assignment),
+                      })
+                    }
+                    className="block w-full rounded-lg border border-gray-200 p-3 text-left transition hover:border-brand-300 hover:bg-gray-50 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:hover:border-brand-500/50 dark:hover:bg-white/[0.03]"
+                  >
                     <p className="text-sm font-medium text-gray-800 dark:text-white/90">
                       {assignment.gift.description}
                     </p>
@@ -1135,13 +1304,22 @@ export default function ParticipantDetailPage() {
                     <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                       {formatPrizeAssignment(assignment)}
                     </p>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : participant.matched_gifts && participant.matched_gifts.length > 0 ? (
               <div className="space-y-3">
                 {participant.matched_gifts.map((gift, index) => (
-                  <div key={gift.id || index} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <button
+                    key={gift.id || index}
+                    type="button"
+                    disabled={!gift.id}
+                    onClick={() =>
+                      gift.id &&
+                      setOpenedGift({ giftId: gift.id, note: 'Подобран автоматически' })
+                    }
+                    className="block w-full rounded-lg border border-gray-200 p-3 text-left transition hover:border-brand-300 hover:bg-gray-50 focus:outline-none focus:ring-3 focus:ring-brand-500/10 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:bg-transparent dark:border-gray-700 dark:hover:border-brand-500/50 dark:hover:bg-white/[0.03]"
+                  >
                     <p className="text-sm font-medium text-gray-800 dark:text-white/90">
                       {gift.description}
                     </p>
@@ -1161,7 +1339,7 @@ export default function ParticipantDetailPage() {
                     <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                       Подобран автоматически
                     </p>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : (
@@ -1172,6 +1350,13 @@ export default function ParticipantDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Модалка с деталями подобранного приза */}
+      <MatchedGiftModal
+        giftId={openedGift?.giftId ?? null}
+        note={openedGift?.note}
+        onClose={() => setOpenedGift(null)}
+      />
     </div>
   );
 }
