@@ -19,9 +19,11 @@ type Config struct {
 
 // InitDB инициализирует подключение к PostgreSQL базе данных
 func InitDB(cfg Config) (*sql.DB, error) {
-	// Формируем строку подключения
+	// Формируем строку подключения. timezone задаёт зону сессии: TIMESTAMPTZ
+	// значения возвращаются с офсетом +03, и вычисления вида RideDate()
+	// (дата проезда = день старта) идут по минскому календарному дню.
 	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s timezone=Europe/Minsk",
 		cfg.Host,
 		cfg.Port,
 		cfg.User,

@@ -129,6 +129,7 @@ export default function EventForm({
           <Input
             id="start-date"
             type="datetime-local"
+            step={1}
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
             disabled={isLoading}
@@ -140,6 +141,7 @@ export default function EventForm({
           <Input
             id="end-date"
             type="datetime-local"
+            step={1}
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
             disabled={isLoading}

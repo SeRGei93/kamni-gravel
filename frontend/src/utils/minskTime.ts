@@ -24,11 +24,14 @@ export function toMinskDateTimeInput(value?: string | null): string {
     return '';
   }
 
+  // Секунды включаем всегда (входы с step=1): иначе значение с ненулевыми
+  // секундами обрезалось бы и пересохранение формы теряло секунды.
   return [
     shifted.getUTCFullYear(),
     pad(shifted.getUTCMonth() + 1),
     pad(shifted.getUTCDate()),
-  ].join('-') + `T${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
+  ].join('-') +
+    `T${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())}`;
 }
 
 export function fromMinskDateTimeInput(value: string): string | undefined {
