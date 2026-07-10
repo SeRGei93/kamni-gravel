@@ -3,6 +3,7 @@ import type {
   Criteria,
   CriteriaListResponse,
   CreateCriteriaRequest,
+  PageSize,
   UpdateCriteriaRequest,
 } from '@/types';
 
@@ -22,7 +23,7 @@ export const criteriaApi = {
   async list(params: {
     type?: string;
     page: number;
-    page_size: number;
+    page_size: PageSize;
   }): Promise<CriteriaListResponse> {
     const search = new URLSearchParams();
     if (params.type) search.append('type', params.type);

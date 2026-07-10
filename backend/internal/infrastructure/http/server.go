@@ -301,6 +301,7 @@ func NewServer(
 		getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler,
 		getParticipantsHandler,
+		resultRepo,
 		cfg.BotToken,
 		miniappGiftsCache,
 	)

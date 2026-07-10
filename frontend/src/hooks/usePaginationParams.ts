@@ -2,26 +2,29 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback } from 'react';
+import type { PageSize } from '@/types';
 
-// Размер страницы настраивается пользователем, но ограничен диапазоном [50, 100]
-// (то же ограничение, что и на бэкенде).
-export const PAGE_SIZE_OPTIONS = [50, 100] as const;
+// Размер страницы настраивается пользователем: 50, 100 или все записи.
+export const PAGE_SIZE_OPTIONS = [50, 100, 'all'] as const satisfies readonly PageSize[];
 export const DEFAULT_PAGE_SIZE = 50;
 const MIN_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 
-function clampPageSize(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_PAGE_SIZE;
-  if (value < MIN_PAGE_SIZE) return MIN_PAGE_SIZE;
-  if (value > MAX_PAGE_SIZE) return MAX_PAGE_SIZE;
-  return value;
+export function normalizePageSize(value: string | number | null): PageSize {
+  if (value === 'all') return 'all';
+  const numericValue =
+    typeof value === 'number' ? value : Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(numericValue)) return DEFAULT_PAGE_SIZE;
+  if (numericValue < MIN_PAGE_SIZE) return MIN_PAGE_SIZE;
+  if (numericValue > MAX_PAGE_SIZE) return MAX_PAGE_SIZE;
+  return numericValue;
 }
 
 export type PaginationParams = {
   page: number;
-  pageSize: number;
+  pageSize: PageSize;
   setPage: (page: number) => void;
-  setPageSize: (size: number) => void;
+  setPageSize: (size: PageSize) => void;
 };
 
 /**
@@ -36,14 +39,13 @@ export function usePaginationParams(): PaginationParams {
   const pageRaw = parseInt(searchParams.get('page') ?? '', 10);
   const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
 
-  const sizeRaw = parseInt(searchParams.get('page_size') ?? '', 10);
-  const pageSize = clampPageSize(Number.isFinite(sizeRaw) ? sizeRaw : DEFAULT_PAGE_SIZE);
+  const pageSize = normalizePageSize(searchParams.get('page_size'));
 
   const setParams = useCallback(
-    (next: { page?: number; pageSize?: number }) => {
+    (next: { page?: number; pageSize?: PageSize }) => {
       const params = new URLSearchParams(searchParams.toString());
       if (next.pageSize !== undefined) {
-        params.set('page_size', String(clampPageSize(next.pageSize)));
+        params.set('page_size', String(normalizePageSize(next.pageSize)));
       }
       if (next.page !== undefined) {
         params.set('page', String(Math.max(1, next.page)));
@@ -56,7 +58,7 @@ export function usePaginationParams(): PaginationParams {
 
   const setPage = useCallback((p: number) => setParams({ page: p }), [setParams]);
   const setPageSize = useCallback(
-    (s: number) => setParams({ page: 1, pageSize: s }),
+    (s: PageSize) => setParams({ page: 1, pageSize: s }),
     [setParams]
   );
 

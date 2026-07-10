@@ -25,6 +25,7 @@ type MiniappHandler struct {
 	getMiniappGiftsHandler            *query.GetMiniappGiftsHandler
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler
 	getParticipantsHandler            *query.GetParticipantsHandler
+	resultRepo                        repository.ResultRepository
 	fileFetcher                       miniappFileFetcher
 	giftsCache                        miniappGiftsCache
 }
@@ -56,6 +57,7 @@ func NewMiniappHandler(
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	getParticipantsHandler *query.GetParticipantsHandler,
+	resultRepo repository.ResultRepository,
 	botToken string,
 	giftsCache miniappGiftsCache,
 ) *MiniappHandler {
@@ -64,6 +66,7 @@ func NewMiniappHandler(
 		getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler,
 		getParticipantsHandler,
+		resultRepo,
 		&telegramFileFetcher{
 			botToken:   botToken,
 			httpClient: http.DefaultClient,
@@ -77,6 +80,7 @@ func newMiniappHandlerWithFileFetcher(
 	getMiniappGiftsHandler *query.GetMiniappGiftsHandler,
 	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler,
 	getParticipantsHandler *query.GetParticipantsHandler,
+	resultRepo repository.ResultRepository,
 	fileFetcher miniappFileFetcher,
 	giftsCache miniappGiftsCache,
 ) *MiniappHandler {
@@ -85,6 +89,7 @@ func newMiniappHandlerWithFileFetcher(
 		getMiniappGiftsHandler:            getMiniappGiftsHandler,
 		getMiniappParticipantCountHandler: getMiniappParticipantCountHandler,
 		getParticipantsHandler:            getParticipantsHandler,
+		resultRepo:                        resultRepo,
 		fileFetcher:                       fileFetcher,
 		giftsCache:                        giftsCache,
 	}
@@ -233,6 +238,15 @@ func (h *MiniappHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var prevElapsedByUser map[int64]int
+	if h.resultRepo != nil {
+		prevElapsedByUser, err = h.resultRepo.FindPrevEventElapsedByUser(r.Context(), event.ID)
+		if err != nil {
+			log.Printf("ERROR Miniapp leaderboard previous event times omitted: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
+			prevElapsedByUser = nil
+		}
+	}
+
 	entries := make([]*dto.MiniappLeaderboardEntryDTO, 0, len(participants))
 	for _, pwp := range participants {
 		if pwp == nil || pwp.Participant == nil {
@@ -243,7 +257,15 @@ func (h *MiniappHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
 		if !pwp.Participant.IsFinished() {
 			continue
 		}
-		entries = append(entries, dto.NewMiniappLeaderboardEntry(pwp.Participant, pwp.Place))
+		entry := dto.NewMiniappLeaderboardEntry(pwp.Participant, pwp.Place)
+		// Ручное время уже учтено в DTO и имеет приоритет над результатом
+		// предыдущего события.
+		if entry.PrevElapsedDeltaSec == nil {
+			if prevSec, ok := prevElapsedByUser[pwp.Participant.UserID]; ok {
+				entry.SetPrevElapsed(prevSec)
+			}
+		}
+		entries = append(entries, entry)
 	}
 
 	log.Printf("INFO Miniapp leaderboard requested: telegram_user_id=%d event_id=%d participant_count=%d", user.ID, event.ID, len(entries))

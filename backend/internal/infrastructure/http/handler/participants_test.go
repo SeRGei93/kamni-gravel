@@ -242,6 +242,16 @@ func TestParticipantsHandlerWithoutPaginationReturnsAll(t *testing.T) {
 	}
 }
 
+func TestParticipantsHandlerAllPageSizeReturnsAll(t *testing.T) {
+	got := getParticipantsList(t, newParticipantsListTestHandler(), "/api/events/77/participants?page=3&page_size=all")
+	if got.Total != 3 || len(got.Participants) != 3 {
+		t.Fatalf("expected all 3 participants, got total=%d len=%d", got.Total, len(got.Participants))
+	}
+	if got.Page != 0 || got.PageSize != 0 {
+		t.Fatalf("page fields should be omitted for all page size: page=%d page_size=%d", got.Page, got.PageSize)
+	}
+}
+
 func TestParticipantsHandlerHasGiftFilter(t *testing.T) {
 	got := getParticipantsList(t, newParticipantsListTestHandler(), "/api/events/77/participants?page=1&page_size=50&has_gift=true")
 	if got.Total != 1 || len(got.Participants) != 1 {

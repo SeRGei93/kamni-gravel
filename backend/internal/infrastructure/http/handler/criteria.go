@@ -5,9 +5,9 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	
+
 	"github.com/go-chi/chi/v5"
-	
+
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/application/query"
@@ -17,11 +17,11 @@ import (
 
 // CriteriaHandler обрабатывает запросы для критериев
 type CriteriaHandler struct {
-	criteriaRepo         repository.CriteriaRepository
-	getCriteriaHandler   *query.GetCriteriaHandler
+	criteriaRepo           repository.CriteriaRepository
+	getCriteriaHandler     *query.GetCriteriaHandler
 	getCriteriaByIDHandler *query.GetCriteriaByIDHandler
-	createCriteriaHandler *command.CreateCriteriaHandler
-	updateCriteriaHandler *command.UpdateCriteriaHandler
+	createCriteriaHandler  *command.CreateCriteriaHandler
+	updateCriteriaHandler  *command.UpdateCriteriaHandler
 }
 
 // NewCriteriaHandler создаёт новый handler
@@ -46,8 +46,8 @@ func (h *CriteriaHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	// Пагинация включается только если переданы page/page_size. Без них возвращаем
 	// все критерии (нужно для селекторов критериев на других страницах).
-	paginate := q.Has("page") || q.Has("page_size")
 	page := ParsePageParams(r)
+	paginate := (q.Has("page") || q.Has("page_size")) && !page.All
 
 	queryParams := query.GetCriteriaQuery{}
 	if paginate {
@@ -97,7 +97,7 @@ func (h *CriteriaHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "Invalid criteria ID")
 		return
 	}
-	
+
 	criteria, err := h.getCriteriaByIDHandler.Handle(r.Context(), query.GetCriteriaByIDQuery{
 		CriteriaID: uint(id),
 	})
@@ -106,12 +106,12 @@ func (h *CriteriaHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		response.InternalServerError(w, "Failed to get criteria")
 		return
 	}
-	
+
 	if criteria == nil {
 		response.NotFound(w, "Criteria not found")
 		return
 	}
-	
+
 	response.Success(w, dto.FromCriteria(criteria))
 }
 
@@ -129,7 +129,7 @@ func (h *CriteriaHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "Invalid request body")
 		return
 	}
-	
+
 	criteria, err := h.createCriteriaHandler.Handle(r.Context(), command.CreateCriteriaCommand{
 		Name:         req.Name,
 		Description:  req.Description,
@@ -147,7 +147,7 @@ func (h *CriteriaHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
+
 	response.Created(w, dto.FromCriteria(criteria))
 }
 
@@ -166,13 +166,13 @@ func (h *CriteriaHandler) Update(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "Invalid criteria ID")
 		return
 	}
-	
+
 	var req UpdateCriteriaRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.BadRequest(w, "Invalid request body")
 		return
 	}
-	
+
 	criteria, err := h.updateCriteriaHandler.Handle(r.Context(), command.UpdateCriteriaCommand{
 		CriteriaID:   uint(id),
 		Name:         req.Name,
@@ -191,7 +191,7 @@ func (h *CriteriaHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
+
 	response.Success(w, dto.FromCriteria(criteria))
 }
 
@@ -203,7 +203,7 @@ func (h *CriteriaHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "Invalid criteria ID")
 		return
 	}
-	
+
 	// Проверяем существование критерия
 	_, err = h.criteriaRepo.FindByID(r.Context(), uint(id))
 	if err != nil {
@@ -211,13 +211,13 @@ func (h *CriteriaHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		response.NotFound(w, "Criteria not found")
 		return
 	}
-	
+
 	// Удаляем критерий
 	if err := h.criteriaRepo.Delete(r.Context(), uint(id)); err != nil {
 		log.Printf("Error deleting criteria: %v", err)
 		response.InternalServerError(w, "Failed to delete criteria")
 		return
 	}
-	
+
 	response.NoContent(w)
 }

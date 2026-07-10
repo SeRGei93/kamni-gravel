@@ -6,6 +6,7 @@ import { bikeTypeLabel, genderFullLabel } from "./leaderboardFormat";
 interface LeaderboardDetailViewProps {
   entry: MiniappLeaderboardEntry;
   absolutePlace: number | null;
+  genderPlace: number | null;
   genderBikePlace: number | null;
 }
 
@@ -36,6 +37,7 @@ const pillToneClass: Record<StatusPill["tone"], string> = {
 export default function LeaderboardDetailView({
   entry,
   absolutePlace,
+  genderPlace,
   genderBikePlace,
 }: LeaderboardDetailViewProps) {
   const status = resolveStatus(entry);
@@ -79,8 +81,9 @@ export default function LeaderboardDetailView({
             </div>
 
             {/* Места в зачётах */}
-            <div className="tg-divider grid grid-cols-2 overflow-hidden rounded-lg border">
+            <div className="tg-divider grid grid-cols-3 overflow-hidden rounded-lg border">
               <PlaceCell label="Абсолютный зачёт" place={absolutePlace} />
+              <PlaceCell label={genderFullLabel(entry.gender)} place={genderPlace} />
               <PlaceCell
                 label={`${genderFullLabel(entry.gender)} · ${bikeTypeLabel(entry.bike_type)}`}
                 place={genderBikePlace}
@@ -93,6 +96,11 @@ export default function LeaderboardDetailView({
                 <Metric label="Общее время" value={entry.elapsed_time} />
                 <Metric label="Время в движении" value={entry.moving_time} />
                 <Metric label="Простой" value={entry.idle_time} />
+                <Metric
+                  label="Δ к прошлому году"
+                  value={entry.prev_elapsed_delta}
+                  valueClassName={prevDeltaClassName(entry.prev_elapsed_delta_sec)}
+                />
                 <Metric label="Ср. скорость" value={formatSpeed(entry.avg_speed_kmh)} />
                 <Metric
                   label="Ср. скорость в движении"
@@ -129,14 +137,30 @@ function PlaceCell({ label, place }: { label: string; place: number | null }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value?: string | null }) {
+function Metric({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value?: string | null;
+  valueClassName?: string;
+}) {
   const display = value && value.length > 0 ? value : "—";
+  const textColorClassName = valueClassName ?? "tg-title";
   return (
     <div className="tg-divider border-b border-r px-3 py-2.5 last:border-r-0">
       <p className="tg-muted text-[11px] font-medium leading-4">{label}</p>
-      <p className="tg-title mt-1 break-words text-sm font-semibold leading-5">{display}</p>
+      <p className={`${textColorClassName} mt-1 break-words text-sm font-semibold leading-5`}>
+        {display}
+      </p>
     </div>
   );
+}
+
+function prevDeltaClassName(deltaSec?: number): string | undefined {
+  if (deltaSec === undefined || deltaSec === 0) return undefined;
+  return deltaSec > 0 ? "text-success-600 dark:text-success-400" : "text-error-600 dark:text-error-400";
 }
 
 function formatHeartRate(value?: number): string {

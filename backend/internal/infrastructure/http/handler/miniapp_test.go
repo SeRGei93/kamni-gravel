@@ -20,6 +20,7 @@ import (
 
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/domain/valueobject"
 	"gravel_bot/internal/infrastructure/http/middleware"
 )
@@ -208,8 +209,9 @@ func TestMiniappLeaderboardRanksFinishersAndListsOthers(t *testing.T) {
 		{
 			ID: 2, UserID: 222, EventID: 77,
 			Gender: valueobject.GenderFemale, BikeType: valueobject.BikeTypeMTB,
-			Status: valueobject.ParticipantStatusActive,
-			User:   &entity.User{ID: 222, FirstName: "Anna", LastName: "K"},
+			Status:             valueobject.ParticipantStatusActive,
+			PrevElapsedTimeSec: miniappIntPtr(30000),
+			User:               &entity.User{ID: 222, FirstName: "Anna", LastName: "K"},
 			Result: &entity.Result{
 				ID: 2, ParticipantID: 2, IsCurrent: true, SubmittedAt: now,
 				ElapsedTimeSec: miniappIntPtr(28800), // 08:00:00
@@ -241,6 +243,7 @@ func TestMiniappLeaderboardRanksFinishersAndListsOthers(t *testing.T) {
 		nil, nil,
 		&miniappHandlerParticipantRepoFake{participants: participants},
 	)
+	h.resultRepo = &miniappResultRepoFake{prevElapsedByUser: map[int64]int{111: 26400, 222: 28000}}
 
 	rr := miniappRequest(t, token, now, h.Leaderboard, "/api/miniapp/leaderboard")
 
@@ -250,16 +253,18 @@ func TestMiniappLeaderboardRanksFinishersAndListsOthers(t *testing.T) {
 
 	var got struct {
 		Participants []struct {
-			ID          uint    `json:"id"`
-			Name        string  `json:"name"`
-			Gender      string  `json:"gender"`
-			BikeType    string  `json:"bike_type"`
-			Status      string  `json:"status"`
-			IsFinished  bool    `json:"is_finished"`
-			Place       int     `json:"place"`
-			ElapsedTime *string `json:"elapsed_time"`
-			MovingTime  *string `json:"moving_time"`
-			ResultLink  *string `json:"result_link"`
+			ID                  uint    `json:"id"`
+			Name                string  `json:"name"`
+			Gender              string  `json:"gender"`
+			BikeType            string  `json:"bike_type"`
+			Status              string  `json:"status"`
+			IsFinished          bool    `json:"is_finished"`
+			Place               int     `json:"place"`
+			ElapsedTime         *string `json:"elapsed_time"`
+			MovingTime          *string `json:"moving_time"`
+			ResultLink          *string `json:"result_link"`
+			PrevElapsedDelta    *string `json:"prev_elapsed_delta"`
+			PrevElapsedDeltaSec *int    `json:"prev_elapsed_delta_sec"`
 		} `json:"participants"`
 		Total int `json:"total"`
 	}
@@ -290,6 +295,12 @@ func TestMiniappLeaderboardRanksFinishersAndListsOthers(t *testing.T) {
 	}
 	if got.Participants[1].Place != 2 || got.Participants[1].Name != "Anna K" {
 		t.Fatalf("second place mismatch: %#v", got.Participants[1])
+	}
+	if got.Participants[0].PrevElapsedDelta == nil || *got.Participants[0].PrevElapsedDelta != "+00:15:00" || got.Participants[0].PrevElapsedDeltaSec == nil || *got.Participants[0].PrevElapsedDeltaSec != 900 {
+		t.Fatalf("automatic previous event delta mismatch: %#v", got.Participants[0])
+	}
+	if got.Participants[1].PrevElapsedDelta == nil || *got.Participants[1].PrevElapsedDelta != "+00:20:00" || got.Participants[1].PrevElapsedDeltaSec == nil || *got.Participants[1].PrevElapsedDeltaSec != 1200 {
+		t.Fatalf("manual previous event delta must take priority: %#v", got.Participants[1])
 	}
 
 	// DNF с результатом остаётся, но без места (0).
@@ -386,6 +397,7 @@ func newMiniappTestHandler(
 		query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo),
 		query.NewGetMiniappParticipantCountHandler(participantRepo),
 		query.NewGetParticipantsHandler(participantRepo),
+		&miniappResultRepoFake{},
 		miniappFileFetcherFunc(func(ctx context.Context, fileID string) (*http.Response, error) {
 			return nil, fmt.Errorf("unexpected file fetch: %s", fileID)
 		}),
@@ -531,6 +543,15 @@ func (r *miniappHandlerCriteriaRepoFake) FindByResult(ctx context.Context, resul
 type miniappHandlerParticipantRepoFake struct {
 	participants []*entity.Participant
 	eventID      uint
+}
+
+type miniappResultRepoFake struct {
+	repository.ResultRepository
+	prevElapsedByUser map[int64]int
+}
+
+func (r *miniappResultRepoFake) FindPrevEventElapsedByUser(ctx context.Context, eventID uint) (map[int64]int, error) {
+	return r.prevElapsedByUser, nil
 }
 
 func (r *miniappHandlerParticipantRepoFake) Create(ctx context.Context, participant *entity.Participant) error {

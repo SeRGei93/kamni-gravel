@@ -95,8 +95,8 @@ func (h *GiftsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 	// Пагинация включается только если переданы page/page_size. Без них возвращаем
 	// все подарки (нужно для модалок выбора приза и подсчёта назначений).
-	paginate := r.URL.Query().Has("page") || r.URL.Query().Has("page_size")
 	page := ParsePageParams(r)
+	paginate := (r.URL.Query().Has("page") || r.URL.Query().Has("page_size")) && !page.All
 
 	// Парсим query параметры для фильтров
 	queryParams := query.GetGiftsQuery{

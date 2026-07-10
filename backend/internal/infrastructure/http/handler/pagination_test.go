@@ -12,6 +12,7 @@ func TestParsePageParams(t *testing.T) {
 		wantPage   int
 		wantSize   int
 		wantOffset int
+		wantAll    bool
 	}{
 		{name: "defaults when empty", query: "", wantPage: 1, wantSize: 50, wantOffset: 0},
 		{name: "explicit valid", query: "?page=3&page_size=75", wantPage: 3, wantSize: 75, wantOffset: 150},
@@ -22,6 +23,7 @@ func TestParsePageParams(t *testing.T) {
 		{name: "non-numeric page falls back", query: "?page=abc&page_size=50", wantPage: 1, wantSize: 50, wantOffset: 0},
 		{name: "zero page falls back to 1", query: "?page=0", wantPage: 1, wantSize: 50, wantOffset: 0},
 		{name: "negative page falls back to 1", query: "?page=-5", wantPage: 1, wantSize: 50, wantOffset: 0},
+		{name: "all disables pagination", query: "?page=3&page_size=all", wantPage: 1, wantSize: 0, wantOffset: 0, wantAll: true},
 	}
 
 	for _, tt := range tests {
@@ -40,6 +42,9 @@ func TestParsePageParams(t *testing.T) {
 			}
 			if pp.Offset != tt.wantOffset {
 				t.Errorf("offset mismatch: got %d, want %d", pp.Offset, tt.wantOffset)
+			}
+			if pp.All != tt.wantAll {
+				t.Errorf("all mismatch: got %t, want %t", pp.All, tt.wantAll)
 			}
 		})
 	}

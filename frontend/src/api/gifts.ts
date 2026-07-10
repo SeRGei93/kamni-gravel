@@ -1,5 +1,5 @@
 import { get, post, put, del } from './client';
-import type { CreateGiftRequest, Gift, GiftListResponse, GiftReviewStatus, UpdateGiftRequest } from '@/types';
+import type { CreateGiftRequest, Gift, GiftListResponse, GiftReviewStatus, PageSize, UpdateGiftRequest } from '@/types';
 
 const GIFTS_PREFIX = '/api/gifts';
 const EVENTS_PREFIX = '/api/events';
@@ -26,7 +26,7 @@ export const giftsApi = {
     eventId: number;
     review_status?: GiftReviewStatus;
     page: number;
-    page_size: number;
+    page_size: PageSize;
   }): Promise<GiftListResponse> {
     const search = new URLSearchParams();
     if (params.review_status) {

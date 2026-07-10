@@ -21,11 +21,13 @@ type MiniappLeaderboardEntryDTO struct {
 	IsFinished bool   `json:"is_finished"`
 	Place      int    `json:"place"` // место в абсолютном зачёте (0 если нет)
 
-	ElapsedTime    *string `json:"elapsed_time,omitempty"`     // полное время, ЧЧ:ММ:СС
-	ElapsedTimeSec *int    `json:"elapsed_time_sec,omitempty"` // полное время в секундах (для сортировки/ранжирования)
-	MovingTime     *string `json:"moving_time,omitempty"`      // чистое время, ЧЧ:ММ:СС
-	MovingTimeSec  *int    `json:"moving_time_sec,omitempty"`
-	IdleTime       *string `json:"idle_time,omitempty"` // простой, ЧЧ:ММ:СС
+	ElapsedTime         *string `json:"elapsed_time,omitempty"`     // полное время, ЧЧ:ММ:СС
+	ElapsedTimeSec      *int    `json:"elapsed_time_sec,omitempty"` // полное время в секундах (для сортировки/ранжирования)
+	MovingTime          *string `json:"moving_time,omitempty"`      // чистое время, ЧЧ:ММ:СС
+	MovingTimeSec       *int    `json:"moving_time_sec,omitempty"`
+	IdleTime            *string `json:"idle_time,omitempty"`              // простой, ЧЧ:ММ:СС
+	PrevElapsedDelta    *string `json:"prev_elapsed_delta,omitempty"`     // прошлый год − общее время, плюс = быстрее
+	PrevElapsedDeltaSec *int    `json:"prev_elapsed_delta_sec,omitempty"` // прошлый год − общее время, секунды
 
 	ResultLink  *string    `json:"result_link,omitempty"`  // ссылка на результат (Strava)
 	SubmittedAt *time.Time `json:"submitted_at,omitempty"` // дата отправки результата
@@ -64,11 +66,13 @@ func NewMiniappLeaderboardEntry(p *entity.Participant, place int) *MiniappLeader
 		IsFinished: full.IsFinished,
 		Place:      place,
 
-		ElapsedTime:    full.ElapsedTime,
-		ElapsedTimeSec: full.ElapsedTimeSec,
-		MovingTime:     full.MovingTime,
-		MovingTimeSec:  full.MovingTimeSec,
-		IdleTime:       full.IdleTime,
+		ElapsedTime:         full.ElapsedTime,
+		ElapsedTimeSec:      full.ElapsedTimeSec,
+		MovingTime:          full.MovingTime,
+		MovingTimeSec:       full.MovingTimeSec,
+		IdleTime:            full.IdleTime,
+		PrevElapsedDelta:    full.PrevElapsedDelta,
+		PrevElapsedDeltaSec: full.PrevElapsedDeltaSec,
 
 		ResultLink:  full.ResultLink,
 		SubmittedAt: full.FinishedAt, // FinishedAt в ParticipantDTO — это дата отправки результата
@@ -83,6 +87,20 @@ func NewMiniappLeaderboardEntry(p *entity.Participant, place int) *MiniappLeader
 		AvgCadence:        full.AvgCadence,
 		Calories:          full.Calories,
 	}
+}
+
+// SetPrevElapsed выставляет публичную дельту к прошлому событию. Само время
+// прошлого года в Mini App не раскрывается; положительная дельта означает, что
+// в текущем событии участник проехал быстрее.
+func (d *MiniappLeaderboardEntryDTO) SetPrevElapsed(sec int) {
+	if d.ElapsedTimeSec == nil {
+		return
+	}
+
+	delta := sec - *d.ElapsedTimeSec
+	deltaFormatted := entity.FormatSignedSeconds(delta)
+	d.PrevElapsedDeltaSec = &delta
+	d.PrevElapsedDelta = &deltaFormatted
 }
 
 // miniappDisplayName выбирает отображаемое имя участника, не раскрывая числовой

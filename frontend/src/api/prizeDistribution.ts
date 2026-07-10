@@ -1,6 +1,7 @@
 import { get } from './client';
 import type {
   PrizeDistributionListResponse,
+  PageSize,
   ResultListResponse,
 } from '@/types';
 
@@ -14,7 +15,7 @@ export const prizeDistributionApi = {
     params?: {
       match_reason?: string;
       page?: number;
-      page_size?: number;
+      page_size?: PageSize;
     }
   ): Promise<PrizeDistributionListResponse> {
     const search = new URLSearchParams();

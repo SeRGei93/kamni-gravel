@@ -282,6 +282,8 @@ export interface MiniappLeaderboardEntry {
   moving_time?: string; // чистое время, ЧЧ:ММ:СС
   moving_time_sec?: number;
   idle_time?: string; // простой, ЧЧ:ММ:СС
+  prev_elapsed_delta?: string; // прошлый год − общее время, плюс = быстрее
+  prev_elapsed_delta_sec?: number;
 
   result_link?: string; // ссылка на результат (Strava)
   submitted_at?: string; // дата отправки результата (ISO 8601)
@@ -301,6 +303,8 @@ export interface MiniappLeaderboardResponse {
   participants: MiniappLeaderboardEntry[];
   total: number;
 }
+
+export type PageSize = number | 'all';
 
 export interface Nomination {
   id: number;

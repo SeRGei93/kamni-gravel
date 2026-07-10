@@ -3,6 +3,7 @@ import type {
   Participant,
   ParticipantDetail,
   ParticipantListResponse,
+  PageSize,
   UpdateParticipantRequest,
   GiftListResponse,
   PrizeAssignmentListResponse,
@@ -50,7 +51,7 @@ export const participantsApi = {
       sort?: string;
       order?: SortOrder;
       page: number;
-      page_size: number;
+      page_size: PageSize;
     }
   ): Promise<ParticipantListResponse> {
     const search = new URLSearchParams();

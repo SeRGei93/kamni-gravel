@@ -40,8 +40,8 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 
 	// Пагинация включается только если переданы page/page_size. Без них возвращаем
 	// всё распределение (нужно для страницы призов: подсветка назначенных подарков).
-	paginate := r.URL.Query().Has("page") || r.URL.Query().Has("page_size")
 	page := ParsePageParams(r)
+	paginate := (r.URL.Query().Has("page") || r.URL.Query().Has("page_size")) && !page.All
 	matchReasonFilter := r.URL.Query().Get("match_reason")
 
 	// Вызываем query handler
