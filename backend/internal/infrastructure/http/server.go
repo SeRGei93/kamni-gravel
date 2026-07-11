@@ -314,7 +314,7 @@ func NewServer(
 		miniappHandler.ConfigureManualGiftManagement(
 			query.NewGetOwnerManualGiftsHandler(manualGiftRepo),
 			query.NewHasOwnerGiftsHandler(manualGiftRepo),
-			query.NewGetMiniappParticipantsHandler(participantRepo),
+			query.NewGetMiniappParticipantsHandler(participantRepo, manualGiftRepo, getPrizeDistributionHandlerTemp),
 			command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo),
 		)
 	} else {

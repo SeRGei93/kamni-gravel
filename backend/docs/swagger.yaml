@@ -1420,7 +1420,8 @@ paths:
       description: >-
         Минимальный список всех участников активного события для выбора
         получателя. Не содержит Telegram user ID, заметок, дат регистрации,
-        результатов или административных полей.
+        результатов или деталей о призах. Поле has_prize позволяет владельцу
+        приза сначала выбрать участника без награды.
       security:
         - TelegramWebAppInitData: []
       responses:
@@ -1836,6 +1837,9 @@ components:
         status:
           type: string
           enum: [active, dnf, disqualified]
+        has_prize:
+          type: boolean
+          description: Получил ли участник хотя бы один автоматический или вручную назначенный приз.
 
     MiniappLeaderboardEntry:
       type: object

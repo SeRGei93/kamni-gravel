@@ -261,6 +261,7 @@ func (h *MiniappHandler) Participants(w http.ResponseWriter, r *http.Request) {
 			DisplayName: model.DisplayName,
 			Username:    model.Username,
 			Status:      model.Status,
+			HasPrize:    model.HasPrize,
 		})
 	}
 	log.Printf("INFO Miniapp participant options served: telegram_user_id=%d event_id=%d participant_count=%d", user.ID, event.ID, len(participants))

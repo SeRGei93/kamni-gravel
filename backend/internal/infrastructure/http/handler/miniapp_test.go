@@ -193,9 +193,10 @@ func TestMiniappMyGiftsReturnsOnlyVerifiedUsersActiveEventGifts(t *testing.T) {
 func TestMiniappParticipantsReturnsMinimalActiveEventOptions(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()
+	giftRepo := &miniappHandlerGiftRepoFake{manualRecipientCounts: map[uint]int{2: 1}}
 	h := newMiniappTestHandler(
 		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
-		nil,
+		giftRepo,
 		nil,
 		&miniappHandlerParticipantRepoFake{participants: []*entity.Participant{
 			{ID: 2, EventID: 77, UserID: 202, Status: valueobject.ParticipantStatusDNF, Notes: "private", User: &entity.User{FirstName: "Zoe", Username: "zoe"}},
@@ -214,7 +215,7 @@ func TestMiniappParticipantsReturnsMinimalActiveEventOptions(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Total != 2 || len(got.Participants) != 2 || got.Participants[0].ID != 1 || got.Participants[1].Status != string(valueobject.ParticipantStatusDNF) {
+	if got.Total != 2 || len(got.Participants) != 2 || got.Participants[0].ID != 1 || got.Participants[1].Status != string(valueobject.ParticipantStatusDNF) || got.Participants[0].HasPrize || !got.Participants[1].HasPrize {
 		t.Fatalf("participant options mismatch: %#v", got)
 	}
 	if strings.Contains(rr.Body.String(), "user_id") || strings.Contains(rr.Body.String(), "private") {
@@ -641,7 +642,7 @@ func newMiniappTestHandler(
 	handler.ConfigureManualGiftManagement(
 		query.NewGetOwnerManualGiftsHandler(giftRepo),
 		query.NewHasOwnerGiftsHandler(giftRepo),
-		query.NewGetMiniappParticipantsHandler(participantRepo),
+		query.NewGetMiniappParticipantsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{}),
 		command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo),
 	)
 	return handler
@@ -705,19 +706,21 @@ func (r *miniappEventRepoFake) GetAll(ctx context.Context) ([]*entity.Event, err
 func (r *miniappEventRepoFake) Delete(ctx context.Context, id uint) error { return nil }
 
 type miniappHandlerGiftRepoFake struct {
-	findByStatusCalled bool
-	eventID            uint
-	reviewStatus       entity.GiftReviewStatus
-	gifts              []*entity.Gift
-	attachments        map[uint][]*entity.GiftAttachment
-	ownerGifts         []*entity.Gift
-	giftByID           *entity.Gift
-	findByIDErr        error
-	setRecipientID     *uint
-	setRecipientErr    error
-	setCalls           int
-	hasOwnerGifts      bool
-	hasOwnerGiftsErr   error
+	findByStatusCalled       bool
+	eventID                  uint
+	reviewStatus             entity.GiftReviewStatus
+	gifts                    []*entity.Gift
+	attachments              map[uint][]*entity.GiftAttachment
+	ownerGifts               []*entity.Gift
+	giftByID                 *entity.Gift
+	findByIDErr              error
+	setRecipientID           *uint
+	setRecipientErr          error
+	setCalls                 int
+	hasOwnerGifts            bool
+	hasOwnerGiftsErr         error
+	manualRecipientCounts    map[uint]int
+	manualRecipientCountsErr error
 }
 
 func (r *miniappHandlerGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error {
@@ -796,7 +799,16 @@ func (r *miniappHandlerGiftRepoFake) SetManualRecipient(ctx context.Context, gif
 	return nil
 }
 func (r *miniappHandlerGiftRepoFake) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {
-	return nil, nil
+	return r.manualRecipientCounts, r.manualRecipientCountsErr
+}
+
+type miniappPrizeDistributionReaderFake struct {
+	results []*query.PrizeDistributionResult
+	err     error
+}
+
+func (r *miniappPrizeDistributionReaderFake) Handle(context.Context, query.GetPrizeDistributionQuery) ([]*query.PrizeDistributionResult, error) {
+	return r.results, r.err
 }
 func (r *miniappHandlerGiftRepoFake) Delete(ctx context.Context, id uint) error { return nil }
 func (r *miniappHandlerGiftRepoFake) AddAttachment(ctx context.Context, attachment *entity.GiftAttachment) error {

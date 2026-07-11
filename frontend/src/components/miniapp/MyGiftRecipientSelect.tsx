@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { ManualGift, MiniappParticipantOption } from "@/types";
 import { miniappGiftMutationErrorMessage } from "@/utils/miniappMyGifts";
-import { matchesSearchQuery } from "@/utils/search";
+import { filterMiniappRecipientOptions } from "@/utils/miniappRecipientOptions";
 
 interface MyGiftRecipientSelectProps {
   gift: ManualGift;
@@ -18,7 +18,12 @@ interface MyGiftRecipientSelectProps {
   onSave: (giftID: number, participantID: number | null) => Promise<void>;
 }
 
-function recipientLabel(participant: MiniappParticipantOption): string {
+interface RecipientLabelParticipant {
+  display_name: string;
+  username?: string;
+}
+
+function recipientLabel(participant: RecipientLabelParticipant): string {
   const username = participant.username?.replace(/^@+/, "").trim();
   return username
     ? `${participant.display_name} (@${username})`
@@ -39,13 +44,7 @@ export default function MyGiftRecipientSelect({
   const titleId = useId();
 
   const options = useMemo(() => {
-    return participants.filter((participant) =>
-      matchesSearchQuery(search, [
-        participant.display_name,
-        participant.username,
-        participant.id,
-      ])
-    );
+    return filterMiniappRecipientOptions(participants, search);
   }, [participants, search]);
 
   useEffect(() => {
@@ -238,13 +237,22 @@ export default function MyGiftRecipientSelect({
                   onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => selectRecipient(participant)}
                   className={`block w-full rounded-lg px-3 py-3 text-left text-sm transition-colors ${
-                    highlightedIndex === index
+                    !participant.has_prize
+                      ? "tg-soft-accent"
+                      : highlightedIndex === index
                       ? "bg-[var(--tg-secondary-bg-color)]"
                       : "hover:bg-[var(--tg-secondary-bg-color)]"
                   }`}
                 >
-                  <span className="tg-title block font-medium">
-                    {participant.display_name}
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="tg-title min-w-0 font-medium">
+                      {participant.display_name}
+                    </span>
+                    {!participant.has_prize && (
+                      <span className="tg-soft-accent shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold">
+                        Без награды
+                      </span>
+                    )}
                   </span>
                   {participant.username && (
                     <span className="tg-muted mt-0.5 block">

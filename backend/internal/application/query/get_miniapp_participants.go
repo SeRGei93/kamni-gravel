@@ -13,12 +13,14 @@ import (
 )
 
 // MiniappParticipantOption is a privacy-safe recipient option. It excludes
-// Telegram user ID, notes, registration dates, and result details.
+// Telegram user ID, notes, registration dates, result details, and award
+// details; HasPrize is only the boolean selection hint for gift owners.
 type MiniappParticipantOption struct {
 	ID          uint
 	DisplayName string
 	Username    string
 	Status      string
+	HasPrize    bool
 }
 
 // GetMiniappParticipantsQuery requests participant options for the active event.
@@ -28,11 +30,26 @@ type GetMiniappParticipantsQuery struct {
 
 // GetMiniappParticipantsHandler returns a minimal, deterministic recipient list.
 type GetMiniappParticipantsHandler struct {
-	participantRepo repository.ParticipantRepository
+	participantRepo          repository.ParticipantRepository
+	manualRecipientCountRepo repository.ManualGiftRecipientCountRepository
+	prizeDistributionReader  miniappPrizeDistributionReader
 }
 
-func NewGetMiniappParticipantsHandler(participantRepo repository.ParticipantRepository) *GetMiniappParticipantsHandler {
-	return &GetMiniappParticipantsHandler{participantRepo: participantRepo}
+type miniappPrizeDistributionReader interface {
+	Handle(ctx context.Context, query GetPrizeDistributionQuery) ([]*PrizeDistributionResult, error)
+}
+
+// NewGetMiniappParticipantsHandler builds the protected recipient-options query.
+func NewGetMiniappParticipantsHandler(
+	participantRepo repository.ParticipantRepository,
+	manualRecipientCountRepo repository.ManualGiftRecipientCountRepository,
+	prizeDistributionReader miniappPrizeDistributionReader,
+) *GetMiniappParticipantsHandler {
+	return &GetMiniappParticipantsHandler{
+		participantRepo:          participantRepo,
+		manualRecipientCountRepo: manualRecipientCountRepo,
+		prizeDistributionReader:  prizeDistributionReader,
+	}
 }
 
 func (h *GetMiniappParticipantsHandler) Handle(ctx context.Context, query GetMiniappParticipantsQuery) ([]*MiniappParticipantOption, error) {
@@ -43,11 +60,25 @@ func (h *GetMiniappParticipantsHandler) Handle(ctx context.Context, query GetMin
 		return nil, fmt.Errorf("find miniapp participants for event %d: %w", query.EventID, err)
 	}
 
+	manualPrizeCounts, err := h.manualRecipientCountRepo.ManualRecipientCountsByEvent(ctx, query.EventID)
+	if err != nil {
+		return nil, fmt.Errorf("find manual miniapp prize recipients for event %d: %w", query.EventID, err)
+	}
+	automaticPrizeCounts, err := miniappAutomaticPrizeCounts(ctx, query.EventID, h.prizeDistributionReader)
+	if err != nil {
+		return nil, err
+	}
+
 	options := make([]*MiniappParticipantOption, 0, len(participants))
 	for _, participant := range participants {
-		options = append(options, newMiniappParticipantOption(participant))
+		option := newMiniappParticipantOption(participant)
+		option.HasPrize = automaticPrizeCounts[participant.ID]+manualPrizeCounts[participant.ID] > 0
+		options = append(options, option)
 	}
 	sort.SliceStable(options, func(i, j int) bool {
+		if options[i].HasPrize != options[j].HasPrize {
+			return !options[i].HasPrize
+		}
 		leftName := strings.ToLower(options[i].DisplayName)
 		rightName := strings.ToLower(options[j].DisplayName)
 		if leftName == rightName {
@@ -58,6 +89,27 @@ func (h *GetMiniappParticipantsHandler) Handle(ctx context.Context, query GetMin
 
 	log.Printf("DEBUG miniapp participant options query completed: event_id=%d returned_count=%d", query.EventID, len(options))
 	return options, nil
+}
+
+func miniappAutomaticPrizeCounts(
+	ctx context.Context,
+	eventID uint,
+	prizeDistributionReader miniappPrizeDistributionReader,
+) (map[uint]int, error) {
+	distribution, err := prizeDistributionReader.Handle(ctx, GetPrizeDistributionQuery{EventID: eventID})
+	if err != nil {
+		return nil, fmt.Errorf("find automatic miniapp prize recipients for event %d: %w", eventID, err)
+	}
+
+	counts := make(map[uint]int)
+	for _, participant := range distribution {
+		if len(participant.MatchedGiftAssignments) > 0 {
+			counts[participant.ParticipantID] += len(participant.MatchedGiftAssignments)
+			continue
+		}
+		counts[participant.ParticipantID] += len(participant.MatchedGifts)
+	}
+	return counts, nil
 }
 
 func newMiniappParticipantOption(participant *entity.Participant) *MiniappParticipantOption {

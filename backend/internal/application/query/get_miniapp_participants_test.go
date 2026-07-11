@@ -18,7 +18,14 @@ func TestGetMiniappParticipantsHandlerReturnsMinimalDeterministicallySortedOptio
 		{ID: 1, UserID: 100, EventID: 77, Status: valueobject.ParticipantStatusActive, Notes: "private", User: &entity.User{FirstName: "Alex", LastName: "Rider", Username: "alex2"}},
 		{ID: 4, UserID: 400, EventID: 77, User: &entity.User{}},
 	}}
-	handler := NewGetMiniappParticipantsHandler(repo)
+	handler := NewGetMiniappParticipantsHandler(
+		repo,
+		&miniappManualRecipientCountRepoFake{counts: map[uint]int{3: 1}},
+		&miniappPrizeDistributionReaderFake{results: []*PrizeDistributionResult{{
+			ParticipantID: 1,
+			MatchedGifts:  []*entity.Gift{{ID: 1}},
+		}}},
+	)
 
 	options, err := handler.Handle(context.Background(), GetMiniappParticipantsQuery{EventID: 77})
 	if err != nil {
@@ -27,11 +34,14 @@ func TestGetMiniappParticipantsHandlerReturnsMinimalDeterministicallySortedOptio
 	if repo.eventID != 77 || len(options) != 4 {
 		t.Fatalf("options = %+v, event_id=%d", options, repo.eventID)
 	}
-	if options[0].ID != 1 || options[1].ID != 2 || options[2].ID != 3 || options[3].ID != 4 {
+	if options[0].ID != 2 || options[1].ID != 4 || options[2].ID != 1 || options[3].ID != 3 {
 		t.Fatalf("deterministic order = [%d %d %d %d]", options[0].ID, options[1].ID, options[2].ID, options[3].ID)
 	}
-	if options[0].Status != "active" || options[1].Status != "dnf" || options[2].Status != "disqualified" || options[3].Status != "active" {
+	if options[0].Status != "dnf" || options[1].Status != "active" || options[2].Status != "active" || options[3].Status != "disqualified" {
 		t.Fatalf("participant statuses = %+v", options)
+	}
+	if options[0].HasPrize || options[1].HasPrize || !options[2].HasPrize || !options[3].HasPrize {
+		t.Fatalf("participant prize flags = %+v", options)
 	}
 
 	body, err := json.Marshal(options)
@@ -47,7 +57,11 @@ func TestGetMiniappParticipantsHandlerReturnsMinimalDeterministicallySortedOptio
 
 func TestGetMiniappParticipantsHandlerWrapsRepositoryFailure(t *testing.T) {
 	repoErr := errors.New("database unavailable")
-	handler := NewGetMiniappParticipantsHandler(&miniappParticipantsRepoFake{err: repoErr})
+	handler := NewGetMiniappParticipantsHandler(
+		&miniappParticipantsRepoFake{err: repoErr},
+		&miniappManualRecipientCountRepoFake{},
+		&miniappPrizeDistributionReaderFake{},
+	)
 	if _, err := handler.Handle(context.Background(), GetMiniappParticipantsQuery{EventID: 77}); !errors.Is(err, repoErr) {
 		t.Fatalf("Handle error = %v, want wrapped repository error", err)
 	}
@@ -63,4 +77,22 @@ type miniappParticipantsRepoFake struct {
 func (r *miniappParticipantsRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
 	r.eventID = eventID
 	return r.participants, r.err
+}
+
+type miniappManualRecipientCountRepoFake struct {
+	counts map[uint]int
+	err    error
+}
+
+func (r *miniappManualRecipientCountRepoFake) ManualRecipientCountsByEvent(context.Context, uint) (map[uint]int, error) {
+	return r.counts, r.err
+}
+
+type miniappPrizeDistributionReaderFake struct {
+	results []*PrizeDistributionResult
+	err     error
+}
+
+func (r *miniappPrizeDistributionReaderFake) Handle(context.Context, GetPrizeDistributionQuery) ([]*PrizeDistributionResult, error) {
+	return r.results, r.err
 }

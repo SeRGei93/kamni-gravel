@@ -36,12 +36,14 @@ type ManualGiftListResponse struct {
 }
 
 // MiniappParticipantOptionDTO is the minimal selectable participant model.
-// It never exposes Telegram IDs, notes, registration dates, or result metrics.
+// It never exposes Telegram IDs, notes, registration dates, result metrics, or
+// award details beyond the HasPrize selection hint.
 type MiniappParticipantOptionDTO struct {
 	ID          uint   `json:"id"`
 	DisplayName string `json:"display_name"`
 	Username    string `json:"username,omitempty"`
 	Status      string `json:"status"`
+	HasPrize    bool   `json:"has_prize"`
 }
 
 func FromManualGift(gift *entity.Gift) *ManualGiftDTO {

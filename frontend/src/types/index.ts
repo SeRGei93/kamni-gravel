@@ -276,6 +276,7 @@ export interface MiniappParticipantOption {
   display_name: string;
   username?: string;
   status: ParticipantStatus;
+  has_prize: boolean;
 }
 
 export interface MiniappParticipantOptionsResponse {
