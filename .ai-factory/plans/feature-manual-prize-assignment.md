@@ -242,7 +242,7 @@ Protected admin API:
 
 ### Phase 3: Dashboard And Mini App UX
 
-- [ ] 8. Add administrator checkbox, recipient picker, and clear manual statuses to gift management.
+- [x] 8. Add administrator checkbox, recipient picker, and clear manual statuses to gift management.
   - Files:
     - `frontend/src/types/index.ts`
     - `frontend/src/api/gifts.ts`
@@ -271,7 +271,7 @@ Protected admin API:
     - Do not log auth tokens, full API bodies, names, or Telegram IDs.
   - Dependencies: Tasks 3 and 6.
 
-- [ ] 9. Build the Mini App “Мои призы” menu item and owner assignment screen.
+- [x] 9. Build the Mini App “Мои призы” menu item and owner assignment screen.
   - Files:
     - `frontend/src/components/miniapp/MiniappTabs.tsx`
     - `frontend/src/app/(miniapp)/miniapp/my-gifts/page.tsx`
@@ -302,7 +302,7 @@ Protected admin API:
     - Never log Telegram init data or participant profile details.
   - Dependencies: Tasks 3 and 7.
 
-- [ ] 10. Make automatic-distribution and manual-assignment presentation consistent across dashboard and public Mini App surfaces.
+- [x] 10. Make automatic-distribution and manual-assignment presentation consistent across dashboard and public Mini App surfaces.
   - Files:
     - `frontend/src/app/(dashboard)/prize-distribution/page.tsx`
     - `frontend/src/utils/prizeDistribution.ts`
@@ -326,7 +326,7 @@ Protected admin API:
 
 ### Phase 4: Documentation And Verification
 
-- [ ] 11. Update API and user-facing documentation through the mandatory `$aif-docs` checkpoint.
+- [x] 11. Update API and user-facing documentation through the mandatory `$aif-docs` checkpoint.
   - Files:
     - `backend/docs/swagger.yaml`
     - `README.md`
@@ -341,7 +341,7 @@ Protected admin API:
     - No runtime logging changes. Documentation examples must not contain real Telegram init data, JWTs, participant identities, or other secrets.
   - Dependencies: Tasks 6-10.
 
-- [ ] 12. Verify migrations, backend behavior, frontend contracts, and Docker runtime end to end.
+- [x] 12. Verify migrations, backend behavior, frontend contracts, and Docker runtime end to end.
   - Files:
     - only implementation/test files that require corrections discovered by verification
   - Deliverable:

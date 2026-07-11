@@ -58,7 +58,7 @@ tags:
   - name: Criteria
     description: Управление критериями для подарков
   - name: Prize Assignments
-    description: Назначение призов участникам
+    description: Устаревшие маршруты назначения призов; не маршрутизируются и не должны использоваться.
   - name: Stats
     description: Статистика
   - name: Miniapp
@@ -849,6 +849,30 @@ paths:
         '404':
           description: Событие или Telegram-пользователь не найден
 
+  /events/{eventId}/manual-gifts:
+    get:
+      tags: [Gifts]
+      summary: Ручные подарки события с получателями
+      description: >-
+        Защищённый административный read model. Возвращает только подарки с
+        manual_distribution=true и минимальные данные получателя; публичные
+        Gift и Mini App catalog endpoints не раскрывают получателя.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Ручные подарки и выбранные получатели
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualGiftList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /gifts/{id}:
     get:
       tags: [Gifts]
@@ -870,7 +894,11 @@ paths:
     put:
       tags: [Gifts]
       summary: Обновить подарок
-      description: Обновляет поля подарка и, если передан `criteria_ids`, атомарно заменяет критерии подарка.
+      description: >-
+        Обновляет поля подарка и, если передан `criteria_ids`, атомарно заменяет
+        критерии. `manual_distribution` и `manual_recipient_participant_id`
+        обрабатываются в той же атомарной операции. Получатель доступен только
+        через защищённый manual-gifts read model, а не через публичный Gift DTO.
       security:
         - BearerAuth: []
       parameters:
@@ -911,6 +939,17 @@ paths:
                   type: array
                   items:
                     type: integer
+                manual_distribution:
+                  type: boolean
+                  description: >-
+                    Отсутствующее поле сохраняет режим. true включает ручное
+                    распределение; false отключает его и очищает получателя.
+                manual_recipient_participant_id:
+                  type: integer
+                  nullable: true
+                  description: >-
+                    ID участника того же события. Отсутствие сохраняет значение,
+                    null очищает получателя. Значение допустимо только в ручном режиме.
             examples:
               range:
                 summary: Диапазон мест
@@ -928,6 +967,11 @@ paths:
                 summary: Без правила мест
                 value:
                   place_rule: null
+              manual_assignment:
+                summary: Включить ручной режим и назначить получателя
+                value:
+                  manual_distribution: true
+                  manual_recipient_participant_id: 42
       responses:
         '200':
           description: Подарок обновлён
@@ -939,6 +983,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Подарок не в ручном режиме или получатель принадлежит другому событию
 
     delete:
       tags: [Gifts]
@@ -959,7 +1005,10 @@ paths:
     get:
       tags: [Gifts]
       summary: Автоматическое распределение подарков
-      description: Возвращает строки участников, legacy matched_gifts, slot-level matched_gift_assignments и невыданные слоты правил.
+      description: >-
+        Возвращает только автоматическое распределение: строки участников,
+        legacy matched_gifts, slot-level matched_gift_assignments и невыданные
+        слоты правил. Подарки с manual_distribution=true и их получатели полностью исключены.
       parameters:
         - $ref: '#/components/parameters/EventId'
       responses:
@@ -1094,6 +1143,10 @@ paths:
     post:
       tags: [Prize Assignments]
       summary: Назначить приз участнику
+      deprecated: true
+      description: >-
+        Устаревший маршрут: не маршрутизируется, таблица prize_assignments
+        удалена миграцией 00014. Используйте автоматическое или ручное распределение подарков.
       security:
         - BearerAuth: []
       requestBody:
@@ -1123,6 +1176,8 @@ paths:
     get:
       tags: [Prize Assignments]
       summary: Список назначений призов для события
+      deprecated: true
+      description: Устаревший не маршрутизируемый маршрут; таблица удалена миграцией 00014.
       parameters:
         - $ref: '#/components/parameters/EventId'
       responses:
@@ -1144,6 +1199,8 @@ paths:
     get:
       tags: [Prize Assignments]
       summary: Список призов участника
+      deprecated: true
+      description: Устаревший не маршрутизируемый маршрут; таблица удалена миграцией 00014.
       parameters:
         - name: participantId
           in: path
@@ -1169,6 +1226,8 @@ paths:
     get:
       tags: [Prize Assignments]
       summary: Получить назначение приза по ID
+      deprecated: true
+      description: Устаревший не маршрутизируемый маршрут; таблица удалена миграцией 00014.
       parameters:
         - name: id
           in: path
@@ -1186,6 +1245,8 @@ paths:
     delete:
       tags: [Prize Assignments]
       summary: Отменить назначение приза
+      deprecated: true
+      description: Устаревший не маршрутизируемый маршрут; таблица удалена миграцией 00014.
       security:
         - BearerAuth: []
       parameters:
@@ -1329,6 +1390,96 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /miniapp/my-gifts:
+    get:
+      tags: [Miniapp]
+      summary: Мои призы текущего Telegram-пользователя
+      description: >-
+        Возвращает все подарки, добавленные валидированным Telegram-пользователем
+        для активного события, включая ожидающие проверки. Получатель содержит
+        только безопасные поля и не включает Telegram user ID.
+      security:
+        - TelegramWebAppInitData: []
+      responses:
+        '200':
+          description: Подарки владельца для активного события
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualGiftList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Нет активного события
+
+  /miniapp/participants:
+    get:
+      tags: [Miniapp]
+      summary: Варианты получателя для активного события
+      description: >-
+        Минимальный список всех участников активного события для выбора
+        получателя. Не содержит Telegram user ID, заметок, дат регистрации,
+        результатов или административных полей.
+      security:
+        - TelegramWebAppInitData: []
+      responses:
+        '200':
+          description: Участники в детерминированном порядке отображения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiniappParticipantOptions'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Нет активного события
+
+  /miniapp/my-gifts/{giftId}/recipient:
+    put:
+      tags: [Miniapp]
+      summary: Назначить или очистить получателя ручного приза
+      description: >-
+        Владелец определяется исключительно из валидированного Telegram init data,
+        а событие — на сервере. Чужой подарок возвращается как 404. Повторная
+        запись того же значения идемпотентна.
+      security:
+        - TelegramWebAppInitData: []
+      parameters:
+        - name: giftId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [participant_id]
+              properties:
+                participant_id:
+                  type: integer
+                  nullable: true
+                  description: ID участника активного события; null очищает получателя.
+            examples:
+              assign:
+                value: { participant_id: 42 }
+              clear:
+                value: { participant_id: null }
+      responses:
+        '204':
+          description: Получатель сохранён или очищен
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Нет активного события, подарок недоступен владельцу или участник не найден
+        '409':
+          description: Подарок не в ручном режиме или участник принадлежит другому событию
 
   /miniapp/telegram/files/{fileId}:
     get:
@@ -1615,6 +1766,10 @@ components:
           $ref: '#/components/schemas/MiniappTelegramUser'
         event:
           $ref: '#/components/schemas/MiniappEvent'
+        my_result_participant_id:
+          type: integer
+          nullable: true
+          description: ID текущего участника только при опубликованном результате; отсутствует, если пользователь не зарегистрирован или не финишировал.
 
     MiniappTelegramUser:
       type: object
@@ -1654,6 +1809,30 @@ components:
             $ref: '#/components/schemas/MiniappLeaderboardEntry'
         total:
           type: integer
+
+    MiniappParticipantOptions:
+      type: object
+      properties:
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MiniappParticipantOption'
+        total:
+          type: integer
+
+    MiniappParticipantOption:
+      type: object
+      description: Минимальный безопасный вариант получателя для Mini App.
+      properties:
+        id:
+          type: integer
+        display_name:
+          type: string
+        username:
+          type: string
+        status:
+          type: string
+          enum: [active, dnf, disqualified]
 
     MiniappLeaderboardEntry:
       type: object
@@ -1842,7 +2021,7 @@ components:
           description: Добавил ли подарок
         prizes_count:
           type: integer
-          description: Количество полученных призов
+          description: Общее число автоматических призовых слотов и сохранённых ручных назначений, включая ручные подарки на проверке.
         matched_gifts:
           type: array
           items:
@@ -2073,6 +2252,11 @@ components:
           type: string
           enum: [pending_review, approved]
           description: Статус проверки подарка администратором
+        manual_distribution:
+          type: boolean
+          description: >-
+            Приз исключён из автоматического распределения. Поля получателя здесь
+            нет: оно доступно только в защищённом ManualGift read model.
         place:
           type: integer
           nullable: true
@@ -2249,6 +2433,52 @@ components:
             $ref: '#/components/schemas/Gift'
         total:
           type: integer
+
+    ManualGiftList:
+      type: object
+      properties:
+        gifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualGift'
+
+    ManualGift:
+      type: object
+      description: >-
+        Защищённая модель ручного подарка для администратора или владельца.
+        Получатель не содержит Telegram user ID, заметок, результатов или даты регистрации.
+      properties:
+        id:
+          type: integer
+        event_id:
+          type: integer
+        description:
+          type: string
+        review_status:
+          type: string
+          enum: [pending_review, approved]
+        manual_distribution:
+          type: boolean
+        recipient:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ManualGiftRecipient'
+        created_at:
+          type: string
+          format: date-time
+
+    ManualGiftRecipient:
+      type: object
+      properties:
+        id:
+          type: integer
+        display_name:
+          type: string
+        username:
+          type: string
+        status:
+          type: string
+          enum: [active, dnf, disqualified]
 
     Criteria:
       type: object
