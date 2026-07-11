@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ManualGift, MiniappParticipantOption } from "@/types";
 import {
   isRecipientSelectionChanged,
   miniappGiftMutationErrorMessage,
 } from "@/utils/miniappMyGifts";
+import { matchesSearchQuery } from "@/utils/search";
 
 interface MyGiftRecipientSelectProps {
   gift: ManualGift;
@@ -27,17 +28,25 @@ export default function MyGiftRecipientSelect({
   const [error, setError] = useState<string | null>(null);
 
   const options = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) {
-      return participants;
-    }
     return participants.filter((participant) =>
-      [participant.display_name, participant.username ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle)
+      matchesSearchQuery(search, [
+        participant.display_name,
+        participant.username,
+        participant.id,
+      ])
     );
   }, [participants, search]);
+
+  useEffect(() => {
+    if (!search.trim()) {
+      return;
+    }
+    console.debug("[FIX:recipient-search] miniapp filter completed", {
+      gift_id: gift.id,
+      result_count: options.length,
+      has_username_prefix: search.trim().startsWith("@"),
+    });
+  }, [gift.id, options.length, search]);
 
   const save = async () => {
     try {

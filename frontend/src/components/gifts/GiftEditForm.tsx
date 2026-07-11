@@ -40,6 +40,7 @@ import {
   buildManualGiftUpdate,
   formatManualRecipientSearchLabel,
 } from '@/utils/manualGiftAssignment';
+import { matchesSearchQuery } from '@/utils/search';
 
 interface GiftEditFormProps {
   gift: Gift;
@@ -167,21 +168,27 @@ export default function GiftEditForm({
   };
 
   const filteredRecipientOptions = useMemo(() => {
-    const normalizedSearch = recipientSearch.trim().toLowerCase();
-    if (!normalizedSearch) {
-      return participants;
-    }
-    return participants.filter((participant) => {
-      const displayName = [participant.first_name, participant.last_name]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return (
-        displayName.includes(normalizedSearch) ||
-        participant.username.toLowerCase().includes(normalizedSearch)
-      );
-    });
+    return participants.filter((participant) =>
+      matchesSearchQuery(recipientSearch, [
+        participant.first_name,
+        participant.last_name,
+        participant.username,
+        participant.id,
+        participant.user_id,
+      ])
+    );
   }, [participants, recipientSearch]);
+
+  useEffect(() => {
+    if (!recipientSearch.trim()) {
+      return;
+    }
+    console.debug('[FIX:recipient-search] admin filter completed', {
+      gift_id: gift.id,
+      result_count: filteredRecipientOptions.length,
+      has_username_prefix: recipientSearch.trim().startsWith('@'),
+    });
+  }, [filteredRecipientOptions.length, gift.id, recipientSearch]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

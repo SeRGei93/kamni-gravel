@@ -1,4 +1,5 @@
 import type { Participant } from '@/types';
+import { matchesSearchQuery } from './search';
 
 export type HasGiftFilter = 'all' | 'yes' | 'no';
 
@@ -8,17 +9,12 @@ export interface ParticipantFilterOptions {
 }
 
 function matchesSearch(participant: Participant, query: string): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) {
-    return true;
-  }
-
-  return Boolean(
-    participant.username?.toLowerCase().includes(normalized) ||
-      participant.first_name?.toLowerCase().includes(normalized) ||
-      participant.last_name?.toLowerCase().includes(normalized) ||
-      String(participant.user_id).includes(normalized)
-  );
+  return matchesSearchQuery(query, [
+    participant.username,
+    participant.first_name,
+    participant.last_name,
+    participant.user_id,
+  ]);
 }
 
 function matchesHasGift(

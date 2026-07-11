@@ -105,7 +105,11 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		hg := hasGiftStr == "true"
 		hasGiftFilter = &hg
 	}
-	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	rawSearchQuery := strings.TrimSpace(r.URL.Query().Get("q"))
+	searchQuery := strings.TrimLeft(strings.ToLower(rawSearchQuery), "@")
+	if rawSearchQuery != "" {
+		log.Printf("DEBUG [FIX:participant-search] normalized query: event_id=%d has_username_prefix=%t", eventID, strings.HasPrefix(rawSearchQuery, "@"))
+	}
 	sortKey := r.URL.Query().Get("sort")
 	sortOrder := r.URL.Query().Get("order")
 
@@ -198,6 +202,9 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	sortParticipantDTOs(filtered, sortKey, sortOrder)
 
 	total := len(filtered)
+	if rawSearchQuery != "" {
+		log.Printf("DEBUG [FIX:participant-search] filter completed: event_id=%d result_count=%d", eventID, total)
+	}
 
 	// Пагинация (срез страницы) поверх отфильтрованного набора.
 	pageItems := filtered

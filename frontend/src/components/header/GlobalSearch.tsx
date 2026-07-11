@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { participantsApi } from '@/api/participants';
 import { eventsApi } from '@/api/events';
 import type { Participant, Event } from '@/types';
+import { matchesSearchQuery } from '@/utils/search';
 
 export default function GlobalSearch() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,18 +89,22 @@ export default function GlobalSearch() {
       const response = await participantsApi.getByEvent(activeEvent.id, {});
       
       // Фильтрация на клиенте
-      const query = searchQuery.toLowerCase();
       const filtered = response.participants.filter((p) => {
-        return (
-          p.username?.toLowerCase().includes(query) ||
-          p.first_name?.toLowerCase().includes(query) ||
-          p.last_name?.toLowerCase().includes(query) ||
-          String(p.user_id).includes(query)
-        );
+        return matchesSearchQuery(searchQuery, [
+          p.username,
+          p.first_name,
+          p.last_name,
+          p.user_id,
+        ]);
       });
 
       setResults(filtered.slice(0, 10)); // Ограничиваем 10 результатами
       setIsOpen(filtered.length > 0);
+      console.debug('[FIX:participant-search] global filter completed', {
+        event_id: activeEvent.id,
+        result_count: filtered.length,
+        has_username_prefix: searchQuery.trim().startsWith('@'),
+      });
     } catch (err) {
       console.error('Failed to search participants:', err);
       setResults([]);

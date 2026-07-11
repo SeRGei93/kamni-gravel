@@ -462,6 +462,11 @@ func TestParticipantsHandlerSearchFilter(t *testing.T) {
 	if got.Participants[0].Username != "carol" {
 		t.Fatalf("search returned wrong participant: %s", got.Participants[0].Username)
 	}
+
+	got = getParticipantsList(t, newParticipantsListTestHandler(), "/api/events/77/participants?q=%40carol")
+	if got.Total != 1 || len(got.Participants) != 1 || got.Participants[0].Username != "carol" {
+		t.Fatalf("search q=@carol should yield carol, got total=%d participants=%+v", got.Total, got.Participants)
+	}
 }
 
 // Список участников должен отдавать метрики заезда и вычисляемые поля для
