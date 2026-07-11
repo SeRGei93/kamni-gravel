@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { miniappApi } from "@/api/miniapp";
+import { isLocalMiniappMode, miniappApi } from "@/api/miniapp";
 import type { MiniappSessionResponse } from "@/types";
 import {
   expandTelegramWebApp,
@@ -28,7 +28,9 @@ export function MiniappSessionProvider({ children }: { children: ReactNode }) {
 
     async function loadSession() {
       try {
-        await waitForTelegramInitData();
+        if (!isLocalMiniappMode) {
+          await waitForTelegramInitData();
+        }
         if (isTelegramWebAppAvailable()) {
           readyTelegramWebApp();
           expandTelegramWebApp();

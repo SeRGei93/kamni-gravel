@@ -52,12 +52,13 @@ type BotConfig struct {
 
 // APIConfig представляет конфигурацию HTTP API сервера
 type APIConfig struct {
-	Host           string
-	Port           int
-	JWTSecret      string
-	JWTAccessTTL   time.Duration
-	JWTRefreshTTL  time.Duration
-	AllowedOrigins []string
+	Host                       string
+	Port                       int
+	JWTSecret                  string
+	JWTAccessTTL               time.Duration
+	JWTRefreshTTL              time.Duration
+	AllowedOrigins             []string
+	MiniappLocalTelegramUserID int64
 }
 
 // FileStorageConfig представляет конфигурацию локального файлового хранилища
@@ -92,12 +93,13 @@ func MustLoad(_ string) *Config {
 		},
 
 		API: APIConfig{
-			Host:           getEnv("API_HOST", "0.0.0.0"),
-			Port:           getEnvInt("API_PORT", 8080),
-			JWTSecret:      getEnvRequired("JWT_SECRET"),
-			JWTAccessTTL:   getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
-			JWTRefreshTTL:  getEnvDuration("JWT_REFRESH_TTL", 168*time.Hour),
-			AllowedOrigins: parseAllowedOrigins(getEnv("ALLOWED_ORIGINS", "*")),
+			Host:                       getEnv("API_HOST", "0.0.0.0"),
+			Port:                       getEnvInt("API_PORT", 8080),
+			JWTSecret:                  getEnvRequired("JWT_SECRET"),
+			JWTAccessTTL:               getEnvDuration("JWT_ACCESS_TTL", 15*time.Minute),
+			JWTRefreshTTL:              getEnvDuration("JWT_REFRESH_TTL", 168*time.Hour),
+			AllowedOrigins:             parseAllowedOrigins(getEnv("ALLOWED_ORIGINS", "*")),
+			MiniappLocalTelegramUserID: getEnvInt64("MINIAPP_LOCAL_TELEGRAM_USER_ID", 0),
 		},
 
 		Files: FileStorageConfig{
@@ -222,6 +224,13 @@ func validate(cfg *Config) error {
 
 	if cfg.API.JWTSecret == "" {
 		return fmt.Errorf("JWT_SECRET is required")
+	}
+
+	if cfg.API.MiniappLocalTelegramUserID < 0 {
+		return fmt.Errorf("MINIAPP_LOCAL_TELEGRAM_USER_ID must not be negative")
+	}
+	if cfg.Env != "local" && cfg.API.MiniappLocalTelegramUserID != 0 {
+		return fmt.Errorf("MINIAPP_LOCAL_TELEGRAM_USER_ID is allowed only when ENV=local")
 	}
 
 	if cfg.DB.Host == "" {

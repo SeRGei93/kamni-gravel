@@ -18,6 +18,7 @@ import TextArea from '@/components/form/input/TextArea';
 import { BIKE_TYPE_OPTIONS, GENDER_OPTIONS, GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
 import { CheckLineIcon, CloseLineIcon, PlusIcon } from '@/icons';
 import { getManualGiftErrorMessage } from '@/utils/manualGiftErrors';
+import { attachManualGiftAssignments } from '@/utils/manualGiftAssignment';
 
 type GiftReviewStatusFilter = 'all' | GiftReviewStatus;
 
@@ -127,20 +128,23 @@ export default function GiftsPage() {
       setError(null);
 
       // Серверная пагинация + счётчики по статусам приходят в одном ответе.
-      const response = await giftsApi.listByEvent({
-        eventId: activeEventId,
-        review_status:
-          reviewStatusFilter === 'all' ? undefined : reviewStatusFilter,
-        page,
-        page_size: pageSize,
-      });
+      const [response, manualGiftResponse] = await Promise.all([
+        giftsApi.listByEvent({
+          eventId: activeEventId,
+          review_status:
+            reviewStatusFilter === 'all' ? undefined : reviewStatusFilter,
+          page,
+          page_size: pageSize,
+        }),
+        giftsApi.getManualByEvent(activeEventId),
+      ]);
       console.debug('[gifts] loaded', {
         page,
         pageSize,
         total: response.total,
         statusCounts: response.status_counts,
       });
-      setGifts(response.gifts);
+      setGifts(attachManualGiftAssignments(response.gifts, manualGiftResponse.gifts));
       setTotal(response.total);
       setStatusCounts(response.status_counts ?? {});
 
@@ -201,6 +205,9 @@ export default function GiftsPage() {
           gift.place_rule ??
           (gift.place ? { type: 'places', places: [gift.place] } : null),
         criteria_ids: gift.criteria?.map((criteria) => criteria.id) || [],
+        manual_distribution: gift.manual_distribution ?? false,
+        manual_recipient_participant_id:
+          gift.manual_assignment?.recipient?.id ?? null,
       });
       await loadGifts();
     } catch (err) {

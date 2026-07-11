@@ -132,13 +132,14 @@ describe('buildMissingGiftPlaceRanges', () => {
     ]);
   });
 
-  it('uses displayed fixed-place gifts and ignores pending, last-n and unplaced gifts', () => {
+  it('uses automatic fixed-place gifts and ignores pending, manual, last-n and unplaced gifts', () => {
     const gifts: Gift[] = [
       { ...baseGift, id: 1, place_rule: { type: 'places', places: [1] } },
       { ...baseGift, id: 2, review_status: 'pending_review', place_rule: { type: 'places', places: [2] } },
       { ...baseGift, id: 3, place_rule: { type: 'places', places: [3] } },
       { ...baseGift, id: 4 },
       { ...baseGift, id: 5, place_rule: { type: 'last_n', last_count: 2 } },
+      { ...baseGift, id: 6, manual_distribution: true, place_rule: { type: 'places', places: [5] } },
     ];
 
     expect(buildMissingGiftPlaceRanges(gifts, 5).map(formatPlaceRange)).toEqual(['2', '4-5']);
@@ -147,6 +148,7 @@ describe('buildMissingGiftPlaceRanges', () => {
   it('returns the first fixed place for table ordering', () => {
     expect(getGiftFirstFixedPlace({ ...baseGift, place_rule: { type: 'places', places: [10, 11] } })).toBe(10);
     expect(getGiftFirstFixedPlace({ ...baseGift, place: 3 })).toBe(3);
+    expect(getGiftFirstFixedPlace({ ...baseGift, manual_distribution: true, place: 2 })).toBeUndefined();
     expect(getGiftFirstFixedPlace({ ...baseGift, place_rule: { type: 'last_n', last_count: 2 } })).toBeUndefined();
   });
 });

@@ -157,7 +157,10 @@ export function buildMissingGiftPlaceRanges(
 }
 
 export function getGiftFirstFixedPlace(gift: Gift): number | undefined {
-  const places = getGiftFixedPlaces(gift);
+	if (gift.manual_distribution) {
+		return undefined;
+	}
+	const places = getGiftFixedPlaces(gift);
   if (places.length === 0) {
     return undefined;
   }
@@ -201,7 +204,11 @@ function collectFixedGiftPlaces(
 }
 
 function isFixedPlaceGift(gift: Gift): boolean {
-  return gift.review_status === 'approved' && getGiftFixedPlaces(gift).length > 0;
+  return (
+    gift.review_status === 'approved' &&
+    !gift.manual_distribution &&
+    getGiftFixedPlaces(gift).length > 0
+  );
 }
 
 function getGiftFixedPlaces(gift: Gift): number[] {

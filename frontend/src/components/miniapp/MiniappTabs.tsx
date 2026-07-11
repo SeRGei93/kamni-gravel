@@ -7,7 +7,7 @@ import { useMiniappSession } from "@/components/miniapp/MiniappSessionContext";
 // Постоянная нижняя навигация Mini App. Рендерится в layout группы (miniapp),
 // поэтому не размонтируется при переходах между экранами лидерборда и каталога.
 
-type NavigationIcon = "leaderboard" | "gifts" | "result";
+type NavigationIcon = "leaderboard" | "gifts" | "my-gifts" | "result";
 
 interface MiniappNavigationItem {
   href: string;
@@ -24,6 +24,12 @@ const fixedNavigationItems: MiniappNavigationItem[] = [
     icon: "leaderboard",
   },
   { href: "/miniapp/gifts", label: "Призы", match: "/miniapp/gifts", icon: "gifts" },
+  {
+    href: "/miniapp/my-gifts",
+    label: "Мои призы",
+    match: "/miniapp/my-gifts",
+    icon: "my-gifts",
+  },
 ];
 
 const navigationItemClass =
@@ -105,6 +111,14 @@ function NavigationIcon({ icon }: { icon: NavigationIcon }) {
     return (
       <svg {...commonProps}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M20 12v8H4v-8m16-4H4v4h16V8Zm-8 0v12m0-12H8.5A2.5 2.5 0 1 1 12 4.5V8Zm0 0h3.5A2.5 2.5 0 1 0 12 4.5V8Z" />
+      </svg>
+    );
+  }
+
+  if (icon === "my-gifts") {
+    return (
+      <svg {...commonProps}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 3h8v4a4 4 0 0 1-8 0V3Zm-3 1H3v2a4 4 0 0 0 4 4m10-6h2v2a4 4 0 0 1-4 4m-5-1v5m-3 4h10m-5-5a4 4 0 0 0 4-4V7H8v2a4 4 0 0 0 4 4Z" />
       </svg>
     );
   }

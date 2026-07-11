@@ -34,10 +34,11 @@ type TelegramWebAppUser struct {
 }
 
 type TelegramWebAppAuthConfig struct {
-	BotToken  string
-	MaxAge    time.Duration
-	ClockSkew time.Duration
-	Now       func() time.Time
+	BotToken               string
+	LocalDevTelegramUserID int64
+	MaxAge                 time.Duration
+	ClockSkew              time.Duration
+	Now                    func() time.Time
 }
 
 // TelegramWebAppAuth проверяет Telegram.WebApp.initData из HTTP-заголовка.
@@ -61,6 +62,12 @@ func TelegramWebAppAuthWithConfig(cfg TelegramWebAppAuthConfig) func(http.Handle
 			path := r.URL.Path
 			rawInitData := r.Header.Get(TelegramInitDataHeader)
 			if rawInitData == "" {
+				if cfg.LocalDevTelegramUserID > 0 {
+					webAppUser := localDevTelegramWebAppUser(cfg.LocalDevTelegramUserID)
+					log.Printf("WARN Telegram miniapp local auth bypass: telegram_user_id=%d path=%s", webAppUser.ID, path)
+					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), telegramWebAppUserContextKey, webAppUser)))
+					return
+				}
 				log.Printf("WARN Telegram miniapp auth failed: reason=missing_init_data path=%s", path)
 				response.Unauthorized(w, "Missing Telegram init data")
 				return
@@ -133,6 +140,15 @@ func TelegramWebAppAuthWithConfig(cfg TelegramWebAppAuthConfig) func(http.Handle
 			ctx := context.WithValue(r.Context(), telegramWebAppUserContextKey, webAppUser)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+func localDevTelegramWebAppUser(userID int64) *TelegramWebAppUser {
+	return &TelegramWebAppUser{
+		ID:        userID,
+		Username:  "local_dev",
+		FirstName: "Локальный",
+		LastName:  "участник",
 	}
 }
 

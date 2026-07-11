@@ -128,7 +128,7 @@ func (r *eventRepository) FindActive(ctx context.Context) (*entity.Event, error)
 
 	event, err := scanEvent(r.db.QueryRowContext(ctx, query))
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("no active event found")
+		return nil, repository.ErrNoActiveEvent
 	}
 
 	return event, err

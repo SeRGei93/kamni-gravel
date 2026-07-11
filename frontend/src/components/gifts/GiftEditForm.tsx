@@ -10,6 +10,7 @@ import Badge from '@/components/ui/badge/Badge';
 import { Modal } from '@/components/ui/modal';
 import { useModal } from '@/hooks/useModal';
 import CriteriaForm from '@/components/criteria/CriteriaForm';
+import RecipientAutocomplete from '@/components/gifts/RecipientAutocomplete';
 import { PlusIcon, TrashBinIcon } from '@/icons';
 import { addSelectedCriterionId, getCriteriaColor } from '@/utils/criteria';
 import type {
@@ -19,6 +20,8 @@ import type {
   GenderFilter,
   Gift,
   GiftReviewStatus,
+  ManualGift,
+  Participant,
   UpdateCriteriaRequest,
   UpdateGiftRequest,
 } from '@/types';
@@ -34,10 +37,15 @@ import {
   GIFT_PLACE_RULE_OPTIONS,
   GIFT_REVIEW_STATUS_OPTIONS,
 } from '@/constants';
+import {
+  buildManualGiftUpdate,
+} from '@/utils/manualGiftAssignment';
 
 interface GiftEditFormProps {
   gift: Gift;
   criteria: Criteria[];
+  manualGift?: ManualGift;
+  participants?: Participant[];
   onSubmit: (data: UpdateGiftRequest) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
@@ -47,6 +55,8 @@ interface GiftEditFormProps {
 export default function GiftEditForm({
   gift,
   criteria,
+  manualGift,
+  participants = [],
   onSubmit,
   onCancel,
   onDelete,
@@ -75,6 +85,11 @@ export default function GiftEditForm({
   const [selectedCriteriaIds, setSelectedCriteriaIds] = useState<number[]>(
     gift.criteria?.map((item) => item.id) || []
   );
+  const [manualDistribution, setManualDistribution] = useState(
+    gift.manual_distribution ?? manualGift?.manual_distribution ?? false
+  );
+  const [manualRecipientParticipantID, setManualRecipientParticipantID] =
+    useState<number | null>(manualGift?.recipient?.id ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,8 +139,12 @@ export default function GiftEditForm({
     setPlaceRuleInput(nextPlaceRule.placesInput);
     setLastCountInput(nextPlaceRule.lastCount);
     setSelectedCriteriaIds(gift.criteria?.map((item) => item.id) || []);
+    setManualDistribution(
+      gift.manual_distribution ?? manualGift?.manual_distribution ?? false
+    );
+    setManualRecipientParticipantID(manualGift?.recipient?.id ?? null);
     setError(null);
-  }, [gift]);
+  }, [gift, manualGift]);
 
   const placeRulePreview = useMemo(() => {
     try {
@@ -173,6 +192,10 @@ export default function GiftEditForm({
         review_status: reviewStatus,
         place_rule: placeRule,
         criteria_ids: selectedCriteriaIds,
+        ...buildManualGiftUpdate(
+          manualDistribution,
+          manualRecipientParticipantID
+        ),
       });
     } catch (err) {
       console.error('Failed to update gift:', {
@@ -294,6 +317,47 @@ export default function GiftEditForm({
         <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
           {placeRulePreview}
         </p>
+      </div>
+
+      <div className="space-y-3 border-t border-gray-100 pt-5 dark:border-white/[0.05]">
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-4 dark:border-white/[0.08]">
+          <input
+            type="checkbox"
+            checked={manualDistribution}
+            onChange={(event) => {
+              const enabled = event.target.checked;
+              setManualDistribution(enabled);
+              if (!enabled) {
+                setManualRecipientParticipantID(null);
+              }
+            }}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500"
+          />
+          <span>
+            <span className="block text-sm font-medium text-gray-800 dark:text-white/90">
+              Ручное распределение
+            </span>
+            <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+              Приз не участвует в автоматическом распределении.
+            </span>
+          </span>
+        </label>
+
+        {manualDistribution && (
+          <div className="rounded-lg border border-brand-100 bg-brand-50/40 p-4 dark:border-brand-500/20 dark:bg-brand-500/5">
+            <Label>Получатель</Label>
+            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+              Можно назначить любого участника этого события, включая участника без результата.
+            </p>
+            <RecipientAutocomplete
+              giftID={gift.id}
+              participants={participants}
+              selectedID={manualRecipientParticipantID}
+              onSelect={setManualRecipientParticipantID}
+              disabled={isSubmitting}
+            />
+          </div>
+        )}
       </div>
 
       <div>

@@ -1,16 +1,20 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	telegrambot "github.com/go-telegram/bot"
 
+	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
@@ -27,8 +31,23 @@ type MiniappHandler struct {
 	getParticipantsHandler            *query.GetParticipantsHandler
 	getParticipantByUserHandler       *query.GetParticipantByUserAndEventHandler
 	resultRepo                        repository.ResultRepository
+	getOwnerManualGiftsHandler        *query.GetOwnerManualGiftsHandler
+	getMiniappParticipantsHandler     *query.GetMiniappParticipantsHandler
+	setManualGiftRecipientHandler     *command.SetManualGiftRecipientHandler
 	fileFetcher                       miniappFileFetcher
 	giftsCache                        miniappGiftsCache
+}
+
+// ConfigureManualGiftManagement wires protected owner/manual flows after the
+// base Mini App handler is constructed. All handlers remain server-owned.
+func (h *MiniappHandler) ConfigureManualGiftManagement(
+	getOwnerManualGiftsHandler *query.GetOwnerManualGiftsHandler,
+	getMiniappParticipantsHandler *query.GetMiniappParticipantsHandler,
+	setManualGiftRecipientHandler *command.SetManualGiftRecipientHandler,
+) {
+	h.getOwnerManualGiftsHandler = getOwnerManualGiftsHandler
+	h.getMiniappParticipantsHandler = getMiniappParticipantsHandler
+	h.setManualGiftRecipientHandler = setManualGiftRecipientHandler
 }
 
 type miniappFileFetcher interface {
@@ -141,9 +160,14 @@ func (h *MiniappHandler) Session(w http.ResponseWriter, r *http.Request) {
 		EventID: event.ID,
 	})
 	if err != nil {
-		log.Printf("ERROR [FIX] Miniapp session participant lookup failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
-		response.InternalServerError(w, "Failed to find current participant")
-		return
+		if errors.Is(err, repository.ErrParticipantNotFound) {
+			log.Printf("DEBUG Miniapp session has no participant: telegram_user_id=%d event_id=%d", user.ID, event.ID)
+			participant = nil
+		} else {
+			log.Printf("ERROR [FIX] Miniapp session participant lookup failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
+			response.InternalServerError(w, "Failed to find current participant")
+			return
+		}
 	}
 
 	myResultParticipantID := miniappMyResultParticipantID(participant)
@@ -153,6 +177,137 @@ func (h *MiniappHandler) Session(w http.ResponseWriter, r *http.Request) {
 		Event:                 miniappEventDTO(event),
 		MyResultParticipantID: myResultParticipantID,
 	})
+}
+
+// MyGifts returns all active-event gifts added by the verified Telegram user.
+func (h *MiniappHandler) MyGifts(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.telegramUser(w, r, "my gifts")
+	if !ok {
+		return
+	}
+	event, ok := h.activeEvent(w, r, user.ID)
+	if !ok {
+		return
+	}
+	if h.getOwnerManualGiftsHandler == nil {
+		log.Printf("ERROR Miniapp my gifts unavailable: telegram_user_id=%d event_id=%d", user.ID, event.ID)
+		response.InternalServerError(w, "My gifts are unavailable")
+		return
+	}
+
+	models, err := h.getOwnerManualGiftsHandler.Handle(r.Context(), query.GetOwnerManualGiftsQuery{
+		OwnerTelegramUserID: user.ID,
+		EventID:             event.ID,
+	})
+	if err != nil {
+		log.Printf("ERROR Miniapp my gifts failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
+		response.InternalServerError(w, "Failed to get my gifts")
+		return
+	}
+
+	gifts := make([]*dto.ManualGiftDTO, 0, len(models))
+	for _, model := range models {
+		gifts = append(gifts, manualGiftDTOFromReadModel(model))
+	}
+	log.Printf("INFO Miniapp my gifts served: telegram_user_id=%d event_id=%d gift_count=%d", user.ID, event.ID, len(gifts))
+	response.Success(w, dto.ManualGiftListResponse{Gifts: gifts})
+}
+
+// Participants returns minimal same-event recipient options for the verified user.
+func (h *MiniappHandler) Participants(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.telegramUser(w, r, "participants")
+	if !ok {
+		return
+	}
+	event, ok := h.activeEvent(w, r, user.ID)
+	if !ok {
+		return
+	}
+	if h.getMiniappParticipantsHandler == nil {
+		log.Printf("ERROR Miniapp participant options unavailable: telegram_user_id=%d event_id=%d", user.ID, event.ID)
+		response.InternalServerError(w, "Participant options are unavailable")
+		return
+	}
+
+	models, err := h.getMiniappParticipantsHandler.Handle(r.Context(), query.GetMiniappParticipantsQuery{EventID: event.ID})
+	if err != nil {
+		log.Printf("ERROR Miniapp participant options failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
+		response.InternalServerError(w, "Failed to get participants")
+		return
+	}
+
+	participants := make([]*dto.MiniappParticipantOptionDTO, 0, len(models))
+	for _, model := range models {
+		participants = append(participants, &dto.MiniappParticipantOptionDTO{
+			ID:          model.ID,
+			DisplayName: model.DisplayName,
+			Username:    model.Username,
+			Status:      model.Status,
+		})
+	}
+	log.Printf("INFO Miniapp participant options served: telegram_user_id=%d event_id=%d participant_count=%d", user.ID, event.ID, len(participants))
+	response.Success(w, struct {
+		Participants []*dto.MiniappParticipantOptionDTO `json:"participants"`
+		Total        int                                `json:"total"`
+	}{Participants: participants, Total: len(participants)})
+}
+
+// UpdateMyGiftRecipient replaces or clears a recipient on an owner manual gift.
+func (h *MiniappHandler) UpdateMyGiftRecipient(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.telegramUser(w, r, "my gift recipient")
+	if !ok {
+		return
+	}
+	event, ok := h.activeEvent(w, r, user.ID)
+	if !ok {
+		return
+	}
+	if h.setManualGiftRecipientHandler == nil {
+		log.Printf("ERROR Miniapp manual recipient update unavailable: telegram_user_id=%d event_id=%d", user.ID, event.ID)
+		response.InternalServerError(w, "Manual gift assignment is unavailable")
+		return
+	}
+
+	giftID, err := strconv.ParseUint(chi.URLParam(r, "giftId"), 10, 32)
+	if err != nil || giftID == 0 {
+		response.BadRequest(w, "Invalid gift ID")
+		return
+	}
+	recipientID, err := decodeMiniappGiftRecipientRequest(r)
+	if err != nil {
+		log.Printf("WARN Miniapp manual recipient update rejected: telegram_user_id=%d event_id=%d gift_id=%d reason=malformed_payload", user.ID, event.ID, giftID)
+		response.BadRequest(w, "Invalid request body")
+		return
+	}
+
+	err = h.setManualGiftRecipientHandler.Handle(r.Context(), command.SetManualGiftRecipientCommand{
+		GiftID:  uint(giftID),
+		EventID: event.ID,
+		Actor: command.ManualGiftRecipientActor{
+			TelegramUserID: user.ID,
+		},
+		RecipientParticipantID: recipientID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, command.ErrGiftNotFound),
+			errors.Is(err, command.ErrManualGiftOwnerForbidden),
+			errors.Is(err, command.ErrManualGiftRecipientNotFound):
+			log.Printf("WARN Miniapp manual recipient update rejected: telegram_user_id=%d event_id=%d gift_id=%d reason=not_found", user.ID, event.ID, giftID)
+			response.NotFound(w, "Gift or participant not found")
+		case errors.Is(err, command.ErrManualGiftNotManual),
+			errors.Is(err, command.ErrManualGiftRecipientEvent):
+			log.Printf("WARN Miniapp manual recipient update rejected: telegram_user_id=%d event_id=%d gift_id=%d reason=conflict", user.ID, event.ID, giftID)
+			response.Conflict(w, err.Error())
+		default:
+			log.Printf("ERROR Miniapp manual recipient update failed: telegram_user_id=%d event_id=%d gift_id=%d error=%v", user.ID, event.ID, giftID, err)
+			response.InternalServerError(w, "Failed to update manual gift recipient")
+		}
+		return
+	}
+
+	log.Printf("INFO Miniapp manual recipient updated: telegram_user_id=%d event_id=%d gift_id=%d recipient_participant_id=%s", user.ID, event.ID, giftID, miniappRecipientIDLogValue(recipientID))
+	response.NoContent(w)
 }
 
 // miniappMyResultParticipantID возвращает только ID текущего пользователя с
@@ -368,6 +523,11 @@ func (h *MiniappHandler) cachedMiniappGifts(eventID uint, gender, bikeType strin
 func (h *MiniappHandler) activeEvent(w http.ResponseWriter, r *http.Request, telegramUserID int64) (*entity.Event, bool) {
 	event, err := h.eventRepo.FindActive(r.Context())
 	if err != nil {
+		if errors.Is(err, repository.ErrNoActiveEvent) {
+			log.Printf("WARN Miniapp request has no active event: telegram_user_id=%d path=%s", telegramUserID, r.URL.Path)
+			response.NotFound(w, "No active event")
+			return nil, false
+		}
 		log.Printf("ERROR Miniapp active event lookup failed: telegram_user_id=%d error=%v", telegramUserID, err)
 		response.InternalServerError(w, "Failed to get active event")
 		return nil, false
@@ -379,6 +539,47 @@ func (h *MiniappHandler) activeEvent(w http.ResponseWriter, r *http.Request, tel
 	}
 
 	return event, true
+}
+
+func (h *MiniappHandler) telegramUser(w http.ResponseWriter, r *http.Request, operation string) (*middleware.TelegramWebAppUser, bool) {
+	user, ok := middleware.GetTelegramWebAppUserFromContext(r.Context())
+	if !ok {
+		log.Printf("WARN Miniapp %s failed: reason=missing_telegram_user path=%s", operation, r.URL.Path)
+		response.Unauthorized(w, "Telegram user not found")
+		return nil, false
+	}
+	return user, true
+}
+
+func decodeMiniappGiftRecipientRequest(r *http.Request) (*uint, error) {
+	var raw map[string]json.RawMessage
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decode recipient request: %w", err)
+	}
+	if len(raw) != 1 {
+		return nil, errors.New("recipient request must contain exactly participant_id")
+	}
+	payload, ok := raw["participant_id"]
+	if !ok {
+		return nil, errors.New("participant_id is required")
+	}
+	if bytes.Equal(bytes.TrimSpace(payload), []byte("null")) {
+		return nil, nil
+	}
+
+	var participantID uint
+	if err := json.Unmarshal(payload, &participantID); err != nil || participantID == 0 {
+		return nil, errors.New("participant_id must be a positive integer or null")
+	}
+	return &participantID, nil
+}
+
+func miniappRecipientIDLogValue(participantID *uint) string {
+	if participantID == nil {
+		return "none"
+	}
+	return strconv.FormatUint(uint64(*participantID), 10)
 }
 
 func miniappTelegramUserDTO(user *middleware.TelegramWebAppUser) MiniappTelegramUserDTO {

@@ -92,18 +92,19 @@ type Server struct {
 
 // Config представляет конфигурацию сервера
 type Config struct {
-	Host                 string
-	Port                 int
-	AllowedOrigins       []string
-	JWTSecret            string
-	JWTAccessTTL         time.Duration
-	JWTRefreshTTL        time.Duration
-	BotToken             string // Токен Telegram бота для получения файлов
-	PublicChatID         int64
-	MiniappURL           string
-	FileStoragePath      string
-	MiniappCacheDir      string        // Каталог файлового кеша каталога подарков мини-приложения
-	MiniappGiftsCacheTTL time.Duration // Страховочный TTL записей кеша подарков мини-приложения
+	Host                       string
+	Port                       int
+	AllowedOrigins             []string
+	JWTSecret                  string
+	JWTAccessTTL               time.Duration
+	JWTRefreshTTL              time.Duration
+	BotToken                   string // Токен Telegram бота для получения файлов
+	PublicChatID               int64
+	MiniappURL                 string
+	FileStoragePath            string
+	MiniappCacheDir            string        // Каталог файлового кеша каталога подарков мини-приложения
+	MiniappGiftsCacheTTL       time.Duration // Страховочный TTL записей кеша подарков мини-приложения
+	MiniappLocalTelegramUserID int64         // Локальный Telegram-пользователь для браузерной Mini App проверки
 }
 
 // NewServer создаёт новый HTTP сервер
@@ -151,6 +152,7 @@ func NewServer(
 	getParticipantByUserHandler := query.NewGetParticipantByUserAndEventHandler(participantRepo)
 	getGiftsHandler := query.NewGetGiftsHandler(giftRepo, criteriaRepo)
 	getGiftByIDHandler := query.NewGetGiftByIDHandler(giftRepo, criteriaRepo)
+	getManualGiftsHandler := query.NewGetManualGiftsHandler(giftRepo)
 	getMiniappGiftsHandler := query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo)
 	getMiniappParticipantCountHandler := query.NewGetMiniappParticipantCountHandler(participantRepo)
 
@@ -198,7 +200,7 @@ func NewServer(
 		giftRepo,
 		userBlacklistRepo,
 	)
-	updateGiftHandler := command.NewUpdateGiftHandler(giftRepo)
+	updateGiftHandler := command.NewUpdateGiftHandler(giftRepo, participantRepo)
 
 	// Создаём command handlers для blacklist пользователей
 	addUserBlacklistHandler := command.NewAddUserBlacklistHandler(userBlacklistRepo)
@@ -276,6 +278,7 @@ func NewServer(
 		giftRepo,
 		getGiftsHandler,
 		getGiftByIDHandler,
+		getManualGiftsHandler,
 		addGiftHandler,
 		updateGiftHandler,
 		miniappGiftsCache,
@@ -307,6 +310,15 @@ func NewServer(
 		cfg.BotToken,
 		miniappGiftsCache,
 	)
+	if manualGiftRepo, ok := giftRepo.(repository.ManualGiftRepository); ok {
+		miniappHandler.ConfigureManualGiftManagement(
+			query.NewGetOwnerManualGiftsHandler(manualGiftRepo),
+			query.NewGetMiniappParticipantsHandler(participantRepo),
+			command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo),
+		)
+	} else {
+		log.Printf("ERROR Miniapp manual gift management unavailable: gift repository does not implement ManualGiftRepository")
+	}
 	userBlacklistHandler := handler.NewUserBlacklistHandler(
 		listUserBlacklistHandler,
 		addUserBlacklistHandler,
@@ -404,7 +416,10 @@ func NewServer(
 		chatMembersHandler:               chatMembersHandler,
 		lockManager:                      lockManager,
 		jwtManager:                       jwtManager,
-		telegramWebAppAuth:               middleware.TelegramWebAppAuth(cfg.BotToken),
+		telegramWebAppAuth: middleware.TelegramWebAppAuthWithConfig(middleware.TelegramWebAppAuthConfig{
+			BotToken:               cfg.BotToken,
+			LocalDevTelegramUserID: cfg.MiniappLocalTelegramUserID,
+		}),
 	}
 
 	// Создаём router
@@ -500,6 +515,9 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Use(s.telegramWebAppAuth)
 			r.Get("/session", s.miniappHandler.Session)
 			r.Get("/gifts", s.miniappHandler.Gifts)
+			r.Get("/my-gifts", s.miniappHandler.MyGifts)
+			r.Get("/participants", s.miniappHandler.Participants)
+			r.Put("/my-gifts/{giftId}/recipient", s.miniappHandler.UpdateMyGiftRecipient)
 			r.Get("/leaderboard", s.miniappHandler.Leaderboard)
 			r.Get("/telegram/files/{fileId}", s.miniappHandler.TelegramFile)
 		})
@@ -541,6 +559,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 
 			// Gifts admin routes
 			r.Post("/events/{eventId}/gifts", s.giftsHandler.Create)
+			r.Get("/events/{eventId}/manual-gifts", s.giftsHandler.GetManualByEvent)
 			r.Put("/gifts/{id}", s.giftsHandler.Update)
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)
 

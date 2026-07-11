@@ -198,6 +198,14 @@ function GiftGapRow({ ranges }: { ranges: GiftPlaceRange[] }) {
 }
 
 function GiftCompactConditions({ gift }: { gift: Gift }) {
+  if (gift.manual_distribution) {
+    return (
+      <div className="tg-muted text-[10px] font-medium leading-[14px]">
+        <ConditionLine label="Режим" value="Ручное распределение" />
+      </div>
+    );
+  }
+
   const gender = (gift.gender_filter || "all") as GenderFilter;
   const bikeType = (gift.bike_type_filter || "all") as BikeTypeFilter;
   const criteria = gift.criteria ?? [];

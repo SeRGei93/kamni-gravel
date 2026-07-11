@@ -3,13 +3,17 @@ import type {
   GenderFilter,
   GiftListResponse,
   MiniappLeaderboardResponse,
+  MiniappParticipantOptionsResponse,
   MiniappSessionResponse,
+  ManualGiftListResponse,
 } from '@/types';
 import { getTelegramInitData } from '@/utils/telegramWebApp';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const MINIAPP_PREFIX = '/api/miniapp';
 const TELEGRAM_INIT_DATA_HEADER = 'X-Telegram-Init-Data';
+export const isLocalMiniappMode =
+  process.env.NEXT_PUBLIC_MINIAPP_LOCAL_MODE === 'true';
 
 export class MiniappApiError extends Error {
   constructor(
@@ -53,10 +57,10 @@ async function miniappFetch(
   options: RequestInit = {}
 ): Promise<Response> {
   const url = `${API_URL}${endpoint}`;
-  const initData = getTelegramInitData();
+  const initData = isLocalMiniappMode ? '' : getTelegramInitData();
   const headers = new Headers(options.headers);
 
-  if (!headers.has(TELEGRAM_INIT_DATA_HEADER)) {
+  if (initData && !headers.has(TELEGRAM_INIT_DATA_HEADER)) {
     headers.set(TELEGRAM_INIT_DATA_HEADER, initData);
   }
   if (options.body !== undefined && !headers.has('Content-Type')) {
@@ -130,6 +134,32 @@ export const miniappApi = {
     return miniappRequest<MiniappLeaderboardResponse>(
       `${MINIAPP_PREFIX}/leaderboard`,
       { method: 'GET' }
+    );
+  },
+
+  async getMyGifts(): Promise<ManualGiftListResponse> {
+    return miniappRequest<ManualGiftListResponse>(`${MINIAPP_PREFIX}/my-gifts`, {
+      method: 'GET',
+    });
+  },
+
+  async getParticipants(): Promise<MiniappParticipantOptionsResponse> {
+    return miniappRequest<MiniappParticipantOptionsResponse>(
+      `${MINIAPP_PREFIX}/participants`,
+      { method: 'GET' }
+    );
+  },
+
+  async updateMyGiftRecipient(
+    giftID: number,
+    participantID: number | null
+  ): Promise<void> {
+    await miniappRequest<void>(
+      `${MINIAPP_PREFIX}/my-gifts/${encodeURIComponent(String(giftID))}/recipient`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ participant_id: participantID }),
+      }
     );
   },
 

@@ -18,6 +18,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"gravel_bot/internal/application/command"
+	"gravel_bot/internal/application/dto"
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
@@ -91,6 +93,179 @@ func TestMiniappSessionReturnsNotFoundWhenNoActiveEvent(t *testing.T) {
 
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	}
+}
+
+func TestMiniappSessionReturnsNotFoundForTypedNoActiveEvent(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := newMiniappTestHandler(&miniappEventRepoFake{
+		activeErr: fmt.Errorf("find active event: %w", repository.ErrNoActiveEvent),
+	}, nil, nil, nil)
+
+	rr := miniappRequest(t, token, now, h.Session, "/api/miniapp/session")
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	}
+}
+
+func TestMiniappSessionTreatsMissingParticipantAsValid(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
+		nil,
+		nil,
+		&miniappHandlerParticipantRepoFake{findByUserAndEventErr: fmt.Errorf("query participant: %w", repository.ErrParticipantNotFound)},
+	)
+
+	rr := miniappRequest(t, token, now, h.Session, "/api/miniapp/session")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got MiniappSessionResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.MyResultParticipantID != nil {
+		t.Fatalf("my result participant id = %v, want nil", *got.MyResultParticipantID)
+	}
+}
+
+func TestMiniappMyGiftsReturnsOnlyVerifiedUsersActiveEventGifts(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	recipientID := uint(11)
+	giftRepo := &miniappHandlerGiftRepoFake{
+		ownerGifts: []*entity.Gift{
+			{ID: 1, UserID: 42, EventID: 77, Description: "Manual bottle", ManualDistribution: true, ManualRecipientParticipantID: &recipientID, ReviewStatus: entity.GiftReviewStatusPendingReview, ManualRecipient: &entity.Participant{ID: recipientID, User: &entity.User{FirstName: "Ivan", Username: "ivan"}}},
+			{ID: 2, UserID: 42, EventID: 77, Description: "Automatic cap", ReviewStatus: entity.GiftReviewStatusApproved},
+		},
+	}
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}}, giftRepo, nil, nil,
+	)
+
+	rr := miniappRequest(t, token, now, h.MyGifts, "/api/miniapp/my-gifts")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got dto.ManualGiftListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Gifts) != 2 || got.Gifts[0].ID != 1 || got.Gifts[1].ID != 2 || got.Gifts[0].Recipient == nil || got.Gifts[0].Recipient.ID != recipientID {
+		t.Fatalf("my gifts mismatch: %#v", got.Gifts)
+	}
+	if strings.Contains(rr.Body.String(), "user_id") {
+		t.Fatalf("response leaks recipient telegram user id: %s", rr.Body.String())
+	}
+}
+
+func TestMiniappParticipantsReturnsMinimalActiveEventOptions(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
+		nil,
+		nil,
+		&miniappHandlerParticipantRepoFake{participants: []*entity.Participant{
+			{ID: 2, EventID: 77, UserID: 202, Status: valueobject.ParticipantStatusDNF, Notes: "private", User: &entity.User{FirstName: "Zoe", Username: "zoe"}},
+			{ID: 1, EventID: 77, UserID: 101, Status: valueobject.ParticipantStatusActive, User: &entity.User{FirstName: "Alex", Username: "alex"}},
+		}},
+	)
+
+	rr := miniappRequest(t, token, now, h.Participants, "/api/miniapp/participants")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got struct {
+		Participants []dto.MiniappParticipantOptionDTO `json:"participants"`
+		Total        int                               `json:"total"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Total != 2 || len(got.Participants) != 2 || got.Participants[0].ID != 1 || got.Participants[1].Status != string(valueobject.ParticipantStatusDNF) {
+		t.Fatalf("participant options mismatch: %#v", got)
+	}
+	if strings.Contains(rr.Body.String(), "user_id") || strings.Contains(rr.Body.String(), "private") {
+		t.Fatalf("response leaks private participant data: %s", rr.Body.String())
+	}
+}
+
+func TestMiniappUpdateMyGiftRecipient(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	manualGift := &entity.Gift{ID: 9, UserID: 42, EventID: 77, ManualDistribution: true}
+	giftRepo := &miniappHandlerGiftRepoFake{giftByID: manualGift}
+	participantRepo := &miniappHandlerParticipantRepoFake{participants: []*entity.Participant{{ID: 11, EventID: 77}}}
+	h := newMiniappTestHandler(&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Active: true}}, giftRepo, nil, participantRepo)
+
+	rr := miniappUpdateRecipientRequest(t, token, now, h, `{"participant_id":11}`)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("assign status mismatch: got %d, want %d body=%s", rr.Code, http.StatusNoContent, rr.Body.String())
+	}
+	if giftRepo.setCalls != 1 || giftRepo.setRecipientID == nil || *giftRepo.setRecipientID != 11 {
+		t.Fatalf("recipient write mismatch: calls=%d recipient=%v", giftRepo.setCalls, giftRepo.setRecipientID)
+	}
+
+	rr = miniappUpdateRecipientRequest(t, token, now, h, `{"participant_id":null}`)
+	if rr.Code != http.StatusNoContent || giftRepo.setCalls != 2 || giftRepo.setRecipientID != nil {
+		t.Fatalf("clear mismatch: status=%d calls=%d recipient=%v", rr.Code, giftRepo.setCalls, giftRepo.setRecipientID)
+	}
+}
+
+func TestMiniappUpdateMyGiftRecipientIsOwnerScopedAndValidatesEvent(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	tests := []struct {
+		name         string
+		gift         *entity.Gift
+		participants []*entity.Participant
+		wantStatus   int
+	}{
+		{
+			name:       "foreign gift is not found",
+			gift:       &entity.Gift{ID: 9, UserID: 99, EventID: 77, ManualDistribution: true},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "gift from another event is not found",
+			gift:       &entity.Gift{ID: 9, UserID: 42, EventID: 88, ManualDistribution: true},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "automatic gift conflicts",
+			gift:       &entity.Gift{ID: 9, UserID: 42, EventID: 77},
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:         "cross event recipient conflicts",
+			gift:         &entity.Gift{ID: 9, UserID: 42, EventID: 77, ManualDistribution: true},
+			participants: []*entity.Participant{{ID: 11, EventID: 88}},
+			wantStatus:   http.StatusConflict,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			giftRepo := &miniappHandlerGiftRepoFake{giftByID: tt.gift}
+			h := newMiniappTestHandler(
+				&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Active: true}},
+				giftRepo,
+				nil,
+				&miniappHandlerParticipantRepoFake{participants: tt.participants},
+			)
+			rr := miniappUpdateRecipientRequest(t, token, now, h, `{"participant_id":11}`)
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, tt.wantStatus, rr.Body.String())
+			}
+			if giftRepo.setCalls != 0 {
+				t.Fatalf("unexpected recipient write: %d", giftRepo.setCalls)
+			}
+		})
 	}
 }
 
@@ -424,7 +599,7 @@ func newMiniappTestHandler(
 		participantRepo = &miniappHandlerParticipantRepoFake{}
 	}
 
-	return newMiniappHandlerWithFileFetcher(
+	handler := newMiniappHandlerWithFileFetcher(
 		eventRepo,
 		query.NewGetMiniappGiftsHandler(giftRepo, criteriaRepo),
 		query.NewGetMiniappParticipantCountHandler(participantRepo),
@@ -436,9 +611,19 @@ func newMiniappTestHandler(
 		}),
 		nil,
 	)
+	handler.ConfigureManualGiftManagement(
+		query.NewGetOwnerManualGiftsHandler(giftRepo),
+		query.NewGetMiniappParticipantsHandler(participantRepo),
+		command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo),
+	)
+	return handler
 }
 
 func miniappRequest(t *testing.T, token string, now time.Time, handlerFunc http.HandlerFunc, target string) *httptest.ResponseRecorder {
+	return miniappRequestWithMethod(t, token, now, http.MethodGet, handlerFunc, target, nil)
+}
+
+func miniappRequestWithMethod(t *testing.T, token string, now time.Time, method string, handlerFunc http.HandlerFunc, target string, body io.Reader) *httptest.ResponseRecorder {
 	t.Helper()
 
 	handler := middleware.TelegramWebAppAuthWithConfig(middleware.TelegramWebAppAuthConfig{
@@ -446,11 +631,20 @@ func miniappRequest(t *testing.T, token string, now time.Time, handlerFunc http.
 		Now:      func() time.Time { return now },
 	})(handlerFunc)
 
-	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req := httptest.NewRequest(method, target, body)
 	req.Header.Set(middleware.TelegramInitDataHeader, signedMiniappInitData(t, token, now))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	return rr
+}
+
+func miniappUpdateRecipientRequest(t *testing.T, token string, now time.Time, h *MiniappHandler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return miniappRequestWithMethod(t, token, now, http.MethodPut, func(w http.ResponseWriter, r *http.Request) {
+		routeContext := chi.NewRouteContext()
+		routeContext.URLParams.Add("giftId", "9")
+		h.UpdateMyGiftRecipient(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, routeContext)))
+	}, "/api/miniapp/my-gifts/9/recipient", strings.NewReader(body))
 }
 
 func miniappIntPtr(v int) *int { return &v }
@@ -463,6 +657,7 @@ func (f miniappFileFetcherFunc) Fetch(ctx context.Context, fileID string) (*http
 
 type miniappEventRepoFake struct {
 	activeEvent *entity.Event
+	activeErr   error
 }
 
 func (r *miniappEventRepoFake) Create(ctx context.Context, event *entity.Event) error { return nil }
@@ -474,7 +669,7 @@ func (r *miniappEventRepoFake) FindByName(ctx context.Context, name string) (*en
 	return nil, nil
 }
 func (r *miniappEventRepoFake) FindActive(ctx context.Context) (*entity.Event, error) {
-	return r.activeEvent, nil
+	return r.activeEvent, r.activeErr
 }
 func (r *miniappEventRepoFake) GetAll(ctx context.Context) ([]*entity.Event, error) {
 	return nil, nil
@@ -487,6 +682,12 @@ type miniappHandlerGiftRepoFake struct {
 	reviewStatus       entity.GiftReviewStatus
 	gifts              []*entity.Gift
 	attachments        map[uint][]*entity.GiftAttachment
+	ownerGifts         []*entity.Gift
+	giftByID           *entity.Gift
+	findByIDErr        error
+	setRecipientID     *uint
+	setRecipientErr    error
+	setCalls           int
 }
 
 func (r *miniappHandlerGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error {
@@ -502,7 +703,18 @@ func (r *miniappHandlerGiftRepoFake) UpdateWithCriteria(ctx context.Context, gif
 	return nil
 }
 func (r *miniappHandlerGiftRepoFake) FindByID(ctx context.Context, id uint) (*entity.Gift, error) {
-	return nil, nil
+	if r.findByIDErr != nil {
+		return nil, r.findByIDErr
+	}
+	if r.giftByID != nil && r.giftByID.ID == id {
+		return r.giftByID, nil
+	}
+	for _, gift := range r.gifts {
+		if gift.ID == id {
+			return gift, nil
+		}
+	}
+	return nil, repository.ErrGiftNotFound
 }
 func (r *miniappHandlerGiftRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
 	return nil, nil
@@ -525,6 +737,32 @@ func (r *miniappHandlerGiftRepoFake) CountsByReviewStatus(ctx context.Context, e
 	return nil, nil
 }
 func (r *miniappHandlerGiftRepoFake) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
+	return nil, nil
+}
+func (r *miniappHandlerGiftRepoFake) FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) ([]*entity.Gift, error) {
+	if r.ownerGifts != nil {
+		return r.ownerGifts, nil
+	}
+	matched := make([]*entity.Gift, 0)
+	for _, gift := range r.gifts {
+		if gift.UserID == userID && gift.EventID == eventID {
+			matched = append(matched, gift)
+		}
+	}
+	return matched, nil
+}
+func (r *miniappHandlerGiftRepoFake) SetManualRecipient(ctx context.Context, giftID uint, recipientParticipantID *uint) error {
+	r.setCalls++
+	if r.setRecipientErr != nil {
+		return r.setRecipientErr
+	}
+	r.setRecipientID = recipientParticipantID
+	if r.giftByID != nil && r.giftByID.ID == giftID {
+		r.giftByID.ManualRecipientParticipantID = recipientParticipantID
+	}
+	return nil
+}
+func (r *miniappHandlerGiftRepoFake) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {
 	return nil, nil
 }
 func (r *miniappHandlerGiftRepoFake) Delete(ctx context.Context, id uint) error { return nil }
@@ -574,8 +812,10 @@ func (r *miniappHandlerCriteriaRepoFake) FindByResult(ctx context.Context, resul
 }
 
 type miniappHandlerParticipantRepoFake struct {
-	participants []*entity.Participant
-	eventID      uint
+	participants          []*entity.Participant
+	eventID               uint
+	findByIDErr           error
+	findByUserAndEventErr error
 }
 
 type miniappResultRepoFake struct {
@@ -594,15 +834,26 @@ func (r *miniappHandlerParticipantRepoFake) Update(ctx context.Context, particip
 	return nil
 }
 func (r *miniappHandlerParticipantRepoFake) FindByID(ctx context.Context, id uint) (*entity.Participant, error) {
-	return nil, nil
+	if r.findByIDErr != nil {
+		return nil, r.findByIDErr
+	}
+	for _, participant := range r.participants {
+		if participant.ID == id {
+			return participant, nil
+		}
+	}
+	return nil, repository.ErrParticipantNotFound
 }
 func (r *miniappHandlerParticipantRepoFake) FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) (*entity.Participant, error) {
+	if r.findByUserAndEventErr != nil {
+		return nil, r.findByUserAndEventErr
+	}
 	for _, participant := range r.participants {
 		if participant.UserID == userID && participant.EventID == eventID {
 			return participant, nil
 		}
 	}
-	return nil, nil
+	return nil, repository.ErrParticipantNotFound
 }
 func (r *miniappHandlerParticipantRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
 	r.eventID = eventID

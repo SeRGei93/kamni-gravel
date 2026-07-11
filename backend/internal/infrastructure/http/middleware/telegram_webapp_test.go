@@ -52,6 +52,48 @@ func TestTelegramWebAppAuthAcceptsValidInitData(t *testing.T) {
 	}
 }
 
+func TestTelegramWebAppAuthUsesConfiguredLocalUserOnlyWithoutInitData(t *testing.T) {
+	var gotUser *TelegramWebAppUser
+	handler := TelegramWebAppAuthWithConfig(TelegramWebAppAuthConfig{
+		LocalDevTelegramUserID: 42,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ok bool
+		gotUser, ok = GetTelegramWebAppUserFromContext(r.Context())
+		if !ok {
+			t.Fatal("local telegram webapp user missing from context")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/miniapp/session", nil))
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusNoContent, rr.Body.String())
+	}
+	if gotUser == nil || gotUser.ID != 42 || gotUser.Username != "local_dev" {
+		t.Fatalf("local context user mismatch: %#v", gotUser)
+	}
+}
+
+func TestTelegramWebAppAuthDoesNotBypassInvalidInitDataInLocalMode(t *testing.T) {
+	handler := TelegramWebAppAuthWithConfig(TelegramWebAppAuthConfig{
+		BotToken:               "123456:secret",
+		LocalDevTelegramUserID: 42,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called for invalid init data")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/miniapp/session", nil)
+	req.Header.Set(TelegramInitDataHeader, "auth_date=1&user=bad&hash=bad")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusUnauthorized, rr.Body.String())
+	}
+}
+
 func TestTelegramWebAppAuthRejectsInvalidInitData(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()

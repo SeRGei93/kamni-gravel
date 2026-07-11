@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,10 +156,11 @@ func (r *participantListParticipantRepoFake) FindByID(ctx context.Context, id ui
 type participantListResultRepoFake struct {
 	repository.ResultRepository
 	prevElapsedByUser map[int64]int
+	resultsWithPlaces []*repository.ResultWithPlace
 }
 
 func (r *participantListResultRepoFake) FindByEventWithPlaces(ctx context.Context, eventID uint) ([]*repository.ResultWithPlace, error) {
-	return nil, nil
+	return r.resultsWithPlaces, nil
 }
 
 func (r *participantListResultRepoFake) FindPrevEventElapsedByUser(ctx context.Context, eventID uint) (map[int64]int, error) {
@@ -167,8 +169,10 @@ func (r *participantListResultRepoFake) FindPrevEventElapsedByUser(ctx context.C
 
 type participantListGiftRepoFake struct {
 	repository.GiftRepository
-	eventID uint
-	gifts   []*entity.Gift
+	eventID                  uint
+	gifts                    []*entity.Gift
+	manualRecipientCounts    map[uint]int
+	manualRecipientCountsErr error
 }
 
 func (r *participantListGiftRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
@@ -177,7 +181,112 @@ func (r *participantListGiftRepoFake) FindByEvent(ctx context.Context, eventID u
 }
 
 func (r *participantListGiftRepoFake) FindByEventAndReviewStatus(ctx context.Context, eventID uint, status entity.GiftReviewStatus) ([]*entity.Gift, error) {
+	approved := make([]*entity.Gift, 0, len(r.gifts))
+	for _, gift := range r.gifts {
+		if gift.ReviewStatus == status {
+			approved = append(approved, gift)
+		}
+	}
+	return approved, nil
+}
+
+func (r *participantListGiftRepoFake) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {
+	return r.manualRecipientCounts, r.manualRecipientCountsErr
+}
+
+type participantListCriteriaRepoFake struct {
+	repository.CriteriaRepository
+}
+
+func (r *participantListCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error) {
 	return nil, nil
+}
+
+func (r *participantListCriteriaRepoFake) FindByResult(ctx context.Context, resultID uint) ([]*entity.Criteria, error) {
+	return nil, nil
+}
+
+func TestParticipantsHandlerMergesAutomaticAndManualPrizeCountsBeforeSortingAndPagination(t *testing.T) {
+	participants := []*entity.Participant{
+		{ID: 1, UserID: 101, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale, User: &entity.User{ID: 101, Username: "automatic"}},
+		{ID: 2, UserID: 102, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale, User: &entity.User{ID: 102, Username: "manual"}},
+		{ID: 3, UserID: 103, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale, User: &entity.User{ID: 103, Username: "manual_without_result"}},
+	}
+	for id := uint(4); id <= 51; id++ {
+		participants = append(participants, &entity.Participant{
+			ID:       id,
+			UserID:   int64(100 + id),
+			EventID:  77,
+			BikeType: valueobject.BikeTypeGravel,
+			Gender:   valueobject.GenderMale,
+			User:     &entity.User{ID: int64(100 + id), Username: "without_prize"},
+		})
+	}
+	participantRepo := &participantListParticipantRepoFake{participants: participants}
+	firstElapsed := 1000
+	secondElapsed := 2000
+	resultRepo := &participantListResultRepoFake{resultsWithPlaces: []*repository.ResultWithPlace{
+		{Result: &entity.Result{ID: 1, ParticipantID: 1, ElapsedTimeSec: &firstElapsed}, PlaceAbsolute: 1, PlaceByGender: 1, PlaceByGenderBike: 1},
+		{Result: &entity.Result{ID: 2, ParticipantID: 2, ElapsedTimeSec: &secondElapsed}, PlaceAbsolute: 2, PlaceByGender: 2, PlaceByGenderBike: 2},
+	}}
+	// The aggregation represents persisted manual recipients, including gifts
+	// awaiting review; it is intentionally independent of review status.
+	giftRepo := &participantListGiftRepoFake{
+		gifts: []*entity.Gift{{ID: 10, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved}},
+		manualRecipientCounts: map[uint]int{
+			2: 2,
+			3: 1,
+		},
+	}
+	criteriaRepo := &participantListCriteriaRepoFake{}
+	h := &ParticipantsHandler{
+		participantRepo:        participantRepo,
+		resultRepo:             resultRepo,
+		giftRepo:               giftRepo,
+		criteriaRepo:           criteriaRepo,
+		getParticipantsHandler: query.NewGetParticipantsHandler(participantRepo),
+		getPrizeDistributionHandler: query.NewGetPrizeDistributionHandler(
+			resultRepo,
+			giftRepo,
+			participantRepo,
+			criteriaRepo,
+		),
+	}
+
+	page := getParticipantsList(t, h, "/api/events/77/participants?sort=prizes_count&order=desc&page=1&page_size=50")
+	if page.Total != 51 || len(page.Participants) != 50 {
+		t.Fatalf("paged response = total:%d participants:%d", page.Total, len(page.Participants))
+	}
+	if page.Participants[0].ID != 2 || page.Participants[0].PrizesCount != 2 {
+		t.Fatalf("first paged participant = %+v, want manual count before pagination", page.Participants[0])
+	}
+	if page.Participants[1].ID != 1 || page.Participants[1].PrizesCount != 1 {
+		t.Fatalf("second paged participant = %+v, want automatic count", page.Participants[1])
+	}
+
+	all := getParticipantsList(t, h, "/api/events/77/participants?sort=prizes_count&order=desc&page_size=all")
+	if all.Participants[2].ID != 3 || all.Participants[2].PrizesCount != 1 {
+		t.Fatalf("manual recipient without result = %+v, want persisted manual count", all.Participants[2])
+	}
+}
+
+func TestParticipantsHandlerReturnsServerErrorWhenManualPrizeAggregationFails(t *testing.T) {
+	participantRepo := &participantListParticipantRepoFake{participants: []*entity.Participant{
+		{ID: 1, UserID: 101, EventID: 77, BikeType: valueobject.BikeTypeGravel, Gender: valueobject.GenderMale, User: &entity.User{ID: 101, Username: "rider"}},
+	}}
+	h := &ParticipantsHandler{
+		participantRepo:        participantRepo,
+		resultRepo:             &participantListResultRepoFake{},
+		giftRepo:               &participantListGiftRepoFake{manualRecipientCountsErr: errors.New("aggregation unavailable")},
+		getParticipantsHandler: query.NewGetParticipantsHandler(participantRepo),
+	}
+	router := chi.NewRouter()
+	router.Get("/api/events/{eventId}/participants", h.GetAll)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/events/77/participants", nil))
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 body=%s", rr.Code, rr.Body.String())
+	}
 }
 
 func newParticipantsListTestHandler() *ParticipantsHandler {
@@ -352,6 +461,11 @@ func TestParticipantsHandlerSearchFilter(t *testing.T) {
 	}
 	if got.Participants[0].Username != "carol" {
 		t.Fatalf("search returned wrong participant: %s", got.Participants[0].Username)
+	}
+
+	got = getParticipantsList(t, newParticipantsListTestHandler(), "/api/events/77/participants?q=%40carol")
+	if got.Total != 1 || len(got.Participants) != 1 || got.Participants[0].Username != "carol" {
+		t.Fatalf("search q=@carol should yield carol, got total=%d participants=%+v", got.Total, got.Participants)
 	}
 }
 

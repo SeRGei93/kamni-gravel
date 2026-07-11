@@ -30,7 +30,7 @@ type queryContextExecutor interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-func NewGiftRepository(db *sql.DB) repository.GiftRepository {
+func NewGiftRepository(db *sql.DB) repository.ManualGiftRepository {
 	return &giftRepository{db: db}
 }
 
@@ -76,8 +76,8 @@ func (r *giftRepository) CreateWithAttachments(ctx context.Context, gift *entity
 }
 
 func insertGift(ctx context.Context, exec queryRowExecutor, gift *entity.Gift) error {
-	query := `INSERT INTO gifts (user_id, event_id, description, gender_filter, bike_type_filter, review_status, place, created_at)
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
+	query := `INSERT INTO gifts (user_id, event_id, description, gender_filter, bike_type_filter, review_status, place, manual_distribution, manual_recipient_participant_id, created_at)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`
 
 	if gift.CreatedAt.IsZero() {
 		gift.CreatedAt = time.Now()
@@ -101,7 +101,8 @@ func insertGift(ctx context.Context, exec queryRowExecutor, gift *entity.Gift) e
 
 	err := exec.QueryRowContext(ctx, query,
 		gift.UserID, gift.EventID, gift.Description,
-		genderFilter, bikeTypeFilter, gift.ReviewStatus.String(), gift.Place, gift.CreatedAt,
+		genderFilter, bikeTypeFilter, gift.ReviewStatus.String(), gift.Place,
+		gift.ManualDistribution, gift.ManualRecipientParticipantID, gift.CreatedAt,
 	).Scan(&gift.ID)
 	if err != nil {
 		return err
@@ -183,15 +184,27 @@ func updateGiftFields(ctx context.Context, exec execContextExecutor, gift *entit
 		return fmt.Errorf("invalid gift review status: %s", gift.ReviewStatus)
 	}
 
-	query := `UPDATE gifts SET description = $1, gender_filter = $2, bike_type_filter = $3, review_status = $4, place = $5 WHERE id = $6`
-	_, err := exec.ExecContext(ctx, query, gift.Description, gift.GenderFilter, gift.BikeTypeFilter, gift.ReviewStatus.String(), gift.Place, gift.ID)
+	query := `UPDATE gifts SET description = $1, gender_filter = $2, bike_type_filter = $3, review_status = $4, place = $5, manual_distribution = $6, manual_recipient_participant_id = $7 WHERE id = $8`
+	_, err := exec.ExecContext(
+		ctx,
+		query,
+		gift.Description,
+		gift.GenderFilter,
+		gift.BikeTypeFilter,
+		gift.ReviewStatus.String(),
+		gift.Place,
+		gift.ManualDistribution,
+		gift.ManualRecipientParticipantID,
+		gift.ID,
+	)
 	return err
 }
 
 func (r *giftRepository) FindByID(ctx context.Context, id uint) (*entity.Gift, error) {
 	query := `
-		SELECT g.id, g.user_id, g.event_id, g.description, 
-		       g.gender_filter, g.bike_type_filter, g.review_status, g.place, g.created_at,
+		SELECT g.id, g.user_id, g.event_id, g.description,
+		       g.gender_filter, g.bike_type_filter, g.review_status, g.place,
+		       g.manual_distribution, g.manual_recipient_participant_id, g.created_at,
 		       u.username, u.first_name, u.last_name
 		FROM gifts g
 		JOIN users u ON u.id = g.user_id
@@ -201,24 +214,30 @@ func (r *giftRepository) FindByID(ctx context.Context, id uint) (*entity.Gift, e
 	gift := &entity.Gift{User: &entity.User{}}
 	var genderFilter, bikeTypeFilter, reviewStatus sql.NullString
 	var place sql.NullInt32
+	var manualDistribution sql.NullBool
+	var manualRecipientParticipantID sql.NullInt64
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&gift.ID, &gift.UserID, &gift.EventID, &gift.Description,
-		&genderFilter, &bikeTypeFilter, &reviewStatus, &place, &gift.CreatedAt,
+		&genderFilter, &bikeTypeFilter, &reviewStatus, &place,
+		&manualDistribution, &manualRecipientParticipantID, &gift.CreatedAt,
 		&gift.User.Username, &gift.User.FirstName, &gift.User.LastName,
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("gift not found: %d", id)
+		return nil, fmt.Errorf("%w: %d", repository.ErrGiftNotFound, id)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, reviewStatus, place); err != nil {
+	if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, reviewStatus, place, manualDistribution, manualRecipientParticipantID); err != nil {
 		return nil, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
 	}
 	gift.User.ID = gift.UserID
 	if err := r.loadGiftPlaceRules(ctx, []*entity.Gift{gift}); err != nil {
+		return nil, err
+	}
+	if err := r.loadManualRecipients(ctx, []*entity.Gift{gift}); err != nil {
 		return nil, err
 	}
 	return gift, nil
@@ -227,7 +246,8 @@ func (r *giftRepository) FindByID(ctx context.Context, id uint) (*entity.Gift, e
 func (r *giftRepository) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
 	query := `
 		SELECT g.id, g.user_id, g.event_id, g.description,
-		       g.gender_filter, g.bike_type_filter, g.review_status, g.place, g.created_at,
+		       g.gender_filter, g.bike_type_filter, g.review_status, g.place,
+		       g.manual_distribution, g.manual_recipient_participant_id, g.created_at,
 		       u.username, u.first_name, u.last_name
 		FROM gifts g
 		JOIN users u ON u.id = g.user_id
@@ -246,15 +266,18 @@ func (r *giftRepository) FindByEvent(ctx context.Context, eventID uint) ([]*enti
 		gift := &entity.Gift{User: &entity.User{}}
 		var genderFilter, bikeTypeFilter, reviewStatus sql.NullString
 		var place sql.NullInt32
+		var manualDistribution sql.NullBool
+		var manualRecipientParticipantID sql.NullInt64
 		err := rows.Scan(
 			&gift.ID, &gift.UserID, &gift.EventID, &gift.Description,
-			&genderFilter, &bikeTypeFilter, &reviewStatus, &place, &gift.CreatedAt,
+			&genderFilter, &bikeTypeFilter, &reviewStatus, &place,
+			&manualDistribution, &manualRecipientParticipantID, &gift.CreatedAt,
 			&gift.User.Username, &gift.User.FirstName, &gift.User.LastName,
 		)
 		if err != nil {
 			return nil, err
 		}
-		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, reviewStatus, place); err != nil {
+		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, reviewStatus, place, manualDistribution, manualRecipientParticipantID); err != nil {
 			return nil, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
 		}
 		gift.User.ID = gift.UserID
@@ -267,6 +290,9 @@ func (r *giftRepository) FindByEvent(ctx context.Context, eventID uint) ([]*enti
 	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
 		return nil, err
 	}
+	if err := r.loadManualRecipients(ctx, gifts); err != nil {
+		return nil, err
+	}
 	return gifts, nil
 }
 
@@ -277,7 +303,8 @@ func (r *giftRepository) FindByEventAndReviewStatus(ctx context.Context, eventID
 
 	query := `
 		SELECT g.id, g.user_id, g.event_id, g.description,
-		       g.gender_filter, g.bike_type_filter, g.review_status, g.place, g.created_at,
+		       g.gender_filter, g.bike_type_filter, g.review_status, g.place,
+		       g.manual_distribution, g.manual_recipient_participant_id, g.created_at,
 		       u.username, u.first_name, u.last_name
 		FROM gifts g
 		JOIN users u ON u.id = g.user_id
@@ -296,15 +323,18 @@ func (r *giftRepository) FindByEventAndReviewStatus(ctx context.Context, eventID
 		gift := &entity.Gift{User: &entity.User{}}
 		var genderFilter, bikeTypeFilter, scannedReviewStatus sql.NullString
 		var place sql.NullInt32
+		var manualDistribution sql.NullBool
+		var manualRecipientParticipantID sql.NullInt64
 		err := rows.Scan(
 			&gift.ID, &gift.UserID, &gift.EventID, &gift.Description,
-			&genderFilter, &bikeTypeFilter, &scannedReviewStatus, &place, &gift.CreatedAt,
+			&genderFilter, &bikeTypeFilter, &scannedReviewStatus, &place,
+			&manualDistribution, &manualRecipientParticipantID, &gift.CreatedAt,
 			&gift.User.Username, &gift.User.FirstName, &gift.User.LastName,
 		)
 		if err != nil {
 			return nil, err
 		}
-		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, scannedReviewStatus, place); err != nil {
+		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, scannedReviewStatus, place, manualDistribution, manualRecipientParticipantID); err != nil {
 			return nil, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
 		}
 		gift.User.ID = gift.UserID
@@ -315,6 +345,9 @@ func (r *giftRepository) FindByEventAndReviewStatus(ctx context.Context, eventID
 		return nil, err
 	}
 	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
+		return nil, err
+	}
+	if err := r.loadManualRecipients(ctx, gifts); err != nil {
 		return nil, err
 	}
 	return gifts, nil
@@ -347,7 +380,8 @@ func (r *giftRepository) ListByEventPaged(ctx context.Context, eventID uint, rev
 	}
 	listQuery := fmt.Sprintf(`
 		SELECT g.id, g.user_id, g.event_id, g.description,
-		       g.gender_filter, g.bike_type_filter, g.review_status, g.place, g.created_at,
+		       g.gender_filter, g.bike_type_filter, g.review_status, g.place,
+		       g.manual_distribution, g.manual_recipient_participant_id, g.created_at,
 		       u.username, u.first_name, u.last_name
 		FROM gifts g
 		JOIN users u ON u.id = g.user_id
@@ -366,14 +400,17 @@ func (r *giftRepository) ListByEventPaged(ctx context.Context, eventID uint, rev
 		gift := &entity.Gift{User: &entity.User{}}
 		var genderFilter, bikeTypeFilter, scannedReviewStatus sql.NullString
 		var place sql.NullInt32
+		var manualDistribution sql.NullBool
+		var manualRecipientParticipantID sql.NullInt64
 		if err := rows.Scan(
 			&gift.ID, &gift.UserID, &gift.EventID, &gift.Description,
-			&genderFilter, &bikeTypeFilter, &scannedReviewStatus, &place, &gift.CreatedAt,
+			&genderFilter, &bikeTypeFilter, &scannedReviewStatus, &place,
+			&manualDistribution, &manualRecipientParticipantID, &gift.CreatedAt,
 			&gift.User.Username, &gift.User.FirstName, &gift.User.LastName,
 		); err != nil {
 			return nil, 0, err
 		}
-		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, scannedReviewStatus, place); err != nil {
+		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, scannedReviewStatus, place, manualDistribution, manualRecipientParticipantID); err != nil {
 			return nil, 0, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
 		}
 		gift.User.ID = gift.UserID
@@ -384,6 +421,9 @@ func (r *giftRepository) ListByEventPaged(ctx context.Context, eventID uint, rev
 		return nil, 0, err
 	}
 	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
+		return nil, 0, err
+	}
+	if err := r.loadManualRecipients(ctx, gifts); err != nil {
 		return nil, 0, err
 	}
 	return gifts, total, nil
@@ -422,7 +462,8 @@ func (r *giftRepository) CountsByReviewStatus(ctx context.Context, eventID uint)
 
 func (r *giftRepository) FindByUser(ctx context.Context, userID int64) ([]*entity.Gift, error) {
 	query := `
-		SELECT id, user_id, event_id, description, gender_filter, bike_type_filter, review_status, place, created_at
+		SELECT id, user_id, event_id, description, gender_filter, bike_type_filter, review_status, place,
+		       manual_distribution, manual_recipient_participant_id, created_at
 		FROM gifts
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -439,14 +480,17 @@ func (r *giftRepository) FindByUser(ctx context.Context, userID int64) ([]*entit
 		gift := &entity.Gift{}
 		var genderFilter, bikeTypeFilter, reviewStatus sql.NullString
 		var place sql.NullInt32
+		var manualDistribution sql.NullBool
+		var manualRecipientParticipantID sql.NullInt64
 		err := rows.Scan(
 			&gift.ID, &gift.UserID, &gift.EventID, &gift.Description,
-			&genderFilter, &bikeTypeFilter, &reviewStatus, &place, &gift.CreatedAt,
+			&genderFilter, &bikeTypeFilter, &reviewStatus, &place,
+			&manualDistribution, &manualRecipientParticipantID, &gift.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
-		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, reviewStatus, place); err != nil {
+		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, reviewStatus, place, manualDistribution, manualRecipientParticipantID); err != nil {
 			return nil, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
 		}
 		gifts = append(gifts, gift)
@@ -458,7 +502,191 @@ func (r *giftRepository) FindByUser(ctx context.Context, userID int64) ([]*entit
 	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
 		return nil, err
 	}
+	if err := r.loadManualRecipients(ctx, gifts); err != nil {
+		return nil, err
+	}
 	return gifts, nil
+}
+
+func (r *giftRepository) FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) ([]*entity.Gift, error) {
+	const query = `
+		SELECT id, user_id, event_id, description, gender_filter, bike_type_filter, review_status, place,
+		       manual_distribution, manual_recipient_participant_id, created_at
+		FROM gifts
+		WHERE user_id = $1 AND event_id = $2
+		ORDER BY created_at DESC
+	`
+
+	log.Printf("DEBUG gift owner lookup started: user_id=%d event_id=%d", userID, eventID)
+	rows, err := r.db.QueryContext(ctx, query, userID, eventID)
+	gifts, err := scanGifts(rows, err)
+	if err != nil {
+		log.Printf("ERROR gift owner lookup failed: user_id=%d event_id=%d stage=scan_gifts error=%v", userID, eventID, err)
+		return nil, err
+	}
+	if err := r.loadGiftPlaceRules(ctx, gifts); err != nil {
+		log.Printf("ERROR gift owner lookup failed: user_id=%d event_id=%d stage=load_place_rules error=%v", userID, eventID, err)
+		return nil, err
+	}
+	if err := r.loadManualRecipients(ctx, gifts); err != nil {
+		log.Printf("ERROR gift owner lookup failed: user_id=%d event_id=%d stage=load_manual_recipients error=%v", userID, eventID, err)
+		return nil, err
+	}
+
+	log.Printf("DEBUG gift owner lookup completed: user_id=%d event_id=%d gift_count=%d", userID, eventID, len(gifts))
+	return gifts, nil
+}
+
+func scanGifts(rows *sql.Rows, queryErr error) ([]*entity.Gift, error) {
+	if queryErr != nil {
+		return nil, queryErr
+	}
+	defer rows.Close()
+
+	gifts := make([]*entity.Gift, 0)
+	for rows.Next() {
+		gift := &entity.Gift{}
+		var genderFilter, bikeTypeFilter, reviewStatus sql.NullString
+		var place sql.NullInt32
+		var manualDistribution sql.NullBool
+		var manualRecipientParticipantID sql.NullInt64
+		if err := rows.Scan(
+			&gift.ID,
+			&gift.UserID,
+			&gift.EventID,
+			&gift.Description,
+			&genderFilter,
+			&bikeTypeFilter,
+			&reviewStatus,
+			&place,
+			&manualDistribution,
+			&manualRecipientParticipantID,
+			&gift.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if err := applyGiftNullableFields(gift, genderFilter, bikeTypeFilter, reviewStatus, place, manualDistribution, manualRecipientParticipantID); err != nil {
+			return nil, fmt.Errorf("invalid stored gift fields for gift %d: %w", gift.ID, err)
+		}
+		gifts = append(gifts, gift)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return gifts, nil
+}
+
+func (r *giftRepository) SetManualRecipient(ctx context.Context, giftID uint, recipientParticipantID *uint) error {
+	const query = `
+		WITH target_gift AS (
+			SELECT id, event_id, manual_distribution
+			FROM gifts
+			WHERE id = $1
+		),
+		target_participant AS (
+			SELECT id, event_id
+			FROM participants
+			WHERE id = $2
+		),
+		updated AS (
+			UPDATE gifts AS g
+			SET manual_recipient_participant_id = $2
+			WHERE g.id = $1
+			  AND g.manual_distribution
+			  AND (
+				$2 IS NULL
+				OR EXISTS (
+					SELECT 1
+					FROM participants AS p
+					WHERE p.id = $2 AND p.event_id = g.event_id
+				)
+			  )
+			RETURNING g.id
+		)
+		SELECT CASE
+			WHEN EXISTS (SELECT 1 FROM updated) THEN 'updated'
+			WHEN NOT EXISTS (SELECT 1 FROM target_gift) THEN 'gift_not_found'
+			WHEN NOT (SELECT manual_distribution FROM target_gift) THEN 'manual_distribution_disabled'
+			WHEN $2 IS NOT NULL AND NOT EXISTS (SELECT 1 FROM target_participant) THEN 'recipient_not_found'
+			WHEN $2 IS NOT NULL
+				AND (SELECT event_id FROM target_participant) <> (SELECT event_id FROM target_gift)
+				THEN 'recipient_event_mismatch'
+			ELSE 'update_rejected'
+		END
+	`
+
+	recipientIDLogValue := manualRecipientIDLogValue(recipientParticipantID)
+	log.Printf("DEBUG manual gift recipient update started: gift_id=%d recipient_participant_id=%s", giftID, recipientIDLogValue)
+	var outcome string
+	if err := r.db.QueryRowContext(ctx, query, giftID, recipientParticipantID).Scan(&outcome); err != nil {
+		log.Printf("ERROR manual gift recipient update failed: gift_id=%d recipient_participant_id=%s stage=execute error=%v", giftID, recipientIDLogValue, err)
+		return fmt.Errorf("update manual gift recipient for gift %d: %w", giftID, err)
+	}
+
+	switch outcome {
+	case "updated":
+		log.Printf("DEBUG manual gift recipient update completed: gift_id=%d recipient_participant_id=%s", giftID, recipientIDLogValue)
+		return nil
+	case "gift_not_found":
+		log.Printf("WARN manual gift recipient update rejected: gift_id=%d recipient_participant_id=%s reason=gift_not_found", giftID, recipientIDLogValue)
+		return fmt.Errorf("%w: %d", repository.ErrGiftNotFound, giftID)
+	case "manual_distribution_disabled":
+		log.Printf("WARN manual gift recipient update rejected: gift_id=%d recipient_participant_id=%s reason=manual_distribution_disabled", giftID, recipientIDLogValue)
+		return fmt.Errorf("%w: gift_id=%d", repository.ErrManualDistributionDisabled, giftID)
+	case "recipient_not_found":
+		log.Printf("WARN manual gift recipient update rejected: gift_id=%d recipient_participant_id=%s reason=recipient_not_found", giftID, recipientIDLogValue)
+		return fmt.Errorf("%w: participant_id=%d", repository.ErrManualRecipientNotFound, *recipientParticipantID)
+	case "recipient_event_mismatch":
+		log.Printf("WARN manual gift recipient update rejected: gift_id=%d recipient_participant_id=%s reason=recipient_event_mismatch", giftID, recipientIDLogValue)
+		return fmt.Errorf("%w: gift_id=%d participant_id=%d", repository.ErrManualRecipientEventMismatch, giftID, *recipientParticipantID)
+	default:
+		log.Printf("ERROR manual gift recipient update failed: gift_id=%d recipient_participant_id=%s stage=classify outcome=%s", giftID, recipientIDLogValue, outcome)
+		return fmt.Errorf("manual gift recipient update rejected for gift %d", giftID)
+	}
+}
+
+func (r *giftRepository) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {
+	const query = `
+		SELECT manual_recipient_participant_id, COUNT(*)
+		FROM gifts
+		WHERE event_id = $1
+		  AND manual_distribution = TRUE
+		  AND manual_recipient_participant_id IS NOT NULL
+		GROUP BY manual_recipient_participant_id
+	`
+
+	log.Printf("DEBUG manual gift recipient counts query started: event_id=%d", eventID)
+	rows, err := r.db.QueryContext(ctx, query, eventID)
+	if err != nil {
+		log.Printf("ERROR manual gift recipient counts query failed: event_id=%d stage=query error=%v", eventID, err)
+		return nil, fmt.Errorf("manual gift recipient counts for event %d: %w", eventID, err)
+	}
+	defer rows.Close()
+
+	counts := make(map[uint]int)
+	for rows.Next() {
+		var participantID uint
+		var count int
+		if err := rows.Scan(&participantID, &count); err != nil {
+			log.Printf("ERROR manual gift recipient counts query failed: event_id=%d stage=scan error=%v", eventID, err)
+			return nil, fmt.Errorf("scan manual gift recipient count: %w", err)
+		}
+		counts[participantID] = count
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("ERROR manual gift recipient counts query failed: event_id=%d stage=iterate error=%v", eventID, err)
+		return nil, fmt.Errorf("iterate manual gift recipient counts: %w", err)
+	}
+	log.Printf("DEBUG manual gift recipient counts query completed: event_id=%d participant_count=%d", eventID, len(counts))
+	return counts, nil
+}
+
+func manualRecipientIDLogValue(recipientParticipantID *uint) string {
+	if recipientParticipantID == nil {
+		return "none"
+	}
+	return fmt.Sprintf("%d", *recipientParticipantID)
 }
 
 func (r *giftRepository) Delete(ctx context.Context, id uint) error {
@@ -508,6 +736,8 @@ func applyGiftNullableFields(
 	bikeTypeFilter sql.NullString,
 	reviewStatus sql.NullString,
 	place sql.NullInt32,
+	manualDistribution sql.NullBool,
+	manualRecipientParticipantID sql.NullInt64,
 ) error {
 	gift.GenderFilter = genderFilter.String
 	if !genderFilter.Valid || gift.GenderFilter == "" {
@@ -536,6 +766,19 @@ func applyGiftNullableFields(
 		gift.Place = nil
 	}
 
+	// До миграции значение могло быть NULL только в устаревших тестовых данных.
+	// Такое состояние соответствует автоматическому распределению по умолчанию.
+	gift.ManualDistribution = manualDistribution.Valid && manualDistribution.Bool
+	if manualRecipientParticipantID.Valid {
+		if manualRecipientParticipantID.Int64 < 0 {
+			return fmt.Errorf("manual recipient participant ID must be non-negative")
+		}
+		recipientID := uint(manualRecipientParticipantID.Int64)
+		gift.ManualRecipientParticipantID = &recipientID
+	} else {
+		gift.ManualRecipientParticipantID = nil
+	}
+
 	return nil
 }
 
@@ -553,6 +796,78 @@ func normalizeGiftPlaceRuleForUpdate(gift *entity.Gift) error {
 
 func (r *giftRepository) loadGiftPlaceRules(ctx context.Context, gifts []*entity.Gift) error {
 	return loadGiftPlaceRules(ctx, r.db, gifts)
+}
+
+func (r *giftRepository) loadManualRecipients(ctx context.Context, gifts []*entity.Gift) error {
+	if len(gifts) == 0 {
+		return nil
+	}
+
+	giftsByRecipientID := make(map[uint][]*entity.Gift)
+	recipientIDs := make([]uint, 0)
+	for _, gift := range gifts {
+		if gift.ManualRecipientParticipantID == nil {
+			continue
+		}
+		recipientID := *gift.ManualRecipientParticipantID
+		if _, exists := giftsByRecipientID[recipientID]; !exists {
+			recipientIDs = append(recipientIDs, recipientID)
+		}
+		giftsByRecipientID[recipientID] = append(giftsByRecipientID[recipientID], gift)
+	}
+	if len(recipientIDs) == 0 {
+		return nil
+	}
+
+	log.Printf("DEBUG manual gift recipients loading: recipient_count=%d", len(recipientIDs))
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT p.id, p.user_id, p.event_id, p.status,
+		       u.username, u.first_name, u.last_name
+		FROM participants p
+		JOIN users u ON u.id = p.user_id
+		WHERE p.id = ANY($1)
+	`, pq.Array(recipientIDs))
+	if err != nil {
+		log.Printf("ERROR manual gift recipients loading failed: recipient_count=%d stage=query error=%v", len(recipientIDs), err)
+		return fmt.Errorf("load manual gift recipients: %w", err)
+	}
+	defer rows.Close()
+
+	loadedRecipients := 0
+	for rows.Next() {
+		recipient := &entity.Participant{User: &entity.User{}}
+		var status string
+		if err := rows.Scan(
+			&recipient.ID,
+			&recipient.UserID,
+			&recipient.EventID,
+			&status,
+			&recipient.User.Username,
+			&recipient.User.FirstName,
+			&recipient.User.LastName,
+		); err != nil {
+			log.Printf("ERROR manual gift recipients loading failed: recipient_count=%d stage=scan error=%v", len(recipientIDs), err)
+			return fmt.Errorf("scan manual gift recipient: %w", err)
+		}
+
+		participantStatus, err := valueobject.NewParticipantStatus(status)
+		if err != nil {
+			log.Printf("ERROR manual gift recipients loading failed: recipient_participant_id=%d stage=validate_status error=%v", recipient.ID, err)
+			return fmt.Errorf("invalid manual gift recipient status for participant %d: %w", recipient.ID, err)
+		}
+		recipient.Status = participantStatus
+		recipient.User.ID = recipient.UserID
+		for _, gift := range giftsByRecipientID[recipient.ID] {
+			gift.ManualRecipient = recipient
+		}
+		loadedRecipients++
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("ERROR manual gift recipients loading failed: recipient_count=%d stage=iterate error=%v", len(recipientIDs), err)
+		return fmt.Errorf("iterate manual gift recipients: %w", err)
+	}
+	log.Printf("DEBUG manual gift recipients loaded: requested_count=%d loaded_count=%d", len(recipientIDs), loadedRecipients)
+	return nil
 }
 
 func loadGiftPlaceRules(ctx context.Context, db queryContextExecutor, gifts []*entity.Gift) error {

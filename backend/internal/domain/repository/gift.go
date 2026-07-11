@@ -2,7 +2,19 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"gravel_bot/internal/domain/entity"
+)
+
+var (
+	// ErrGiftNotFound означает, что подарок не найден.
+	ErrGiftNotFound = errors.New("gift not found")
+	// ErrManualDistributionDisabled означает попытку назначить получателя автоматическому подарку.
+	ErrManualDistributionDisabled = errors.New("manual distribution is disabled")
+	// ErrManualRecipientNotFound означает, что участник-получатель не найден.
+	ErrManualRecipientNotFound = errors.New("manual recipient participant not found")
+	// ErrManualRecipientEventMismatch означает, что получатель принадлежит другому событию.
+	ErrManualRecipientEventMismatch = errors.New("manual recipient participant belongs to another event")
 )
 
 // GiftRepository определяет интерфейс для работы с подарками
@@ -47,4 +59,27 @@ type GiftRepository interface {
 
 	// GetAttachments возвращает все файлы подарка
 	GetAttachments(ctx context.Context, giftID uint) ([]*entity.GiftAttachment, error)
+}
+
+// ManualGiftRepository расширяет общий контракт операциями ручного
+// распределения. Существующие use case'ы, которым они не нужны, продолжают
+// зависеть только от GiftRepository.
+type ManualGiftRepository interface {
+	GiftRepository
+
+	// FindByUserAndEvent находит подарки пользователя в рамках одного события.
+	FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) ([]*entity.Gift, error)
+
+	// SetManualRecipient заменяет или очищает получателя ручного подарка.
+	// Операция не изменяет остальные поля подарка и защищает инвариант одного события.
+	SetManualRecipient(ctx context.Context, giftID uint, recipientParticipantID *uint) error
+
+	// ManualRecipientCountsByEvent returns persisted manual assignments by participant.
+	ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error)
+}
+
+// ManualGiftRecipientCountRepository returns persisted manual assignments per
+// participant for an event. It is separate from automatic prize distribution.
+type ManualGiftRecipientCountRepository interface {
+	ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error)
 }

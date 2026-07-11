@@ -244,7 +244,7 @@ func prizeParticipantDisplayName(participant *entity.Participant) string {
 func filterApprovedPrizeGifts(gifts []*entity.Gift) []*entity.Gift {
 	approved := make([]*entity.Gift, 0, len(gifts))
 	for _, gift := range gifts {
-		if gift == nil || gift.ReviewStatus != entity.GiftReviewStatusApproved {
+		if gift == nil || gift.ReviewStatus != entity.GiftReviewStatusApproved || gift.ManualDistribution {
 			continue
 		}
 		approved = append(approved, gift)
@@ -253,6 +253,9 @@ func filterApprovedPrizeGifts(gifts []*entity.Gift) []*entity.Gift {
 }
 
 func classifyGiftForSlotEngine(gift *entity.Gift) (giftMatchPriority, bool) {
+	if gift == nil || gift.ManualDistribution || gift.ReviewStatus != entity.GiftReviewStatusApproved {
+		return 0, false
+	}
 	hasCriteria := len(gift.Criteria) > 0
 	hasPlace := giftPlaceRuleForDistribution(gift).HasPlaceConstraint()
 

@@ -19,18 +19,20 @@ import (
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/domain/valueobject"
+	"gravel_bot/internal/infrastructure/http/middleware"
 	"gravel_bot/internal/infrastructure/http/response"
 )
 
 // GiftsHandler обрабатывает запросы для подарков
 type GiftsHandler struct {
-	giftRepo           repository.GiftRepository
-	getGiftsHandler    *query.GetGiftsHandler
-	getGiftByIDHandler *query.GetGiftByIDHandler
-	addGiftHandler     *command.AddGiftHandler
-	updateGiftHandler  *command.UpdateGiftHandler
-	publicGiftNotifier GiftPublicationNotifier
-	giftsCache         miniappGiftsCacheInvalidator
+	giftRepo              repository.GiftRepository
+	getGiftsHandler       *query.GetGiftsHandler
+	getGiftByIDHandler    *query.GetGiftByIDHandler
+	getManualGiftsHandler *query.GetManualGiftsHandler
+	addGiftHandler        *command.AddGiftHandler
+	updateGiftHandler     *command.UpdateGiftHandler
+	publicGiftNotifier    GiftPublicationNotifier
+	giftsCache            miniappGiftsCacheInvalidator
 }
 
 // GiftPublicationNotifier отправляет опубликованный приз в Telegram-чат.
@@ -50,6 +52,7 @@ func NewGiftsHandler(
 	giftRepo repository.GiftRepository,
 	getGiftsHandler *query.GetGiftsHandler,
 	getGiftByIDHandler *query.GetGiftByIDHandler,
+	getManualGiftsHandler *query.GetManualGiftsHandler,
 	addGiftHandler *command.AddGiftHandler,
 	updateGiftHandler *command.UpdateGiftHandler,
 	giftsCache miniappGiftsCacheInvalidator,
@@ -61,14 +64,43 @@ func NewGiftsHandler(
 	}
 
 	return &GiftsHandler{
-		giftRepo:           giftRepo,
-		getGiftsHandler:    getGiftsHandler,
-		getGiftByIDHandler: getGiftByIDHandler,
-		addGiftHandler:     addGiftHandler,
-		updateGiftHandler:  updateGiftHandler,
-		publicGiftNotifier: notifier,
-		giftsCache:         giftsCache,
+		giftRepo:              giftRepo,
+		getGiftsHandler:       getGiftsHandler,
+		getGiftByIDHandler:    getGiftByIDHandler,
+		getManualGiftsHandler: getManualGiftsHandler,
+		addGiftHandler:        addGiftHandler,
+		updateGiftHandler:     updateGiftHandler,
+		publicGiftNotifier:    notifier,
+		giftsCache:            giftsCache,
 	}
+}
+
+// GetManualByEvent returns protected recipient summaries for manual gifts.
+func (h *GiftsHandler) GetManualByEvent(w http.ResponseWriter, r *http.Request) {
+	eventID, err := parseEventIDParam(r)
+	if err != nil {
+		response.BadRequest(w, "Invalid event ID")
+		return
+	}
+	if h.getManualGiftsHandler == nil {
+		log.Printf("ERROR manual gifts admin query unavailable: event_id=%d", eventID)
+		response.InternalServerError(w, "Manual gift management is unavailable")
+		return
+	}
+
+	manualGifts, err := h.getManualGiftsHandler.Handle(r.Context(), query.GetManualGiftsQuery{EventID: eventID})
+	if err != nil {
+		log.Printf("ERROR manual gifts admin query failed: event_id=%d error=%v", eventID, err)
+		response.InternalServerError(w, "Failed to get manual gifts")
+		return
+	}
+
+	gifts := make([]*dto.ManualGiftDTO, 0, len(manualGifts))
+	for _, gift := range manualGifts {
+		gifts = append(gifts, manualGiftDTOFromReadModel(gift))
+	}
+	log.Printf("DEBUG manual gifts admin query served: event_id=%d returned_count=%d", eventID, len(gifts))
+	response.Success(w, dto.ManualGiftListResponse{Gifts: gifts})
 }
 
 // GetAll обрабатывает GET /api/events/:eventId/gifts - список подарков события
@@ -267,16 +299,19 @@ func giftCreateErrorClass(err error) string {
 
 // UpdateGiftRequest представляет запрос на обновление подарка
 type UpdateGiftRequest struct {
-	Description    *string
-	GenderFilter   *string
-	BikeTypeFilter *string
-	ReviewStatus   *string
-	Place          *int
-	PlaceSet       bool
-	PlaceRule      valueobject.GiftPlaceRule
-	PlaceRuleSet   bool
-	CriteriaIDs    []uint
-	CriteriaIDsSet bool
+	Description                     *string
+	GenderFilter                    *string
+	BikeTypeFilter                  *string
+	ReviewStatus                    *string
+	Place                           *int
+	PlaceSet                        bool
+	PlaceRule                       valueobject.GiftPlaceRule
+	PlaceRuleSet                    bool
+	CriteriaIDs                     []uint
+	CriteriaIDsSet                  bool
+	ManualDistribution              *bool
+	ManualRecipientParticipantID    *uint
+	ManualRecipientParticipantIDSet bool
 }
 
 // Update обрабатывает PUT /api/gifts/:id - обновление подарка
@@ -300,31 +335,40 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updateResult, err := h.updateGiftHandler.Handle(r.Context(), command.UpdateGiftCommand{
-		GiftID:         uint(id),
-		Description:    req.Description,
-		GenderFilter:   req.GenderFilter,
-		BikeTypeFilter: req.BikeTypeFilter,
-		ReviewStatus:   req.ReviewStatus,
-		Place:          req.Place,
-		PlaceSet:       req.PlaceSet,
-		PlaceRule:      req.PlaceRule,
-		PlaceRuleSet:   req.PlaceRuleSet,
-		CriteriaIDs:    req.CriteriaIDs,
-		CriteriaIDsSet: req.CriteriaIDsSet,
+		GiftID:                          uint(id),
+		Description:                     req.Description,
+		GenderFilter:                    req.GenderFilter,
+		BikeTypeFilter:                  req.BikeTypeFilter,
+		ReviewStatus:                    req.ReviewStatus,
+		Place:                           req.Place,
+		PlaceSet:                        req.PlaceSet,
+		PlaceRule:                       req.PlaceRule,
+		PlaceRuleSet:                    req.PlaceRuleSet,
+		CriteriaIDs:                     req.CriteriaIDs,
+		CriteriaIDsSet:                  req.CriteriaIDsSet,
+		ManualDistribution:              req.ManualDistribution,
+		ManualRecipientParticipantID:    req.ManualRecipientParticipantID,
+		ManualRecipientParticipantIDSet: req.ManualRecipientParticipantIDSet,
 	})
 	if err != nil {
 		log.Printf("Error updating gift: gift_id=%d error=%v", id, err)
 		switch {
 		case errors.Is(err, command.ErrGiftNotFound):
 			response.NotFound(w, "Gift not found")
+		case errors.Is(err, command.ErrManualGiftRecipientNotFound):
+			response.NotFound(w, "Manual gift recipient participant not found")
 		case errors.Is(err, command.ErrEmptyDescription),
 			errors.Is(err, command.ErrInvalidGiftGenderFilter),
 			errors.Is(err, command.ErrInvalidGiftBikeTypeFilter),
 			errors.Is(err, command.ErrInvalidGiftReviewStatus),
 			errors.Is(err, command.ErrInvalidGiftPlace),
 			errors.Is(err, command.ErrInvalidGiftPlaceRule),
-			errors.Is(err, command.ErrGiftCriteriaPayloadRequired):
+			errors.Is(err, command.ErrGiftCriteriaPayloadRequired),
+			errors.Is(err, command.ErrManualGiftRecipientConflict):
 			response.BadRequest(w, err.Error())
+		case errors.Is(err, command.ErrManualGiftNotManual),
+			errors.Is(err, command.ErrManualGiftRecipientEvent):
+			response.Conflict(w, err.Error())
 		default:
 			response.InternalServerError(w, "Failed to update gift")
 		}
@@ -344,7 +388,7 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// Сбрасываем кеш каталога мини-приложения, если подарок одобрен на любом конце
 	// перехода: одобрение (pending→approved), правка уже одобренного (approved→approved)
 	// и снятие одобрения (approved→pending). Иначе кеш отдавал бы устаревший каталог.
-	if updatedGift != nil && updateResult != nil &&
+	if updatedGift != nil && updateResult != nil && !updateChangesOnlyManualRecipient(req) &&
 		(updatedGift.ReviewStatus == entity.GiftReviewStatusApproved ||
 			updateResult.PreviousReviewStatus == entity.GiftReviewStatusApproved) {
 		h.invalidateMiniappGiftsCache(updatedGift.EventID)
@@ -352,6 +396,13 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	if updateResult != nil && updateResult.BecameApproved {
 		h.notifyPublicGiftApproved(r.Context(), updatedGift)
+	}
+	if req.ManualDistribution != nil || req.ManualRecipientParticipantIDSet {
+		adminID := uint(0)
+		if claims, ok := middleware.GetUserFromContext(r.Context()); ok {
+			adminID = claims.UserID
+		}
+		log.Printf("INFO manual gift admin update completed: admin_id=%d gift_id=%d recipient_participant_id=%s", adminID, id, manualGiftRecipientIDLogValue(req.ManualRecipientParticipantID))
 	}
 
 	response.Success(w, dto.FromGift(updatedGift))
@@ -446,7 +497,82 @@ func decodeUpdateGiftRequest(r *http.Request) (UpdateGiftRequest, error) {
 		req.CriteriaIDsSet = true
 	}
 
+	if value, ok := raw["manual_distribution"]; ok {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return UpdateGiftRequest{}, errors.New("manual_distribution must be boolean")
+		}
+		var manualDistribution bool
+		if err := json.Unmarshal(value, &manualDistribution); err != nil {
+			return UpdateGiftRequest{}, err
+		}
+		req.ManualDistribution = &manualDistribution
+	}
+
+	if value, ok := raw["manual_recipient_participant_id"]; ok {
+		req.ManualRecipientParticipantIDSet = true
+		if !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			var participantID uint
+			if err := json.Unmarshal(value, &participantID); err != nil || participantID == 0 {
+				if err != nil {
+					return UpdateGiftRequest{}, err
+				}
+				return UpdateGiftRequest{}, errors.New("manual_recipient_participant_id must be positive")
+			}
+			req.ManualRecipientParticipantID = &participantID
+		}
+	}
+
 	return req, nil
+}
+
+func parseEventIDParam(r *http.Request) (uint, error) {
+	eventID, err := strconv.ParseUint(chi.URLParam(r, "eventId"), 10, 32)
+	if err != nil || eventID == 0 {
+		return 0, errors.New("invalid event ID")
+	}
+	return uint(eventID), nil
+}
+
+func updateChangesOnlyManualRecipient(req UpdateGiftRequest) bool {
+	return req.ManualDistribution == nil &&
+		req.ManualRecipientParticipantIDSet &&
+		req.Description == nil &&
+		req.GenderFilter == nil &&
+		req.BikeTypeFilter == nil &&
+		req.ReviewStatus == nil &&
+		!req.PlaceSet &&
+		!req.PlaceRuleSet &&
+		!req.CriteriaIDsSet
+}
+
+func manualGiftDTOFromReadModel(model *query.ManualGiftReadModel) *dto.ManualGiftDTO {
+	if model == nil {
+		return nil
+	}
+	dtoModel := &dto.ManualGiftDTO{
+		ID:                 model.ID,
+		EventID:            model.EventID,
+		Description:        model.Description,
+		ReviewStatus:       model.ReviewStatus,
+		ManualDistribution: model.ManualDistribution,
+		CreatedAt:          model.CreatedAt,
+	}
+	if model.Recipient != nil {
+		dtoModel.Recipient = &dto.ManualGiftRecipientDTO{
+			ID:          model.Recipient.ID,
+			DisplayName: model.Recipient.DisplayName,
+			Username:    model.Recipient.Username,
+			Status:      model.Recipient.Status,
+		}
+	}
+	return dtoModel
+}
+
+func manualGiftRecipientIDLogValue(participantID *uint) string {
+	if participantID == nil {
+		return "none"
+	}
+	return strconv.FormatUint(uint64(*participantID), 10)
 }
 
 type giftPlaceRulePayload struct {
