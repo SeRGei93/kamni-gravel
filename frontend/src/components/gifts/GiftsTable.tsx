@@ -18,6 +18,7 @@ interface GiftsTableProps {
   assignedGiftIds?: Set<number>;
   isLoading?: boolean;
   onApprove?: (gift: Gift) => Promise<void>;
+  onEnableManualAssignment?: (gift: Gift) => Promise<void>;
   editQueryString?: string;
 }
 
@@ -26,9 +27,12 @@ export default function GiftsTable({
   assignedGiftIds,
   isLoading,
   onApprove,
+  onEnableManualAssignment,
   editQueryString,
 }: GiftsTableProps) {
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [enablingManualAssignmentId, setEnablingManualAssignmentId] =
+    useState<number | null>(null);
 
   const handleApprove = async (gift: Gift) => {
     if (!onApprove) {
@@ -40,6 +44,19 @@ export default function GiftsTable({
       await onApprove(gift);
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  const handleEnableManualAssignment = async (gift: Gift) => {
+    if (!onEnableManualAssignment) {
+      return;
+    }
+
+    setEnablingManualAssignmentId(gift.id);
+    try {
+      await onEnableManualAssignment(gift);
+    } finally {
+      setEnablingManualAssignmentId(null);
     }
   };
 
@@ -74,7 +91,7 @@ export default function GiftsTable({
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
       <div className="max-w-full overflow-x-auto">
-        <div className="min-w-[1220px]">
+        <div className="min-w-[1320px]">
           <Table>
             <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
               <TableRow>
@@ -275,6 +292,19 @@ export default function GiftsTable({
                             title="Проверить"
                           />
                         )}
+                        {distributionStatus.status === 'automatic_unassigned' &&
+                          onEnableManualAssignment && (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => handleEnableManualAssignment(gift)}
+                              disabled={enablingManualAssignmentId === gift.id}
+                              title="Включить ручное назначение"
+                              className="text-brand-600 dark:text-brand-400"
+                            >
+                              Вручную
+                            </Button>
+                          )}
                         <Link
                           href={`/gifts/${gift.id}${
                             editQueryString ? `?${editQueryString}` : ''

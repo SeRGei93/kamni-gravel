@@ -20,7 +20,11 @@ import GiftOwnerFilter from '@/components/gifts/GiftOwnerFilter';
 import { BIKE_TYPE_OPTIONS, GENDER_OPTIONS, GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
 import { CheckLineIcon, CloseLineIcon, PlusIcon } from '@/icons';
 import { getManualGiftErrorMessage } from '@/utils/manualGiftErrors';
-import { attachManualGiftAssignments, isGiftDistributed } from '@/utils/manualGiftAssignment';
+import {
+  attachManualGiftAssignments,
+  buildManualGiftUpdate,
+  isGiftDistributed,
+} from '@/utils/manualGiftAssignment';
 
 type GiftReviewStatusFilter = 'all' | GiftReviewStatus;
 type GiftDistributionFilter = 'all' | 'assigned' | 'unassigned';
@@ -367,6 +371,23 @@ export default function GiftsPage() {
     }
   };
 
+  const handleEnableManualAssignment = async (gift: Gift) => {
+    try {
+      setError(null);
+      await giftsApi.update(gift.id, buildManualGiftUpdate(true, null));
+      await loadGifts();
+    } catch (err) {
+      setError('Не удалось включить ручное назначение');
+      console.error('Failed to enable manual gift assignment:', {
+        gift_id: gift.id,
+        event_id: activeEventId,
+        operation: 'enable_manual_gift_assignment',
+        error: err,
+      });
+      throw err;
+    }
+  };
+
   const resetManualGiftForm = () => {
     setManualGiftUserId('');
     setManualGiftDescription('');
@@ -604,6 +625,7 @@ export default function GiftsPage() {
         assignedGiftIds={assignedGiftIds}
         isLoading={isLoading}
         onApprove={handleApprove}
+        onEnableManualAssignment={handleEnableManualAssignment}
         editQueryString={listQueryString}
       />
 
