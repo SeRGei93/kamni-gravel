@@ -73,4 +73,13 @@ type ManualGiftRepository interface {
 	// SetManualRecipient заменяет или очищает получателя ручного подарка.
 	// Операция не изменяет остальные поля подарка и защищает инвариант одного события.
 	SetManualRecipient(ctx context.Context, giftID uint, recipientParticipantID *uint) error
+
+	// ManualRecipientCountsByEvent returns persisted manual assignments by participant.
+	ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error)
+}
+
+// ManualGiftRecipientCountRepository returns persisted manual assignments per
+// participant for an event. It is separate from automatic prize distribution.
+type ManualGiftRecipientCountRepository interface {
+	ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error)
 }

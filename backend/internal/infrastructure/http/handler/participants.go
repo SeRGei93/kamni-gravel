@@ -142,12 +142,27 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		prevElapsedByUser = nil
 	}
 
+	automaticPrizeCounts, err := h.automaticPrizeCountsByParticipant(r.Context(), uint(eventID))
+	if err != nil {
+		log.Printf("ERROR participant prize counts failed: event_id=%d stage=automatic_distribution error=%v", eventID, err)
+		response.InternalServerError(w, "Failed to calculate participant prize counts")
+		return
+	}
+	manualPrizeCounts, err := h.manualPrizeCountsByParticipant(r.Context(), uint(eventID))
+	if err != nil {
+		log.Printf("ERROR participant prize counts failed: event_id=%d stage=manual_assignments error=%v", eventID, err)
+		response.InternalServerError(w, "Failed to calculate participant prize counts")
+		return
+	}
+	log.Printf("DEBUG participant prize counts calculated: event_id=%d automatic_participants=%d manual_participants=%d", eventID, len(automaticPrizeCounts), len(manualPrizeCounts))
+
 	// Конвертируем в DTO с местами и флагом has_gift.
 	allDTOs := make([]*dto.ParticipantDTO, 0, len(participantsWithPlace))
 	for _, pwp := range participantsWithPlace {
 		participantDTO := dto.FromParticipant(pwp.Participant)
 		participantDTO.Place = pwp.Place
 		_, participantDTO.HasGift = giftUserIDs[pwp.Participant.UserID]
+		participantDTO.PrizesCount = automaticPrizeCounts[pwp.Participant.ID] + manualPrizeCounts[pwp.Participant.ID]
 
 		if rwp, ok := resultMap[pwp.Participant.ID]; ok {
 			participantDTO.PlaceAbsolute = &rwp.PlaceAbsolute
@@ -211,6 +226,51 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		eventID, paginate, total, page.Page, page.PageSize, len(pageItems), hasGiftFilter, searchQuery, sortKey, sortOrder)
 
 	response.Success(w, resp)
+}
+
+func (h *ParticipantsHandler) automaticPrizeCountsByParticipant(ctx context.Context, eventID uint) (map[uint]int, error) {
+	counts := make(map[uint]int)
+	if h.getPrizeDistributionHandler == nil {
+		// This is used only by narrowly constructed legacy handlers in tests.
+		return counts, nil
+	}
+
+	distribution, err := h.getPrizeDistributionHandler.Handle(ctx, query.GetPrizeDistributionQuery{EventID: eventID})
+	if err != nil {
+		return nil, err
+	}
+	for _, participant := range distribution {
+		if len(participant.MatchedGiftAssignments) > 0 {
+			counts[participant.ParticipantID] += len(participant.MatchedGiftAssignments)
+			continue
+		}
+		// Legacy distribution responses did not carry slot metadata. Use this
+		// fallback only when assignments are absent to avoid double counting.
+		counts[participant.ParticipantID] += len(participant.MatchedGifts)
+	}
+	return counts, nil
+}
+
+func (h *ParticipantsHandler) manualPrizeCountsByParticipant(ctx context.Context, eventID uint) (map[uint]int, error) {
+	if counter, ok := h.giftRepo.(repository.ManualGiftRecipientCountRepository); ok {
+		return counter.ManualRecipientCountsByEvent(ctx, eventID)
+	}
+
+	// Compatibility fallback for narrowly-scoped test doubles that predate the
+	// aggregation contract. Production PostgreSQL repositories implement the
+	// aggregation above, so database failures still surface as HTTP errors.
+	gifts, err := h.giftRepo.FindByEvent(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[uint]int)
+	for _, gift := range gifts {
+		if !gift.ManualDistribution || gift.ManualRecipientParticipantID == nil {
+			continue
+		}
+		counts[*gift.ManualRecipientParticipantID]++
+	}
+	return counts, nil
 }
 
 // participantMatchesSearch проверяет совпадение участника с поисковым запросом

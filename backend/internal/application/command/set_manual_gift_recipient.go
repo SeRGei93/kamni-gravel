@@ -22,7 +22,11 @@ type ManualGiftRecipientActor struct {
 
 // SetManualGiftRecipientCommand replaces or clears a recipient selected by the gift owner.
 type SetManualGiftRecipientCommand struct {
-	GiftID                 uint
+	GiftID uint
+	// EventID scopes an owner action to the event selected by the server.
+	// Zero preserves compatibility for internal callers that do not have an
+	// event scope; Mini App requests must always provide it.
+	EventID                uint
 	Actor                  ManualGiftRecipientActor
 	RecipientParticipantID *uint
 }
@@ -61,6 +65,10 @@ func (h *SetManualGiftRecipientHandler) Handle(ctx context.Context, cmd SetManua
 	}
 	if gift.UserID != cmd.Actor.TelegramUserID {
 		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=owner_mismatch", cmd.GiftID)
+		return ErrManualGiftOwnerForbidden
+	}
+	if cmd.EventID != 0 && gift.EventID != cmd.EventID {
+		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=event_mismatch", cmd.GiftID)
 		return ErrManualGiftOwnerForbidden
 	}
 	if !gift.ManualDistribution {

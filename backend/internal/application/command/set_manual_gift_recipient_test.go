@@ -87,6 +87,12 @@ func TestSetManualGiftRecipientHandlerRejectsUnauthorizedAndInvalidRecipients(t 
 			want:    ErrManualGiftOwnerForbidden,
 		},
 		{
+			name:    "gift from another event",
+			gift:    &entity.Gift{ID: 1, UserID: 100, EventID: 88, ManualDistribution: true},
+			actorID: 100,
+			want:    ErrManualGiftOwnerForbidden,
+		},
+		{
 			name:    "automatic gift",
 			gift:    &entity.Gift{ID: 1, UserID: 100, EventID: 77},
 			actorID: 100,
@@ -116,6 +122,7 @@ func TestSetManualGiftRecipientHandlerRejectsUnauthorizedAndInvalidRecipients(t 
 
 			err := handler.Handle(context.Background(), SetManualGiftRecipientCommand{
 				GiftID:                 1,
+				EventID:                77,
 				Actor:                  ManualGiftRecipientActor{TelegramUserID: testCase.actorID},
 				RecipientParticipantID: &recipientID,
 			})

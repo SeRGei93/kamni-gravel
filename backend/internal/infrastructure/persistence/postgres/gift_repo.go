@@ -646,6 +646,42 @@ func (r *giftRepository) SetManualRecipient(ctx context.Context, giftID uint, re
 	}
 }
 
+func (r *giftRepository) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {
+	const query = `
+		SELECT manual_recipient_participant_id, COUNT(*)
+		FROM gifts
+		WHERE event_id = $1
+		  AND manual_distribution = TRUE
+		  AND manual_recipient_participant_id IS NOT NULL
+		GROUP BY manual_recipient_participant_id
+	`
+
+	log.Printf("DEBUG manual gift recipient counts query started: event_id=%d", eventID)
+	rows, err := r.db.QueryContext(ctx, query, eventID)
+	if err != nil {
+		log.Printf("ERROR manual gift recipient counts query failed: event_id=%d stage=query error=%v", eventID, err)
+		return nil, fmt.Errorf("manual gift recipient counts for event %d: %w", eventID, err)
+	}
+	defer rows.Close()
+
+	counts := make(map[uint]int)
+	for rows.Next() {
+		var participantID uint
+		var count int
+		if err := rows.Scan(&participantID, &count); err != nil {
+			log.Printf("ERROR manual gift recipient counts query failed: event_id=%d stage=scan error=%v", eventID, err)
+			return nil, fmt.Errorf("scan manual gift recipient count: %w", err)
+		}
+		counts[participantID] = count
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("ERROR manual gift recipient counts query failed: event_id=%d stage=iterate error=%v", eventID, err)
+		return nil, fmt.Errorf("iterate manual gift recipient counts: %w", err)
+	}
+	log.Printf("DEBUG manual gift recipient counts query completed: event_id=%d participant_count=%d", eventID, len(counts))
+	return counts, nil
+}
+
 func manualRecipientIDLogValue(recipientParticipantID *uint) string {
 	if recipientParticipantID == nil {
 		return "none"

@@ -60,8 +60,18 @@ func (h *GetPrizeDistributionHandler) HandleDetailed(ctx context.Context, query 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get approved gifts: %w", err)
 	}
+	approvedGiftCount := len(gifts)
+	gifts, manualGiftCount := filterAutomaticApprovedPrizeGifts(gifts)
+	log.Printf(
+		"DEBUG automatic prize gifts resolved: event_id=%d approved_gifts=%d excluded_manual_gifts=%d automatic_gifts=%d",
+		query.EventID,
+		approvedGiftCount,
+		manualGiftCount,
+		len(gifts),
+	)
 
-	// Загружаем критерии для подарков
+	// Загружаем критерии только для автоматических подарков. Ручные подарки
+	// исключены до любых расчётов слотов и не влияют на диагностику автоматики.
 	for _, gift := range gifts {
 		criteria, err := h.criteriaRepo.FindByGift(ctx, gift.ID)
 		if err != nil {
@@ -144,7 +154,7 @@ func (h *GetPrizeDistributionHandler) HandleDetailed(ctx context.Context, query 
 		assignedSlots += len(result.MatchedGiftAssignments)
 	}
 	log.Printf(
-		"level=info msg=\"Prize distribution calculated\" event_id=%d participants=%d approved_gifts=%d assigned_slots=%d unassigned_slots=%d",
+		"level=info msg=\"Prize distribution calculated\" event_id=%d participants=%d automatic_gifts=%d assigned_slots=%d unassigned_slots=%d",
 		query.EventID,
 		len(output.Results),
 		len(gifts),
@@ -153,6 +163,22 @@ func (h *GetPrizeDistributionHandler) HandleDetailed(ctx context.Context, query 
 	)
 
 	return output, nil
+}
+
+func filterAutomaticApprovedPrizeGifts(gifts []*entity.Gift) ([]*entity.Gift, int) {
+	automaticGifts := make([]*entity.Gift, 0, len(gifts))
+	manualGiftCount := 0
+	for _, gift := range gifts {
+		if gift == nil || gift.ReviewStatus != entity.GiftReviewStatusApproved {
+			continue
+		}
+		if gift.ManualDistribution {
+			manualGiftCount++
+			continue
+		}
+		automaticGifts = append(automaticGifts, gift)
+	}
+	return automaticGifts, manualGiftCount
 }
 
 // PrizeDistributionResult представляет результат распределения приза
@@ -211,7 +237,7 @@ func (h *GetPrizeDistributionHandler) findAllMatchingGifts(
 		}
 
 		// Сначала применяем обязательные фильтры допуска: статус проверки, тип велосипеда и пол.
-		if gift.ReviewStatus != entity.GiftReviewStatusApproved {
+		if gift.ReviewStatus != entity.GiftReviewStatusApproved || gift.ManualDistribution {
 			continue
 		}
 		if gift.BikeTypeFilter != "" && gift.BikeTypeFilter != "all" && gift.BikeTypeFilter != string(participant.BikeType) {

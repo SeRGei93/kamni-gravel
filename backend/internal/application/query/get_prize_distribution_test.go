@@ -30,6 +30,53 @@ func TestPrizeDistributionIgnoresUnapprovedGifts(t *testing.T) {
 	}
 }
 
+func TestPrizeDistributionExcludesManualGiftVariantsFromAssignmentsAndSlots(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*entity.Gift)
+	}{
+		{
+			name: "generic",
+		},
+		{
+			name: "criteria",
+			configure: func(gift *entity.Gift) {
+				gift.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+			},
+		},
+		{
+			name: "explicit place",
+			configure: func(gift *entity.Gift) {
+				gift.PlaceRule = mustGiftPlaceRulePlaces(t, []int{1})
+			},
+		},
+		{
+			name: "last n",
+			configure: func(gift *entity.Gift) {
+				gift.PlaceRule = mustGiftPlaceRuleLastN(t, 1)
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			h := &GetPrizeDistributionHandler{}
+			results, participants := prizeDistributionRankedScenario(2)
+			manualGift := prizeDistributionApprovedGift(10)
+			manualGift.ManualDistribution = true
+			if testCase.configure != nil {
+				testCase.configure(manualGift)
+			}
+
+			output := h.distributePrizeSlots(results, []*entity.Gift{manualGift}, participants)
+			assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{})
+			if len(output.UnassignedSlots) != 0 {
+				t.Fatalf("manual gift must not create automatic unassigned slots: %+v", output.UnassignedSlots)
+			}
+		})
+	}
+}
+
 func TestPrizeDistributionUsesCriteriaBeforePlaceAndGeneric(t *testing.T) {
 	h := &GetPrizeDistributionHandler{}
 	participant := prizeDistributionParticipant()

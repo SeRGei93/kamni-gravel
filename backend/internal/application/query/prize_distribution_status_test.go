@@ -171,6 +171,42 @@ func TestPrizeDistributionHandlerAddsDNFCriteriaCandidateAndExcludesDisqualified
 	}
 }
 
+func TestPrizeDistributionHandlerExcludesManualGiftsBeforeLoadingGiftCriteria(t *testing.T) {
+	participant := prizeDistributionParticipantWithID(1)
+	elapsed := 1000
+	manualGift := prizeDistributionApprovedGift(10)
+	manualGift.ManualDistribution = true
+
+	criteriaRepo := &statusCriteriaRepoFake{
+		byGift: map[uint][]*entity.Criteria{
+			10: {prizeDistributionCriteria(1)},
+		},
+	}
+	h := NewGetPrizeDistributionHandler(
+		&statusResultRepoFake{withPlaces: []*repository.ResultWithPlace{{
+			Result:            &entity.Result{ID: 1, ParticipantID: 1, ElapsedTimeSec: &elapsed},
+			PlaceAbsolute:     1,
+			PlaceByGender:     1,
+			PlaceByGenderBike: 1,
+		}}},
+		&statusGiftRepoFake{gifts: []*entity.Gift{manualGift}},
+		&statusParticipantRepoFake{participants: []*entity.Participant{participant}},
+		criteriaRepo,
+	)
+
+	output, err := h.HandleDetailed(context.Background(), GetPrizeDistributionQuery{EventID: 77})
+	if err != nil {
+		t.Fatalf("HandleDetailed: %v", err)
+	}
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{})
+	if len(output.UnassignedSlots) != 0 {
+		t.Fatalf("manual gift must not create unassigned slots: %+v", output.UnassignedSlots)
+	}
+	if len(criteriaRepo.giftCalls) != 0 {
+		t.Fatalf("manual gift criteria must not be loaded, calls=%v", criteriaRepo.giftCalls)
+	}
+}
+
 // Фейки репозиториев: встраиваем интерфейс, переопределяем только нужные методы.
 type statusResultRepoFake struct {
 	repository.ResultRepository
@@ -201,8 +237,9 @@ func (f *statusParticipantRepoFake) FindByEvent(_ context.Context, _ uint) ([]*e
 
 type statusCriteriaRepoFake struct {
 	repository.CriteriaRepository
-	byResult map[uint][]*entity.Criteria
-	byGift   map[uint][]*entity.Criteria
+	byResult  map[uint][]*entity.Criteria
+	byGift    map[uint][]*entity.Criteria
+	giftCalls []uint
 }
 
 func (f *statusCriteriaRepoFake) FindByResult(_ context.Context, resultID uint) ([]*entity.Criteria, error) {
@@ -210,5 +247,6 @@ func (f *statusCriteriaRepoFake) FindByResult(_ context.Context, resultID uint) 
 }
 
 func (f *statusCriteriaRepoFake) FindByGift(_ context.Context, giftID uint) ([]*entity.Criteria, error) {
+	f.giftCalls = append(f.giftCalls, giftID)
 	return f.byGift[giftID], nil
 }

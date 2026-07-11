@@ -147,7 +147,7 @@ Protected admin API:
 
 ### Phase 2: Distribution And Backend APIs
 
-- [ ] 4. Exclude manual gifts from every automatic distribution path and lock the statistics contract with tests.
+- [x] 4. Exclude manual gifts from every automatic distribution path and lock the statistics contract with tests.
   - Files:
     - `backend/internal/application/query/get_prize_distribution.go`
     - `backend/internal/application/query/prize_distribution_engine.go`
@@ -169,7 +169,7 @@ Protected admin API:
     - Do not log gift descriptions or participant profile data.
   - Dependencies: Task 1.
 
-- [ ] 5. Fix the participants-list “Получит приз” count and server-side sorting.
+- [x] 5. Fix the participants-list “Получит приз” count and server-side sorting.
   - Files:
     - `backend/internal/infrastructure/http/handler/participants.go`
     - `backend/internal/infrastructure/http/handler/participants_test.go`
@@ -195,7 +195,7 @@ Protected admin API:
     - Do not log participant profile fields or gift descriptions.
   - Dependencies: Tasks 1, 3, and 4.
 
-- [ ] 6. Expose the administrator manual-distribution API through existing protected gift management.
+- [x] 6. Expose the administrator manual-distribution API through existing protected gift management.
   - Files:
     - `backend/internal/infrastructure/http/handler/gifts.go`
     - `backend/internal/infrastructure/http/handler/gifts_test.go`
@@ -215,7 +215,7 @@ Protected admin API:
     - WARN validation/conflict responses and ERROR command failures; never log JWTs or request bodies.
   - Dependencies: Tasks 2-3.
 
-- [ ] 7. Add authenticated Mini App owner endpoints and fix session/active-event prerequisites.
+- [x] 7. Add authenticated Mini App owner endpoints and fix session/active-event prerequisites.
   - Files:
     - `backend/internal/infrastructure/http/handler/miniapp.go`
     - `backend/internal/infrastructure/http/handler/miniapp_test.go`

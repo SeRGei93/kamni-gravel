@@ -343,6 +343,32 @@ func TestGiftRepositoryFindByUserAndEvent(t *testing.T) {
 	}
 }
 
+func TestGiftRepositoryManualRecipientCountsByEvent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New error: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT manual_recipient_participant_id, COUNT\(\*\)`).
+		WithArgs(uint(77)).
+		WillReturnRows(sqlmock.NewRows([]string{"manual_recipient_participant_id", "count"}).
+			AddRow(10, 2).
+			AddRow(20, 1))
+
+	repo := NewGiftRepository(db)
+	counts, err := repo.ManualRecipientCountsByEvent(context.Background(), 77)
+	if err != nil {
+		t.Fatalf("ManualRecipientCountsByEvent error: %v", err)
+	}
+	if counts[10] != 2 || counts[20] != 1 || len(counts) != 2 {
+		t.Fatalf("manual recipient counts = %v, want map[10:2 20:1]", counts)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func giftRows() *sqlmock.Rows {
 	return sqlmock.NewRows([]string{
 		"id",

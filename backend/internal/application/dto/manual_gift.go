@@ -30,6 +30,11 @@ type ManualGiftRecipientDTO struct {
 	Status      string `json:"status"`
 }
 
+// ManualGiftListResponse is the protected manual-gift management response.
+type ManualGiftListResponse struct {
+	Gifts []*ManualGiftDTO `json:"gifts"`
+}
+
 // MiniappParticipantOptionDTO is the minimal selectable participant model.
 // It never exposes Telegram IDs, notes, registration dates, or result metrics.
 type MiniappParticipantOptionDTO struct {

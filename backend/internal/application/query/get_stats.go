@@ -127,7 +127,8 @@ func (h *GetStatsHandler) calculateEventStats(ctx context.Context, event *entity
 	}
 	stats.GiftsCount = len(gifts)
 
-	// Считаем призы через prize distribution (автоматическое распределение)
+	// Считаем призы только через automatic prize distribution. Persisted manual
+	// recipients intentionally do not affect these automatic-only statistics.
 	// Получаем распределение призов для подсчёта
 	prizeDistributionHandler := NewGetPrizeDistributionHandler(
 		h.resultRepo,

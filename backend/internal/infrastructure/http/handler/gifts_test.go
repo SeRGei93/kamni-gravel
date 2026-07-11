@@ -13,7 +13,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"gravel_bot/internal/application/command"
+	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/domain/valueobject"
 )
 
@@ -38,6 +40,98 @@ func TestDecodeUpdateGiftRequestPlacePresence(t *testing.T) {
 	if req.PlaceSet {
 		t.Fatal("omitted place should not be marked as present")
 	}
+}
+
+func TestDecodeUpdateGiftRequestManualDistributionPresence(t *testing.T) {
+	request := httptest.NewRequest("PUT", "/api/gifts/1", strings.NewReader(`{"manual_distribution":true,"manual_recipient_participant_id":42}`))
+	decoded, err := decodeUpdateGiftRequest(request)
+	if err != nil {
+		t.Fatalf("decode manual fields error: %v", err)
+	}
+	if decoded.ManualDistribution == nil || !*decoded.ManualDistribution {
+		t.Fatalf("manual_distribution = %v, want true", decoded.ManualDistribution)
+	}
+	if !decoded.ManualRecipientParticipantIDSet || decoded.ManualRecipientParticipantID == nil || *decoded.ManualRecipientParticipantID != 42 {
+		t.Fatalf("manual recipient = set:%t id:%v", decoded.ManualRecipientParticipantIDSet, decoded.ManualRecipientParticipantID)
+	}
+
+	clearRequest := httptest.NewRequest("PUT", "/api/gifts/1", strings.NewReader(`{"manual_distribution":false,"manual_recipient_participant_id":null}`))
+	decoded, err = decodeUpdateGiftRequest(clearRequest)
+	if err != nil {
+		t.Fatalf("decode manual clear error: %v", err)
+	}
+	if decoded.ManualDistribution == nil || *decoded.ManualDistribution || !decoded.ManualRecipientParticipantIDSet || decoded.ManualRecipientParticipantID != nil {
+		t.Fatalf("manual clear fields = %+v", decoded)
+	}
+
+	omitted := httptest.NewRequest("PUT", "/api/gifts/1", strings.NewReader(`{"description":"Gift"}`))
+	decoded, err = decodeUpdateGiftRequest(omitted)
+	if err != nil {
+		t.Fatalf("decode omitted manual fields error: %v", err)
+	}
+	if decoded.ManualDistribution != nil || decoded.ManualRecipientParticipantIDSet {
+		t.Fatalf("omitted manual fields should remain absent: %+v", decoded)
+	}
+}
+
+func TestDecodeUpdateGiftRequestRejectsMalformedManualFields(t *testing.T) {
+	for _, body := range []string{
+		`{"manual_distribution":null}`,
+		`{"manual_distribution":"true"}`,
+		`{"manual_recipient_participant_id":0}`,
+		`{"manual_recipient_participant_id":"42"}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			request := httptest.NewRequest("PUT", "/api/gifts/1", strings.NewReader(body))
+			if _, err := decodeUpdateGiftRequest(request); err == nil {
+				t.Fatal("decodeUpdateGiftRequest error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestGiftsHandlerGetManualByEventReturnsProtectedRecipientSummary(t *testing.T) {
+	recipientID := uint(9)
+	repo := &manualGiftAdminQueryRepoFake{gifts: []*entity.Gift{
+		{ID: 1, EventID: 77, ManualDistribution: true, ReviewStatus: entity.GiftReviewStatusApproved, Description: "Manual", ManualRecipientParticipantID: &recipientID, ManualRecipient: &entity.Participant{ID: recipientID, UserID: 999, User: &entity.User{FirstName: "Alex", Username: "alex"}}},
+		{ID: 2, EventID: 77, ManualDistribution: false, ReviewStatus: entity.GiftReviewStatusApproved, Description: "Automatic"},
+	}}
+	h := &GiftsHandler{getManualGiftsHandler: query.NewGetManualGiftsHandler(repo)}
+	router := chi.NewRouter()
+	router.Get("/api/events/{eventId}/manual-gifts", h.GetManualByEvent)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/events/77/manual-gifts", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", rr.Code, rr.Body.String())
+	}
+	var responseBody struct {
+		Gifts []struct {
+			ID        uint `json:"id"`
+			Recipient struct {
+				ID          uint   `json:"id"`
+				DisplayName string `json:"display_name"`
+				Status      string `json:"status"`
+			} `json:"recipient"`
+		} `json:"gifts"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &responseBody); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(responseBody.Gifts) != 1 || responseBody.Gifts[0].ID != 1 || responseBody.Gifts[0].Recipient.ID != recipientID {
+		t.Fatalf("manual gifts response = %+v", responseBody.Gifts)
+	}
+	if responseBody.Gifts[0].Recipient.DisplayName != "Alex" {
+		t.Fatalf("recipient display name = %q", responseBody.Gifts[0].Recipient.DisplayName)
+	}
+}
+
+type manualGiftAdminQueryRepoFake struct {
+	repository.GiftRepository
+	gifts []*entity.Gift
+}
+
+func (r *manualGiftAdminQueryRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
+	return r.gifts, nil
 }
 
 func TestGiftsHandlerNotifyPublicGiftApprovedUsesRetryNotifier(t *testing.T) {

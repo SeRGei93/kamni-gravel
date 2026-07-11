@@ -12,6 +12,7 @@ import (
 	"gravel_bot/internal/application/command"
 	"gravel_bot/internal/application/query"
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/repository"
 )
 
 func TestGiftsHandlerUpdateInvalidatesCacheOnApproval(t *testing.T) {
@@ -76,6 +77,38 @@ func TestGiftsHandlerUpdateDoesNotInvalidateForPendingGift(t *testing.T) {
 	}
 }
 
+func TestGiftsHandlerUpdateDoesNotInvalidateCacheForRecipientOnlyChange(t *testing.T) {
+	recipientID := uint(42)
+	giftRepo := &invalidationGiftRepoFake{gift: &entity.Gift{ID: 1, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved, ManualDistribution: true}}
+	cacheFake := &miniappGiftsCacheInvalidatorFake{}
+	h := newInvalidationGiftsHandler(giftRepo, cacheFake)
+
+	rr := giftUpdateRequest(t, h, 1, `{"manual_recipient_participant_id":42}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(cacheFake.events) != 0 {
+		t.Fatalf("recipient-only update must not invalidate public catalog, got %v", cacheFake.events)
+	}
+	if giftRepo.gift.ManualRecipientParticipantID == nil || *giftRepo.gift.ManualRecipientParticipantID != recipientID {
+		t.Fatalf("recipient was not persisted: %+v", giftRepo.gift)
+	}
+}
+
+func TestGiftsHandlerUpdateInvalidatesCacheForManualDistributionChange(t *testing.T) {
+	giftRepo := &invalidationGiftRepoFake{gift: &entity.Gift{ID: 1, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved}}
+	cacheFake := &miniappGiftsCacheInvalidatorFake{}
+	h := newInvalidationGiftsHandler(giftRepo, cacheFake)
+
+	rr := giftUpdateRequest(t, h, 1, `{"manual_distribution":true}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(cacheFake.events) != 1 || cacheFake.events[0] != 77 {
+		t.Fatalf("manual distribution update must invalidate public catalog, got %v", cacheFake.events)
+	}
+}
+
 func TestGiftsHandlerDeleteInvalidatesCacheForApprovedGift(t *testing.T) {
 	giftRepo := &invalidationGiftRepoFake{gift: &entity.Gift{ID: 1, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved}}
 	cacheFake := &miniappGiftsCacheInvalidatorFake{}
@@ -111,7 +144,7 @@ func newInvalidationGiftsHandler(giftRepo *invalidationGiftRepoFake, cacheFake *
 	return &GiftsHandler{
 		giftRepo:           giftRepo,
 		getGiftByIDHandler: query.NewGetGiftByIDHandler(giftRepo, criteriaRepo),
-		updateGiftHandler:  command.NewUpdateGiftHandler(giftRepo),
+		updateGiftHandler:  command.NewUpdateGiftHandler(giftRepo, &invalidationParticipantRepoFake{participant: &entity.Participant{ID: 42, EventID: 77}}),
 		giftsCache:         cacheFake,
 	}
 }
@@ -150,6 +183,15 @@ func (f *miniappGiftsCacheInvalidatorFake) InvalidateEvent(eventID uint) {
 type invalidationGiftRepoFake struct {
 	gift        *entity.Gift
 	deleteCalls int
+}
+
+type invalidationParticipantRepoFake struct {
+	repository.ParticipantRepository
+	participant *entity.Participant
+}
+
+func (r *invalidationParticipantRepoFake) FindByID(ctx context.Context, id uint) (*entity.Participant, error) {
+	return r.participant, nil
 }
 
 func (r *invalidationGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error { return nil }
