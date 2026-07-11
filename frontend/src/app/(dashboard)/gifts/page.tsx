@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { giftsApi } from '@/api/gifts';
 import { eventsApi } from '@/api/events';
+import { participantsApi } from '@/api/participants';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
 import { extractActiveEvent } from '@/utils/events';
-import type { BikeTypeFilter, Gift, GenderFilter, GiftReviewStatus } from '@/types';
+import type { BikeTypeFilter, Gift, GenderFilter, GiftReviewStatus, Participant } from '@/types';
 import GiftsTable from '@/components/gifts/GiftsTable';
 import PaginationControls from '@/components/tables/PaginationControls';
 import { usePaginationParams } from '@/hooks/usePaginationParams';
@@ -18,12 +19,42 @@ import TextArea from '@/components/form/input/TextArea';
 import { BIKE_TYPE_OPTIONS, GENDER_OPTIONS, GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
 import { CheckLineIcon, CloseLineIcon, PlusIcon } from '@/icons';
 import { getManualGiftErrorMessage } from '@/utils/manualGiftErrors';
-import { attachManualGiftAssignments } from '@/utils/manualGiftAssignment';
+import { attachManualGiftAssignments, isGiftDistributed } from '@/utils/manualGiftAssignment';
 
 type GiftReviewStatusFilter = 'all' | GiftReviewStatus;
+type GiftDistributionFilter = 'all' | 'assigned' | 'unassigned';
+
+const GIFT_DISTRIBUTION_FILTER_OPTIONS = [
+  { value: 'all', label: 'Все' },
+  { value: 'assigned', label: 'Распределён' },
+  { value: 'unassigned', label: 'Не распределён' },
+];
 
 function parseReviewStatusFilter(value: string | null): GiftReviewStatusFilter {
   return value === 'pending_review' || value === 'approved' ? value : 'all';
+}
+
+function parseDistributionFilter(value: string | null): GiftDistributionFilter {
+  return value === 'assigned' || value === 'unassigned' ? value : 'all';
+}
+
+function parseOwnerUserID(value: string | null): number | undefined {
+  const ownerUserID = Number(value);
+  return Number.isSafeInteger(ownerUserID) && ownerUserID > 0
+    ? ownerUserID
+    : undefined;
+}
+
+function giftOwnerLabel(participant: Participant): string {
+  const name = `${participant.first_name} ${participant.last_name}`.trim();
+  if (name && participant.username) return `${name} (@${participant.username.replace(/^@+/, '')})`;
+  return name || participant.username || String(participant.user_id);
+}
+
+function pageGifts(gifts: Gift[], page: number, pageSize: number | 'all'): Gift[] {
+  if (pageSize === 'all') return gifts;
+  const offset = (page - 1) * pageSize;
+  return gifts.slice(offset, offset + pageSize);
 }
 
 export default function GiftsPage() {
@@ -31,6 +62,9 @@ export default function GiftsPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const reviewStatusParam = searchParams.get('review_status');
+  const searchQueryParam = searchParams.get('q') ?? '';
+  const ownerUserIDParam = searchParams.get('owner_user_id');
+  const distributionParam = searchParams.get('distribution');
 
   const { page, pageSize, setPage, setPageSize } = usePaginationParams();
 
@@ -38,6 +72,7 @@ export default function GiftsPage() {
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [total, setTotal] = useState(0);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const [giftOwners, setGiftOwners] = useState<Participant[]>([]);
   const [reviewStatusFilter, setReviewStatusFilter] =
     useState<GiftReviewStatusFilter>(
       parseReviewStatusFilter(reviewStatusParam)
@@ -53,6 +88,9 @@ export default function GiftsPage() {
     useState<GenderFilter>('all');
   const [manualGiftBikeTypeFilter, setManualGiftBikeTypeFilter] =
     useState<BikeTypeFilter>('all');
+  const [searchInput, setSearchInput] = useState(searchQueryParam);
+  const ownerUserIDFilter = parseOwnerUserID(ownerUserIDParam);
+  const distributionFilter = parseDistributionFilter(distributionParam);
 
   const listQueryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -60,12 +98,26 @@ export default function GiftsPage() {
     if (reviewStatusFilter !== 'all') {
       params.set('review_status', reviewStatusFilter);
     }
+    if (searchQueryParam) {
+      params.set('q', searchQueryParam);
+    }
+    if (ownerUserIDFilter) {
+      params.set('owner_user_id', String(ownerUserIDFilter));
+    }
+    if (distributionFilter !== 'all') {
+      params.set('distribution', distributionFilter);
+    }
 
     return params.toString();
-  }, [reviewStatusFilter]);
+  }, [distributionFilter, ownerUserIDFilter, reviewStatusFilter, searchQueryParam]);
 
   const updateListQuery = useCallback(
-    (next: { reviewStatus?: GiftReviewStatusFilter }) => {
+    (next: {
+      reviewStatus?: GiftReviewStatusFilter;
+      searchQuery?: string;
+      ownerUserID?: number | undefined;
+      distribution?: GiftDistributionFilter;
+    }) => {
       const params = new URLSearchParams(searchParams.toString());
 
       if ('reviewStatus' in next) {
@@ -75,6 +127,30 @@ export default function GiftsPage() {
           params.delete('review_status');
         }
         // Смена фильтра сбрасывает на первую страницу.
+        params.delete('page');
+      }
+      if ('searchQuery' in next) {
+        if (next.searchQuery) {
+          params.set('q', next.searchQuery);
+        } else {
+          params.delete('q');
+        }
+        params.delete('page');
+      }
+      if ('ownerUserID' in next) {
+        if (next.ownerUserID) {
+          params.set('owner_user_id', String(next.ownerUserID));
+        } else {
+          params.delete('owner_user_id');
+        }
+        params.delete('page');
+      }
+      if ('distribution' in next) {
+        if (next.distribution && next.distribution !== 'all') {
+          params.set('distribution', next.distribution);
+        } else {
+          params.delete('distribution');
+        }
         params.delete('page');
       }
 
@@ -113,12 +189,49 @@ export default function GiftsPage() {
     loadActiveEvent();
   }, [loadActiveEvent]);
 
+  const loadGiftOwners = useCallback(async () => {
+    if (!activeEventId) {
+      setGiftOwners([]);
+      return;
+    }
+
+    try {
+      const response = await participantsApi.getByEvent(activeEventId);
+      setGiftOwners(response.participants.filter((participant) => participant.has_gift));
+    } catch (loadError) {
+      setGiftOwners([]);
+      console.error('Failed to load gift owner filter options:', {
+        operation: 'load_gift_owners',
+        event_id: activeEventId,
+        error: loadError,
+      });
+    }
+  }, [activeEventId]);
+
+  useEffect(() => {
+    void loadGiftOwners();
+  }, [loadGiftOwners]);
+
   useEffect(() => {
     const nextReviewStatus = parseReviewStatusFilter(reviewStatusParam);
     setReviewStatusFilter((current) =>
       current === nextReviewStatus ? current : nextReviewStatus
     );
   }, [reviewStatusParam]);
+
+  useEffect(() => {
+    setSearchInput(searchQueryParam);
+  }, [searchQueryParam]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const nextSearchQuery = searchInput.trim();
+      if (nextSearchQuery !== searchQueryParam) {
+        updateListQuery({ searchQuery: nextSearchQuery });
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput, searchQueryParam, updateListQuery]);
 
   const loadGifts = useCallback(async () => {
     if (!activeEventId) return;
@@ -127,15 +240,26 @@ export default function GiftsPage() {
       setIsLoading(true);
       setError(null);
 
-      // Серверная пагинация + счётчики по статусам приходят в одном ответе.
+      const filters = {
+        review_status:
+          reviewStatusFilter === 'all' ? undefined : reviewStatusFilter,
+        owner_user_id: ownerUserIDFilter,
+        q: searchQueryParam || undefined,
+      };
+      const shouldFilterDistribution = distributionFilter !== 'all';
+
+      // Для фильтра распределения нужен полный отфильтрованный набор: статус
+      // автоматического приза вычисляет серверный движок, а ручного — сохранённый
+      // получатель. После этого применяем обычную пагинацию на клиенте.
       const [response, manualGiftResponse] = await Promise.all([
-        giftsApi.listByEvent({
-          eventId: activeEventId,
-          review_status:
-            reviewStatusFilter === 'all' ? undefined : reviewStatusFilter,
-          page,
-          page_size: pageSize,
-        }),
+        shouldFilterDistribution
+          ? giftsApi.getByEvent(activeEventId, filters)
+          : giftsApi.listByEvent({
+              eventId: activeEventId,
+              ...filters,
+              page,
+              page_size: pageSize,
+            }),
         giftsApi.getManualByEvent(activeEventId),
       ]);
       console.debug('[gifts] loaded', {
@@ -144,15 +268,11 @@ export default function GiftsPage() {
         total: response.total,
         statusCounts: response.status_counts,
       });
-      setGifts(attachManualGiftAssignments(response.gifts, manualGiftResponse.gifts));
-      setTotal(response.total);
       setStatusCounts(response.status_counts ?? {});
 
-      // Загружаем распределение призов
+      let assignedIds = new Set<number>();
       try {
         const distribution = await prizeDistributionApi.getPrizeDistribution(activeEventId);
-        // Собираем ID всех назначенных призов
-        const assignedIds = new Set<number>();
         distribution.distribution.forEach((dist) => {
           if (dist.matched_gift_assignments && dist.matched_gift_assignments.length > 0) {
             dist.matched_gift_assignments.forEach((assignment) => assignedIds.add(assignment.gift_id));
@@ -161,27 +281,56 @@ export default function GiftsPage() {
             dist.matched_gifts.forEach((gift) => assignedIds.add(gift.id));
           }
         });
-        setAssignedGiftIds(assignedIds);
-      } catch (err) {
+      } catch (distributionError) {
         console.error('Failed to load prize distribution:', {
           event_id: activeEventId,
           operation: 'load_prize_distribution',
-          error: err,
+          error: distributionError,
         });
-        setAssignedGiftIds(new Set());
+        if (shouldFilterDistribution) {
+          throw distributionError;
+        }
+      }
+
+      setAssignedGiftIds(assignedIds);
+      const giftsWithManualAssignments = attachManualGiftAssignments(
+        response.gifts,
+        manualGiftResponse.gifts,
+      );
+      if (shouldFilterDistribution) {
+        const filteredGifts = giftsWithManualAssignments.filter((gift) => {
+          const distributed = isGiftDistributed(gift, assignedIds);
+          return distributionFilter === 'assigned' ? distributed : !distributed;
+        });
+        setGifts(pageGifts(filteredGifts, page, pageSize));
+        setTotal(filteredGifts.length);
+      } else {
+        setGifts(giftsWithManualAssignments);
+        setTotal(response.total);
       }
     } catch (err) {
       setError('Ошибка загрузки призов');
       console.error('Failed to load gifts:', {
         event_id: activeEventId,
         review_status: reviewStatusFilter,
+        owner_user_id: ownerUserIDFilter,
+        distribution: distributionFilter,
+        q: searchQueryParam,
         operation: 'load_gifts',
         error: err,
       });
     } finally {
       setIsLoading(false);
     }
-  }, [activeEventId, reviewStatusFilter, page, pageSize]);
+  }, [
+    activeEventId,
+    distributionFilter,
+    ownerUserIDFilter,
+    page,
+    pageSize,
+    reviewStatusFilter,
+    searchQueryParam,
+  ]);
 
   // Загрузка призов при изменении фильтров/страницы
   useEffect(() => {
@@ -191,6 +340,7 @@ export default function GiftsPage() {
       setGifts([]);
       setTotal(0);
       setStatusCounts({});
+      setGiftOwners([]);
     }
   }, [activeEventId, loadGifts]);
 
@@ -282,6 +432,19 @@ export default function GiftsPage() {
   // Счётчики по статусам приходят с сервера (по всему событию, не по странице).
   const totalGiftsCount = statusCounts.all ?? 0;
   const totalPendingReviewCount = statusCounts.pending_review ?? 0;
+  const giftOwnerOptions = useMemo(
+    () => [
+      { value: 'all', label: 'Все авторы' },
+      ...giftOwners
+        .slice()
+        .sort((left, right) => giftOwnerLabel(left).localeCompare(giftOwnerLabel(right), 'ru'))
+        .map((participant) => ({
+          value: String(participant.user_id),
+          label: giftOwnerLabel(participant),
+        })),
+    ],
+    [giftOwners],
+  );
 
   return (
     <div className="space-y-6">
@@ -402,7 +565,38 @@ export default function GiftsPage() {
 
       {/* Фильтры */}
       <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <Label>Поиск</Label>
+            <Input
+              type="search"
+              placeholder="Описание, имя или @username"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Автор приза</Label>
+            <Select
+              options={giftOwnerOptions}
+              key={`gift-owner-${ownerUserIDFilter ?? 'all'}`}
+              defaultValue={ownerUserIDFilter ? String(ownerUserIDFilter) : 'all'}
+              onChange={(value) => {
+                updateListQuery({ ownerUserID: value === 'all' ? undefined : Number(value) });
+              }}
+            />
+          </div>
+          <div>
+            <Label>Распределение</Label>
+            <Select
+              options={GIFT_DISTRIBUTION_FILTER_OPTIONS}
+              key={`gift-distribution-${distributionFilter}`}
+              defaultValue={distributionFilter}
+              onChange={(value) => {
+                updateListQuery({ distribution: parseDistributionFilter(value) });
+              }}
+            />
+          </div>
           <div>
             <Label>Статус проверки</Label>
             <Select
@@ -421,7 +615,7 @@ export default function GiftsPage() {
 
       {/* Информация о количестве */}
       <p className="text-sm text-gray-600 dark:text-gray-400">
-        Всего призов: {totalGiftsCount} · На проверке: {totalPendingReviewCount}
+        Всего призов: {totalGiftsCount} · Найдено: {total} · На проверке: {totalPendingReviewCount}
       </p>
 
       {/* Таблица */}

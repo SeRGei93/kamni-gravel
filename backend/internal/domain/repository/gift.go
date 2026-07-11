@@ -61,6 +61,20 @@ type GiftRepository interface {
 	GetAttachments(ctx context.Context, giftID uint) ([]*entity.GiftAttachment, error)
 }
 
+// GiftListFilter limits a gift list to its review status, author, or text query.
+type GiftListFilter struct {
+	ReviewStatus *entity.GiftReviewStatus
+	OwnerUserID  *int64
+	SearchQuery  string
+}
+
+// FilteredGiftListRepository provides database-backed gift list filtering.
+// It is separate from GiftRepository so existing narrow test doubles can stay
+// focused on the base persistence contract.
+type FilteredGiftListRepository interface {
+	ListByEventFilteredPaged(ctx context.Context, eventID uint, filter GiftListFilter, limit, offset int) ([]*entity.Gift, int, error)
+}
+
 // ManualGiftRepository расширяет общий контракт операциями ручного
 // распределения. Существующие use case'ы, которым они не нужны, продолжают
 // зависеть только от GiftRepository.

@@ -83,6 +83,11 @@ export function getManualGiftStatus(
   };
 }
 
+export function isGiftDistributed(gift: Gift, assignedGiftIds: Set<number>): boolean {
+  const status = getManualGiftStatus(gift, assignedGiftIds).status;
+  return status === 'manual_assigned' || status === 'automatic_assigned';
+}
+
 export function formatManualRecipientSearchLabel(name: string, username?: string): string {
   const normalizedUsername = username?.replace(/^@+/, '').trim();
   return normalizedUsername ? `${name} (@${normalizedUsername})` : name;

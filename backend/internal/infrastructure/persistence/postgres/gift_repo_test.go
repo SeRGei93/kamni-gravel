@@ -103,6 +103,49 @@ func TestGiftRepositoryFindByEventAndReviewStatusLoadsLastNRule(t *testing.T) {
 	}
 }
 
+func TestGiftRepositoryListByEventFilteredPaged(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New error: %v", err)
+	}
+	defer db.Close()
+
+	approved := entity.GiftReviewStatusApproved
+	ownerUserID := int64(100)
+	filter := repository.GiftListFilter{
+		ReviewStatus: &approved,
+		OwnerUserID:  &ownerUserID,
+		SearchQuery:  "helmet",
+	}
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM gifts g JOIN users u ON u\.id = g\.user_id`).
+		WithArgs(uint(77), approved.String(), ownerUserID, "%helmet%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT g\.id, g\.user_id, g\.event_id, g\.description`).
+		WithArgs(uint(77), approved.String(), ownerUserID, "%helmet%", 50, 0).
+		WillReturnRows(giftRows().AddRow(1, ownerUserID, 77, "helmet", "all", "all", "approved", nil, false, nil, time.Now(), "rider", "Ivan", ""))
+	mock.ExpectQuery(`FROM gift_place_rules r`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(giftPlaceRuleRows())
+
+	repo := NewGiftRepository(db)
+	gifts, total, err := repo.(repository.FilteredGiftListRepository).ListByEventFilteredPaged(
+		context.Background(),
+		77,
+		filter,
+		50,
+		0,
+	)
+	if err != nil {
+		t.Fatalf("ListByEventFilteredPaged error: %v", err)
+	}
+	if total != 1 || len(gifts) != 1 || gifts[0].ID != 1 {
+		t.Fatalf("gifts = %#v total=%d, want one matching gift", gifts, total)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestGiftRepositoryUpdateWithCriteriaClearsPlaceRule(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

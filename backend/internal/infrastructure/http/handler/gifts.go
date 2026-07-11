@@ -125,6 +125,16 @@ func (h *GiftsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		reviewStatus = &status
 	}
 
+	var ownerUserID *int64
+	if rawOwnerUserID := strings.TrimSpace(r.URL.Query().Get("owner_user_id")); rawOwnerUserID != "" {
+		parsedOwnerUserID, err := strconv.ParseInt(rawOwnerUserID, 10, 64)
+		if err != nil || parsedOwnerUserID <= 0 {
+			response.BadRequest(w, "Invalid owner_user_id")
+			return
+		}
+		ownerUserID = &parsedOwnerUserID
+	}
+
 	// Пагинация включается только если переданы page/page_size. Без них возвращаем
 	// все подарки (нужно для модалок выбора приза и подсчёта назначений).
 	page := ParsePageParams(r)
@@ -134,6 +144,8 @@ func (h *GiftsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	queryParams := query.GetGiftsQuery{
 		EventID:      uint(eventID),
 		ReviewStatus: reviewStatus,
+		OwnerUserID:  ownerUserID,
+		SearchQuery:  strings.TrimSpace(r.URL.Query().Get("q")),
 	}
 	if paginate {
 		queryParams.Limit = page.Limit
@@ -143,7 +155,7 @@ func (h *GiftsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	// Вызываем query handler
 	gifts, total, err := h.getGiftsHandler.Handle(r.Context(), queryParams)
 	if err != nil {
-		log.Printf("Error getting gifts: event_id=%d review_status=%s error=%v", eventID, reviewStatusParam, err)
+		log.Printf("Error getting gifts: event_id=%d review_status=%s owner_user_id=%v q=%q error=%v", eventID, reviewStatusParam, ownerUserID, queryParams.SearchQuery, err)
 		if errors.Is(err, query.ErrInvalidGiftReviewStatusFilter) {
 			response.BadRequest(w, "Invalid review_status")
 			return
@@ -176,8 +188,8 @@ func (h *GiftsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		resp.PageSize = page.PageSize
 	}
 
-	log.Printf("DEBUG Gifts list served: event_id=%d review_status=%s paginated=%t total=%d page=%d page_size=%d returned=%d status_counts=%v",
-		eventID, reviewStatusParam, paginate, total, page.Page, page.PageSize, len(giftDTOs), statusCounts)
+	log.Printf("DEBUG Gifts list served: event_id=%d review_status=%s owner_user_id=%v q=%q paginated=%t total=%d page=%d page_size=%d returned=%d status_counts=%v",
+		eventID, reviewStatusParam, ownerUserID, queryParams.SearchQuery, paginate, total, page.Page, page.PageSize, len(giftDTOs), statusCounts)
 
 	// Возвращаем ответ
 	response.Success(w, resp)

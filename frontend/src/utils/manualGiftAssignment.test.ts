@@ -4,6 +4,7 @@ import {
   buildManualGiftUpdate,
   formatManualRecipientSearchLabel,
   getManualGiftStatus,
+  isGiftDistributed,
 } from './manualGiftAssignment';
 import type { Gift, ManualGift } from '@/types';
 
@@ -65,5 +66,27 @@ describe('manual gift assignment helpers', () => {
   it('formats a searchable recipient label without duplicating at-signs', () => {
     expect(formatManualRecipientSearchLabel('Alex', '@alex')).toBe('Alex (@alex)');
     expect(formatManualRecipientSearchLabel('Alex')).toBe('Alex');
+  });
+
+  it('treats manual and automatic assignments as distributed', () => {
+    const manualGift: Gift = {
+      ...automaticGift,
+      id: 2,
+      manual_distribution: true,
+      manual_assignment: {
+        id: 2,
+        event_id: 7,
+        description: 'Cap',
+        review_status: 'approved',
+        manual_distribution: true,
+        recipient: { id: 12, display_name: 'Alex', status: 'active' },
+        created_at: '2026-07-11T00:00:00Z',
+      },
+    };
+
+    expect(isGiftDistributed(automaticGift, new Set([1]))).toBe(true);
+    expect(isGiftDistributed(manualGift, new Set())).toBe(true);
+    expect(isGiftDistributed(automaticGift, new Set())).toBe(false);
+    expect(isGiftDistributed({ ...automaticGift, review_status: 'pending_review' }, new Set([1]))).toBe(false);
   });
 });

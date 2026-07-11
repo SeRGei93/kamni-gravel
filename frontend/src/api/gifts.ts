@@ -12,17 +12,27 @@ import type {
 const GIFTS_PREFIX = '/api/gifts';
 const EVENTS_PREFIX = '/api/events';
 
+export interface GiftListFilters {
+  review_status?: GiftReviewStatus;
+  owner_user_id?: number;
+  q?: string;
+}
+
+function appendGiftListFilters(search: URLSearchParams, filters: GiftListFilters): void {
+  if (filters.review_status) search.set('review_status', filters.review_status);
+  if (filters.owner_user_id) search.set('owner_user_id', String(filters.owner_user_id));
+  if (filters.q) search.set('q', filters.q);
+}
+
 export const giftsApi = {
   // getByEvent возвращает ВСЕ подарки события (без пагинации) — для модалок выбора
   // приза и т.п. Не передавайте page/page_size.
   async getByEvent(
     eventId: number,
-    reviewStatus?: GiftReviewStatus
+    filters: GiftListFilters = {}
   ): Promise<GiftListResponse> {
     const params = new URLSearchParams();
-    if (reviewStatus) {
-      params.set('review_status', reviewStatus);
-    }
+    appendGiftListFilters(params, filters);
     const query = params.toString();
     return get<GiftListResponse>(
       `${EVENTS_PREFIX}/${eventId}/gifts${query ? `?${query}` : ''}`
@@ -33,13 +43,13 @@ export const giftsApi = {
   async listByEvent(params: {
     eventId: number;
     review_status?: GiftReviewStatus;
+    owner_user_id?: number;
+    q?: string;
     page: number;
     page_size: PageSize;
   }): Promise<GiftListResponse> {
     const search = new URLSearchParams();
-    if (params.review_status) {
-      search.set('review_status', params.review_status);
-    }
+    appendGiftListFilters(search, params);
     search.set('page', String(params.page));
     search.set('page_size', String(params.page_size));
     return get<GiftListResponse>(

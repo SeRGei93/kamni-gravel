@@ -806,6 +806,16 @@ paths:
             type: string
             enum: [pending_review, approved]
           description: Фильтр по статусу проверки. Если не передан, возвращаются все подарки события.
+        - name: owner_user_id
+          in: query
+          schema:
+            type: integer
+          description: Telegram ID участника, который добавил приз.
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Поиск по описанию приза, имени или username автора.
       responses:
         '200':
           description: Список подарков

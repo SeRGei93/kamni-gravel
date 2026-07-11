@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gravel_bot/internal/domain/entity"
@@ -354,19 +355,41 @@ func (r *giftRepository) FindByEventAndReviewStatus(ctx context.Context, eventID
 }
 
 func (r *giftRepository) ListByEventPaged(ctx context.Context, eventID uint, reviewStatus *entity.GiftReviewStatus, limit, offset int) ([]*entity.Gift, int, error) {
-	where := "WHERE g.event_id = $1"
-	args := []interface{}{eventID}
-	if reviewStatus != nil {
-		if !reviewStatus.IsValid() {
-			return nil, 0, fmt.Errorf("invalid gift review status: %s", reviewStatus)
+	return r.ListByEventFilteredPaged(ctx, eventID, repository.GiftListFilter{
+		ReviewStatus: reviewStatus,
+	}, limit, offset)
+}
+
+func (r *giftRepository) ListByEventFilteredPaged(ctx context.Context, eventID uint, filter repository.GiftListFilter, limit, offset int) ([]*entity.Gift, int, error) {
+	whereClauses := []string{"g.event_id = $1"}
+	args := []any{eventID}
+	if filter.ReviewStatus != nil {
+		if !filter.ReviewStatus.IsValid() {
+			return nil, 0, fmt.Errorf("invalid gift review status: %s", filter.ReviewStatus)
 		}
-		where += " AND g.review_status = $2"
-		args = append(args, reviewStatus.String())
+		args = append(args, filter.ReviewStatus.String())
+		whereClauses = append(whereClauses, fmt.Sprintf("g.review_status = $%d", len(args)))
 	}
+	if filter.OwnerUserID != nil {
+		args = append(args, *filter.OwnerUserID)
+		whereClauses = append(whereClauses, fmt.Sprintf("g.user_id = $%d", len(args)))
+	}
+	if searchQuery := strings.TrimSpace(filter.SearchQuery); searchQuery != "" {
+		args = append(args, "%"+searchQuery+"%")
+		placeholder := len(args)
+		whereClauses = append(whereClauses, fmt.Sprintf(
+			"(g.description ILIKE $%d OR u.username ILIKE $%d OR CONCAT_WS(' ', u.first_name, u.last_name) ILIKE $%d)",
+			placeholder,
+			placeholder,
+			placeholder,
+		))
+	}
+	where := "WHERE " + strings.Join(whereClauses, " AND ")
+	from := "FROM gifts g JOIN users u ON u.id = g.user_id"
 
 	// Общее количество с учётом фильтра.
 	var total int
-	countQuery := "SELECT COUNT(*) FROM gifts g " + where
+	countQuery := "SELECT COUNT(*) " + from + " " + where
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
@@ -383,11 +406,10 @@ func (r *giftRepository) ListByEventPaged(ctx context.Context, eventID uint, rev
 		       g.gender_filter, g.bike_type_filter, g.review_status, g.place,
 		       g.manual_distribution, g.manual_recipient_participant_id, g.created_at,
 		       u.username, u.first_name, u.last_name
-		FROM gifts g
-		JOIN users u ON u.id = g.user_id
+		%s
 		%s
 		ORDER BY g.created_at DESC%s
-	`, where, limitClause)
+	`, from, where, limitClause)
 
 	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
 	if err != nil {

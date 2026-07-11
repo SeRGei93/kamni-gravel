@@ -49,3 +49,38 @@ func TestGetGiftsHandlerRejectsInvalidStatus(t *testing.T) {
 		t.Fatal("expected error for invalid review status")
 	}
 }
+
+func TestGetGiftsHandlerFiltersByOwnerAndSearch(t *testing.T) {
+	ownerUserID := int64(101)
+	otherUserID := int64(202)
+	giftRepo := &miniappGiftRepoFake{
+		gifts: []*entity.Gift{
+			{
+				ID:          1,
+				UserID:      ownerUserID,
+				Description: "Шлем",
+				User:        &entity.User{Username: "rider", FirstName: "Иван"},
+			},
+			{
+				ID:          2,
+				UserID:      otherUserID,
+				Description: "Фляга",
+				User:        &entity.User{Username: "other", FirstName: "Пётр"},
+			},
+		},
+	}
+	h := NewGetGiftsHandler(giftRepo, &miniappCriteriaRepoFake{})
+
+	gifts, total, err := h.Handle(context.Background(), GetGiftsQuery{
+		EventID:     77,
+		OwnerUserID: &ownerUserID,
+		SearchQuery: "rider",
+		Limit:       50,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 1 || len(gifts) != 1 || gifts[0].ID != 1 {
+		t.Fatalf("filtered gifts = %#v, total=%d; want gift 1", gifts, total)
+	}
+}
