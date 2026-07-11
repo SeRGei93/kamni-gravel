@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { participantsApi } from '@/api/participants';
+import { criteriaApi } from '@/api/criteria';
 import { eventsApi } from '@/api/events';
 import { extractActiveEvent } from '@/utils/events';
 import { type HasGiftFilter } from '@/utils/participants';
-import type { Participant } from '@/types';
+import type { Criteria, Participant } from '@/types';
 import ParticipantsTable from '@/components/participants/ParticipantsTable';
 import ColumnSettings from '@/components/participants/ColumnSettings';
 import {
@@ -29,17 +30,25 @@ function hasGiftFilterToParam(value: HasGiftFilter): boolean | undefined {
   return undefined;
 }
 
+function criteriaIDFilterToParam(value: string): number | undefined {
+  const criteriaID = Number(value);
+  return Number.isSafeInteger(criteriaID) && criteriaID > 0
+    ? criteriaID
+    : undefined;
+}
+
 export default function ParticipantsPage() {
   const { page, pageSize, setPage, setPageSize } = usePaginationParams();
 
   const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [criteria, setCriteria] = useState<Criteria[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Фильтры хранятся в URL — переживают перезагрузку и шарятся ссылкой.
-  const { gender, bikeType, isFinished, hasGift, q, setFilters } = useFilterParams();
+  const { gender, bikeType, isFinished, hasGift, criteriaId, q, setFilters } = useFilterParams();
   // Локальное состояние поля поиска для мгновенного ввода; в URL значение
   // коммитится дебаунсом. Инициализируем из URL при загрузке страницы.
   const [searchInput, setSearchInput] = useState(q);
@@ -69,8 +78,9 @@ export default function ParticipantsPage() {
       bikeType,
       isFinished,
       hasGift,
+      criteriaId,
     }),
-    [gender, bikeType, isFinished, hasGift],
+    [gender, bikeType, isFinished, hasGift, criteriaId],
   );
 
   const handleApplyFilters = useCallback(
@@ -80,6 +90,7 @@ export default function ParticipantsPage() {
         bikeType: next.bikeType,
         isFinished: next.isFinished,
         hasGift: next.hasGift as HasGiftFilter,
+        criteriaId: next.criteriaId,
       });
     },
     [setFilters],
@@ -118,6 +129,19 @@ export default function ParticipantsPage() {
     }
   }, []);
 
+  const loadCriteria = useCallback(async () => {
+    try {
+      const response = await criteriaApi.getAll();
+      setCriteria(response.criteria);
+    } catch (loadError) {
+      setCriteria([]);
+      console.error('Failed to load participant criteria filter options:', {
+        operation: 'load_participant_criteria_filter_options',
+        error: loadError,
+      });
+    }
+  }, []);
+
   const loadParticipants = useCallback(async () => {
     if (!activeEventId) {
       setParticipants([]);
@@ -134,6 +158,7 @@ export default function ParticipantsPage() {
         bike_type: bikeType || undefined,
         is_finished: isFinished === '' ? undefined : isFinished === 'true',
         has_gift: hasGiftFilterToParam(hasGift),
+        criteria_id: criteriaIDFilterToParam(criteriaId),
         q: q || undefined,
         sort: sortKey ?? undefined,
         order: sortKey ? sortOrder : undefined,
@@ -162,6 +187,7 @@ export default function ParticipantsPage() {
     bikeType,
     isFinished,
     hasGift,
+    criteriaId,
     q,
     sortKey,
     sortOrder,
@@ -174,6 +200,10 @@ export default function ParticipantsPage() {
   useEffect(() => {
     loadActiveEvent();
   }, [loadActiveEvent]);
+
+  useEffect(() => {
+    void loadCriteria();
+  }, [loadCriteria]);
 
   // Загрузка участников при изменении фильтров/страницы
   useEffect(() => {
@@ -264,6 +294,7 @@ export default function ParticipantsPage() {
           />
           <ParticipantsFilter
             filters={appliedFilters}
+            criteria={criteria}
             onApply={handleApplyFilters}
           />
         </div>

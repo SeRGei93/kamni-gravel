@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	
+
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/valueobject"
 )
@@ -11,31 +11,39 @@ import (
 type CriteriaRepository interface {
 	// Create создаёт новый критерий
 	Create(ctx context.Context, criteria *entity.Criteria) error
-	
+
 	// Update обновляет существующий критерий
 	Update(ctx context.Context, criteria *entity.Criteria) error
-	
+
 	// Delete удаляет критерий
 	Delete(ctx context.Context, id uint) error
-	
+
 	// FindByID находит критерий по ID
 	FindByID(ctx context.Context, id uint) (*entity.Criteria, error)
-	
+
 	// FindAll возвращает все критерии
 	FindAll(ctx context.Context) ([]*entity.Criteria, error)
-	
+
 	// FindByType возвращает критерии по типу
 	FindByType(ctx context.Context, criteriaType valueobject.CriteriaType) ([]*entity.Criteria, error)
 
 	// ListPaged возвращает страницу критериев и общее количество (с учётом фильтра по типу).
 	// criteriaType == nil — без фильтра по типу.
 	ListPaged(ctx context.Context, criteriaType *valueobject.CriteriaType, limit, offset int) ([]*entity.Criteria, int, error)
-	
+
 	// FindByGift возвращает критерии, привязанные к подарку
 	FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error)
 
 	// FindByResult возвращает критерии, привязанные к результату
 	FindByResult(ctx context.Context, resultID uint) ([]*entity.Criteria, error)
+}
+
+// ResultCriteriaParticipantRepository возвращает участников события, у которых
+// выбранный критерий привязан к текущему результату. Отдельный контракт не
+// расширяет базовый CriteriaRepository, чтобы старые адаптеры и тестовые фейки
+// могли использовать совместимый fallback.
+type ResultCriteriaParticipantRepository interface {
+	FindParticipantIDsByResultCriteria(ctx context.Context, eventID, criteriaID uint) (map[uint]struct{}, error)
 }
 
 // GiftCriteriaRepository представляет репозиторий для связи подарков и критериев

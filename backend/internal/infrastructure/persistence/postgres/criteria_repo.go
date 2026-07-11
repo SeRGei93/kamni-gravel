@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
-	
+
 	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/domain/valueobject"
@@ -21,11 +21,11 @@ func NewCriteriaRepository(db *sql.DB) repository.CriteriaRepository {
 
 func (r *criteriaRepository) Create(ctx context.Context, criteria *entity.Criteria) error {
 	query := `INSERT INTO criteria (name, description, criteria_type, created_at) VALUES ($1, $2, $3, $4) RETURNING id`
-	
+
 	if criteria.CreatedAt.IsZero() {
 		criteria.CreatedAt = time.Now()
 	}
-	
+
 	err := r.db.QueryRowContext(ctx, query, criteria.Name, criteria.Description, criteria.CriteriaType.String(), criteria.CreatedAt).Scan(&criteria.ID)
 	return err
 }
@@ -43,10 +43,10 @@ func (r *criteriaRepository) Delete(ctx context.Context, id uint) error {
 
 func (r *criteriaRepository) FindByID(ctx context.Context, id uint) (*entity.Criteria, error) {
 	query := `SELECT id, name, description, criteria_type, created_at FROM criteria WHERE id = $1`
-	
+
 	criteria := &entity.Criteria{}
 	var criteriaTypeStr string
-	
+
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&criteria.ID,
 		&criteria.Name,
@@ -54,37 +54,37 @@ func (r *criteriaRepository) FindByID(ctx context.Context, id uint) (*entity.Cri
 		&criteriaTypeStr,
 		&criteria.CreatedAt,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("criteria not found: %d", id)
 	}
 	if err != nil {
 		return nil, err
 	}
-	
+
 	criteriaType, err := valueobject.NewCriteriaType(criteriaTypeStr)
 	if err != nil {
 		return nil, err
 	}
 	criteria.CriteriaType = criteriaType
-	
+
 	return criteria, nil
 }
 
 func (r *criteriaRepository) FindAll(ctx context.Context) ([]*entity.Criteria, error) {
 	query := `SELECT id, name, description, criteria_type, created_at FROM criteria ORDER BY created_at DESC`
-	
+
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var criteriaList []*entity.Criteria
 	for rows.Next() {
 		criteria := &entity.Criteria{}
 		var criteriaTypeStr string
-		
+
 		err := rows.Scan(
 			&criteria.ID,
 			&criteria.Name,
@@ -95,7 +95,7 @@ func (r *criteriaRepository) FindAll(ctx context.Context) ([]*entity.Criteria, e
 		if err != nil {
 			return nil, err
 		}
-		
+
 		criteriaType, err := valueobject.NewCriteriaType(criteriaTypeStr)
 		if err != nil {
 			return nil, err
@@ -106,6 +106,36 @@ func (r *criteriaRepository) FindAll(ctx context.Context) ([]*entity.Criteria, e
 	}
 
 	return criteriaList, rows.Err()
+}
+
+// FindParticipantIDsByResultCriteria находит участников события, у которых
+// критерий привязан к актуальному результату. Карта нужна обработчику списка
+// участников для фильтрации до сортировки и пагинации.
+func (r *criteriaRepository) FindParticipantIDsByResultCriteria(ctx context.Context, eventID, criteriaID uint) (map[uint]struct{}, error) {
+	query := `
+		SELECT DISTINCT p.id
+		FROM participants p
+		JOIN results r ON r.participant_id = p.id AND r.is_current = true
+		JOIN entity_criteria ec ON ec.entity_type = 'result' AND ec.entity_id = r.id
+		WHERE p.event_id = $1 AND ec.criteria_id = $2
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, eventID, criteriaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	participantIDs := make(map[uint]struct{})
+	for rows.Next() {
+		var participantID uint
+		if err := rows.Scan(&participantID); err != nil {
+			return nil, err
+		}
+		participantIDs[participantID] = struct{}{}
+	}
+
+	return participantIDs, rows.Err()
 }
 
 func (r *criteriaRepository) ListPaged(ctx context.Context, criteriaType *valueobject.CriteriaType, limit, offset int) ([]*entity.Criteria, int, error) {
@@ -212,18 +242,18 @@ func (r *criteriaRepository) FindByResult(ctx context.Context, resultID uint) ([
 
 func (r *criteriaRepository) FindByType(ctx context.Context, criteriaType valueobject.CriteriaType) ([]*entity.Criteria, error) {
 	query := `SELECT id, name, description, criteria_type, created_at FROM criteria WHERE criteria_type = $1 ORDER BY created_at DESC`
-	
+
 	rows, err := r.db.QueryContext(ctx, query, criteriaType.String())
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var criteriaList []*entity.Criteria
 	for rows.Next() {
 		criteria := &entity.Criteria{}
 		var criteriaTypeStr string
-		
+
 		err := rows.Scan(
 			&criteria.ID,
 			&criteria.Name,
@@ -234,16 +264,16 @@ func (r *criteriaRepository) FindByType(ctx context.Context, criteriaType valueo
 		if err != nil {
 			return nil, err
 		}
-		
+
 		ct, err := valueobject.NewCriteriaType(criteriaTypeStr)
 		if err != nil {
 			return nil, err
 		}
 		criteria.CriteriaType = ct
-		
+
 		criteriaList = append(criteriaList, criteria)
 	}
-	
+
 	return criteriaList, rows.Err()
 }
 
@@ -255,18 +285,18 @@ func (r *criteriaRepository) FindByGift(ctx context.Context, giftID uint) ([]*en
 		WHERE ec.entity_type = 'gift' AND ec.entity_id = $1
 		ORDER BY c.created_at DESC
 	`
-	
+
 	rows, err := r.db.QueryContext(ctx, query, giftID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var criteriaList []*entity.Criteria
 	for rows.Next() {
 		criteria := &entity.Criteria{}
 		var criteriaTypeStr string
-		
+
 		err := rows.Scan(
 			&criteria.ID,
 			&criteria.Name,
@@ -277,7 +307,7 @@ func (r *criteriaRepository) FindByGift(ctx context.Context, giftID uint) ([]*en
 		if err != nil {
 			return nil, err
 		}
-		
+
 		criteriaType, err := valueobject.NewCriteriaType(criteriaTypeStr)
 		if err != nil {
 			return nil, err

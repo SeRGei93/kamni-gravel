@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Dropdown } from '../ui/dropdown/Dropdown';
 import Select from '../form/Select';
 import Label from '../form/Label';
+import type { Criteria } from '@/types';
 
 // Фильтры списка участников. Применяются по кнопке «Применить» (staged):
 // черновик правится в поповере, а запрос обновляется только при подтверждении.
@@ -12,6 +13,7 @@ export interface ParticipantFilters {
   bikeType: string; // '' = все
   isFinished: string; // '' = все, 'true' | 'false'
   hasGift: string; // 'all' | 'yes' | 'no'
+  criteriaId: string; // '' = все
 }
 
 export const EMPTY_PARTICIPANT_FILTERS: ParticipantFilters = {
@@ -19,6 +21,7 @@ export const EMPTY_PARTICIPANT_FILTERS: ParticipantFilters = {
   bikeType: '',
   isFinished: '',
   hasGift: 'all',
+  criteriaId: '',
 };
 
 const GENDER_OPTIONS = [
@@ -55,12 +58,15 @@ function countActive(filters: ParticipantFilters): number {
   if (filters.bikeType !== '') count++;
   if (filters.isFinished !== '') count++;
   if (filters.hasGift !== 'all') count++;
+  if (filters.criteriaId !== '') count++;
   return count;
 }
 
 interface ParticipantsFilterProps {
   /** Применённые фильтры (источник истины). */
   filters: ParticipantFilters;
+  /** Доступные критерии для фильтрации участников по актуальному результату. */
+  criteria: Criteria[];
   /** Подтверждение фильтров из поповера. */
   onApply: (next: ParticipantFilters) => void;
 }
@@ -73,12 +79,20 @@ interface ParticipantsFilterProps {
  */
 export default function ParticipantsFilter({
   filters,
+  criteria,
   onApply,
 }: ParticipantsFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState<ParticipantFilters>(filters);
 
   const activeCount = countActive(filters);
+  const criteriaOptions = [
+    { value: '', label: 'Все' },
+    ...criteria.map((criterion) => ({
+      value: String(criterion.id),
+      label: criterion.name,
+    })),
+  ];
 
   const handleToggle = () => {
     if (isOpen) {
@@ -153,7 +167,7 @@ export default function ParticipantsFilter({
       <Dropdown
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
-        className="w-72 p-4"
+        className="max-h-[calc(100vh-6rem)] w-72 overflow-y-auto p-4"
       >
         <div className="space-y-4">
           <div>
@@ -200,6 +214,19 @@ export default function ParticipantsFilter({
               defaultValue={draft.hasGift}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, hasGift: value }))
+              }
+            />
+          </div>
+
+          <div>
+            <Label>Критерий</Label>
+            <Select
+              options={criteriaOptions}
+              placeholder="Все"
+              key={`criteria-${draft.criteriaId}`}
+              defaultValue={draft.criteriaId}
+              onChange={(value) =>
+                setDraft((prev) => ({ ...prev, criteriaId: value }))
               }
             />
           </div>

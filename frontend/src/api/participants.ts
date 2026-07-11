@@ -47,6 +47,7 @@ export const participantsApi = {
       gender?: string;
       is_finished?: boolean;
       has_gift?: boolean;
+      criteria_id?: number;
       q?: string;
       sort?: string;
       order?: SortOrder;
@@ -61,6 +62,7 @@ export const participantsApi = {
       search.append('is_finished', String(params.is_finished));
     if (params.has_gift !== undefined)
       search.append('has_gift', String(params.has_gift));
+    if (params.criteria_id) search.append('criteria_id', String(params.criteria_id));
     if (params.q) search.append('q', params.q);
     if (params.sort) {
       search.append('sort', params.sort);

@@ -513,6 +513,12 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/Gender'
+        - name: criteria_id
+          in: query
+          description: Вернуть только участников, у которых критерий привязан к актуальному результату.
+          schema:
+            type: integer
+            minimum: 1
         - name: sort
           in: query
           description: >-

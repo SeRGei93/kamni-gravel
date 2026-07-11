@@ -9,6 +9,7 @@ export type ParticipantUrlFilters = {
   bikeType: string; // '' | 'gravel' | ...
   isFinished: string; // '' | 'true' | 'false'
   hasGift: HasGiftFilter; // 'all' | 'yes' | 'no'
+  criteriaId: string; // '' | положительный ID критерия
   q: string; // поисковый запрос
 };
 
@@ -23,6 +24,7 @@ const PARAM_KEYS: Record<keyof ParticipantUrlFilters, string> = {
   bikeType: 'bike_type',
   isFinished: 'is_finished',
   hasGift: 'has_gift',
+  criteriaId: 'criteria_id',
   q: 'q',
 };
 
@@ -40,7 +42,8 @@ function isEmptyValue(field: keyof ParticipantUrlFilters, value: string): boolea
 }
 
 /**
- * Хранит фильтры списка участников в URL (gender/bike_type/is_finished/has_gift/q),
+ * Хранит фильтры списка участников в URL
+ * (gender/bike_type/is_finished/has_gift/criteria_id/q),
  * чтобы они переживали перезагрузку страницы и были шарящимися ссылкой. Остальные
  * query-параметры сохраняются; изменение фильтра сбрасывает страницу на 1.
  */
@@ -53,6 +56,7 @@ export function useFilterParams(): FilterParams {
   const bikeType = searchParams.get('bike_type') ?? '';
   const isFinished = searchParams.get('is_finished') ?? '';
   const hasGift = normalizeHasGift(searchParams.get('has_gift'));
+  const criteriaId = searchParams.get('criteria_id') ?? '';
   const q = searchParams.get('q') ?? '';
 
   const setFilters = useCallback(
@@ -75,5 +79,5 @@ export function useFilterParams(): FilterParams {
     [pathname, router, searchParams]
   );
 
-  return { gender, bikeType, isFinished, hasGift, q, setFilters };
+  return { gender, bikeType, isFinished, hasGift, criteriaId, q, setFilters };
 }

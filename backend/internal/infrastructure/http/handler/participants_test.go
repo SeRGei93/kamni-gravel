@@ -196,6 +196,7 @@ func (r *participantListGiftRepoFake) ManualRecipientCountsByEvent(ctx context.C
 
 type participantListCriteriaRepoFake struct {
 	repository.CriteriaRepository
+	participantIDsByCriteria map[uint]map[uint]struct{}
 }
 
 func (r *participantListCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error) {
@@ -204,6 +205,33 @@ func (r *participantListCriteriaRepoFake) FindByGift(ctx context.Context, giftID
 
 func (r *participantListCriteriaRepoFake) FindByResult(ctx context.Context, resultID uint) ([]*entity.Criteria, error) {
 	return nil, nil
+}
+
+func (r *participantListCriteriaRepoFake) FindParticipantIDsByResultCriteria(ctx context.Context, eventID, criteriaID uint) (map[uint]struct{}, error) {
+	return r.participantIDsByCriteria[criteriaID], nil
+}
+
+func TestParticipantsHandlerFiltersByResultCriterion(t *testing.T) {
+	h := newParticipantsListTestHandler()
+	h.criteriaRepo = &participantListCriteriaRepoFake{
+		participantIDsByCriteria: map[uint]map[uint]struct{}{
+			12: {
+				1: {},
+				3: {},
+			},
+		},
+	}
+
+	page := getParticipantsList(t, h, "/api/events/77/participants?criteria_id=12&page=1&page_size=50")
+	if page.Total != 2 || len(page.Participants) != 2 {
+		t.Fatalf("filtered page = total:%d participants:%d, want total:2 participants:2", page.Total, len(page.Participants))
+	}
+	if page.Participants[0].ID != 1 {
+		t.Fatalf("first filtered participant ID = %d, want 1", page.Participants[0].ID)
+	}
+	if page.Participants[1].ID != 3 {
+		t.Fatalf("second filtered participant ID = %d, want 3", page.Participants[1].ID)
+	}
 }
 
 func TestParticipantsHandlerMergesAutomaticAndManualPrizeCountsBeforeSortingAndPagination(t *testing.T) {

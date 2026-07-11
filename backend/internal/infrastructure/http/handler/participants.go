@@ -98,6 +98,17 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		queryParams.IsFinished = &isFinished
 	}
 
+	var criteriaID *uint
+	if criteriaIDStr := r.URL.Query().Get("criteria_id"); criteriaIDStr != "" {
+		parsedCriteriaID, parseErr := strconv.ParseUint(criteriaIDStr, 10, 32)
+		if parseErr != nil || parsedCriteriaID == 0 {
+			response.BadRequest(w, "Invalid criteria ID")
+			return
+		}
+		parsed := uint(parsedCriteriaID)
+		criteriaID = &parsed
+	}
+
 	// Доп. фильтры, применяемые на уровне обработчика (server-side, чтобы пагинация
 	// была корректной): наличие подарка и текстовый поиск.
 	var hasGiftFilter *bool
@@ -160,6 +171,18 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("DEBUG participant prize counts calculated: event_id=%d automatic_participants=%d manual_participants=%d", eventID, len(automaticPrizeCounts), len(manualPrizeCounts))
 
+	participantIDsByCriteria, err := h.participantIDsByResultCriteria(
+		r.Context(),
+		uint(eventID),
+		criteriaID,
+		participantsWithPlace,
+	)
+	if err != nil {
+		log.Printf("Error getting participants by result criteria: event_id=%d criteria_id=%v error=%v", eventID, criteriaID, err)
+		response.InternalServerError(w, "Failed to filter participants by criteria")
+		return
+	}
+
 	// Конвертируем в DTO с местами и флагом has_gift.
 	allDTOs := make([]*dto.ParticipantDTO, 0, len(participantsWithPlace))
 	for _, pwp := range participantsWithPlace {
@@ -188,6 +211,11 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	// Применяем фильтры has_gift и поиск (server-side, до пагинации).
 	filtered := make([]*dto.ParticipantDTO, 0, len(allDTOs))
 	for _, d := range allDTOs {
+		if criteriaID != nil {
+			if _, ok := participantIDsByCriteria[d.ID]; !ok {
+				continue
+			}
+		}
 		if hasGiftFilter != nil && d.HasGift != *hasGiftFilter {
 			continue
 		}
@@ -229,10 +257,49 @@ func (h *ParticipantsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		resp.PageSize = page.PageSize
 	}
 
-	log.Printf("DEBUG Participants list served: event_id=%d paginated=%t total=%d page=%d page_size=%d returned=%d has_gift=%v q=%q sort=%q order=%q",
-		eventID, paginate, total, page.Page, page.PageSize, len(pageItems), hasGiftFilter, searchQuery, sortKey, sortOrder)
+	log.Printf("DEBUG Participants list served: event_id=%d paginated=%t total=%d page=%d page_size=%d returned=%d criteria_id=%v has_gift=%v q=%q sort=%q order=%q",
+		eventID, paginate, total, page.Page, page.PageSize, len(pageItems), criteriaID, hasGiftFilter, searchQuery, sortKey, sortOrder)
 
 	response.Success(w, resp)
+}
+
+func (h *ParticipantsHandler) participantIDsByResultCriteria(
+	ctx context.Context,
+	eventID uint,
+	criteriaID *uint,
+	participantsWithPlace []*query.ParticipantWithPlace,
+) (map[uint]struct{}, error) {
+	if criteriaID == nil {
+		return nil, nil
+	}
+	if h.criteriaRepo == nil {
+		return nil, errors.New("criteria repository is not configured")
+	}
+
+	if finder, ok := h.criteriaRepo.(repository.ResultCriteriaParticipantRepository); ok {
+		return finder.FindParticipantIDsByResultCriteria(ctx, eventID, *criteriaID)
+	}
+
+	participantIDs := make(map[uint]struct{})
+	for _, participantWithPlace := range participantsWithPlace {
+		result := participantWithPlace.Participant.Result
+		if result == nil {
+			continue
+		}
+
+		criteria, err := h.criteriaRepo.FindByResult(ctx, result.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, criterion := range criteria {
+			if criterion.ID == *criteriaID {
+				participantIDs[participantWithPlace.Participant.ID] = struct{}{}
+				break
+			}
+		}
+	}
+
+	return participantIDs, nil
 }
 
 func (h *ParticipantsHandler) automaticPrizeCountsByParticipant(ctx context.Context, eventID uint) (map[uint]int, error) {
