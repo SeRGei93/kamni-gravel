@@ -23,7 +23,7 @@ describe('miniappApi manual gift endpoints', () => {
     );
     const request = fetchMock.mock.calls[0][1] as RequestInit;
     expect(new Headers(request.headers).get('Content-Type')).toBe('application/json');
-    expect(new Headers(request.headers).get('X-Telegram-Init-Data')).toBe('');
+    expect(new Headers(request.headers).get('X-Telegram-Init-Data')).toBeNull();
   });
 
   it('uses protected list endpoints', async () => {

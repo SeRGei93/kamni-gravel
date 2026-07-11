@@ -92,18 +92,19 @@ type Server struct {
 
 // Config представляет конфигурацию сервера
 type Config struct {
-	Host                 string
-	Port                 int
-	AllowedOrigins       []string
-	JWTSecret            string
-	JWTAccessTTL         time.Duration
-	JWTRefreshTTL        time.Duration
-	BotToken             string // Токен Telegram бота для получения файлов
-	PublicChatID         int64
-	MiniappURL           string
-	FileStoragePath      string
-	MiniappCacheDir      string        // Каталог файлового кеша каталога подарков мини-приложения
-	MiniappGiftsCacheTTL time.Duration // Страховочный TTL записей кеша подарков мини-приложения
+	Host                       string
+	Port                       int
+	AllowedOrigins             []string
+	JWTSecret                  string
+	JWTAccessTTL               time.Duration
+	JWTRefreshTTL              time.Duration
+	BotToken                   string // Токен Telegram бота для получения файлов
+	PublicChatID               int64
+	MiniappURL                 string
+	FileStoragePath            string
+	MiniappCacheDir            string        // Каталог файлового кеша каталога подарков мини-приложения
+	MiniappGiftsCacheTTL       time.Duration // Страховочный TTL записей кеша подарков мини-приложения
+	MiniappLocalTelegramUserID int64         // Локальный Telegram-пользователь для браузерной Mini App проверки
 }
 
 // NewServer создаёт новый HTTP сервер
@@ -415,7 +416,10 @@ func NewServer(
 		chatMembersHandler:               chatMembersHandler,
 		lockManager:                      lockManager,
 		jwtManager:                       jwtManager,
-		telegramWebAppAuth:               middleware.TelegramWebAppAuth(cfg.BotToken),
+		telegramWebAppAuth: middleware.TelegramWebAppAuthWithConfig(middleware.TelegramWebAppAuthConfig{
+			BotToken:               cfg.BotToken,
+			LocalDevTelegramUserID: cfg.MiniappLocalTelegramUserID,
+		}),
 	}
 
 	// Создаём router

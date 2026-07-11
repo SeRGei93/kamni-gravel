@@ -102,6 +102,8 @@ ALLOWED_ORIGINS=https://gravel.example.com
 
 Miniapp-запросы отправляют заголовок `X-Telegram-Init-Data` со значением из `Telegram.WebApp.initData`; backend валидирует этот заголовок перед доступом к `/api/miniapp/*`.
 
+Для локальной проверки Mini App в обычном браузере можно включить имитацию участника: задайте `MINIAPP_LOCAL_MODE=true` и `MINIAPP_LOCAL_TELEGRAM_USER_ID=<telegram_user_id участника>` в локальном `.env`. В этом режиме frontend не ждёт Telegram WebApp, а backend подставляет указанного пользователя **только при `ENV=local` и только если заголовок init data отсутствует**. Невалидный Telegram init data всё равно отклоняется; вне `ENV=local` такая конфигурация не запускается.
+
 #### Кеш первого экрана Mini App
 
 Каталог одобренных подарков (`GET /api/miniapp/gifts`) кешируется на стороне backend в файлах на диске, чтобы ускорить первый экран Mini App (в дефолтном состоянии фронтенд шлёт три параллельных запроса). Параметры:
