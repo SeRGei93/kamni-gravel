@@ -343,6 +343,30 @@ func TestGiftRepositoryFindByUserAndEvent(t *testing.T) {
 	}
 }
 
+func TestGiftRepositoryHasByUserAndEvent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New error: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT EXISTS`).
+		WithArgs(int64(100), uint(77)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+	repo := NewGiftRepository(db)
+	hasGifts, err := repo.HasByUserAndEvent(context.Background(), 100, 77)
+	if err != nil {
+		t.Fatalf("HasByUserAndEvent error: %v", err)
+	}
+	if !hasGifts {
+		t.Fatal("HasByUserAndEvent = false, want true")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestGiftRepositoryManualRecipientCountsByEvent(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

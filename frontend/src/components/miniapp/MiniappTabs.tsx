@@ -24,13 +24,14 @@ const fixedNavigationItems: MiniappNavigationItem[] = [
     icon: "leaderboard",
   },
   { href: "/miniapp/gifts", label: "Призы", match: "/miniapp/gifts", icon: "gifts" },
-  {
-    href: "/miniapp/my-gifts",
-    label: "Мои призы",
-    match: "/miniapp/my-gifts",
-    icon: "my-gifts",
-  },
 ];
+
+const myGiftsNavigationItem: MiniappNavigationItem = {
+  href: "/miniapp/my-gifts",
+  label: "Мои призы",
+  match: "/miniapp/my-gifts",
+  icon: "my-gifts",
+};
 
 const navigationItemClass =
   "flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[1.5rem] px-1.5 py-1.5 text-[10px] font-semibold leading-3 transition active:scale-[0.96]";
@@ -38,19 +39,22 @@ const navigationItemClass =
 export default function MiniappTabs() {
   const pathname = usePathname() ?? "";
   const { session } = useMiniappSession();
+  const hasMyGifts = session?.has_my_gifts ?? false;
   const myResultParticipantID = session?.my_result_participant_id ?? null;
+  const myResultNavigationItem: MiniappNavigationItem | null = myResultParticipantID
+    ? {
+        href: `/miniapp/leaderboard/${myResultParticipantID}`,
+        label: "Мой результат",
+        match: `/miniapp/leaderboard/${myResultParticipantID}`,
+        icon: "result",
+      }
+    : null;
 
-  const navigationItems = myResultParticipantID
-    ? [
-        ...fixedNavigationItems,
-        {
-          href: `/miniapp/leaderboard/${myResultParticipantID}`,
-          label: "Мой результат",
-          match: `/miniapp/leaderboard/${myResultParticipantID}`,
-          icon: "result" as const,
-        },
-      ]
-    : fixedNavigationItems;
+  const navigationItems: MiniappNavigationItem[] = [
+    ...fixedNavigationItems,
+    ...(hasMyGifts ? [myGiftsNavigationItem] : []),
+    ...(myResultNavigationItem ? [myResultNavigationItem] : []),
+  ];
   const myResultHref = myResultParticipantID
     ? `/miniapp/leaderboard/${myResultParticipantID}`
     : null;
@@ -58,7 +62,7 @@ export default function MiniappTabs() {
   return (
     <nav
       aria-label="Навигация Mini App"
-      className="tg-miniapp-bottom-nav fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-30 px-4"
+      className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-30 px-4"
     >
       <div className="tg-liquid-glass-nav mx-auto flex w-full max-w-md items-stretch rounded-[1.75rem] p-1">
         {navigationItems.map((item) => {

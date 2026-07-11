@@ -70,6 +70,9 @@ type ManualGiftRepository interface {
 	// FindByUserAndEvent находит подарки пользователя в рамках одного события.
 	FindByUserAndEvent(ctx context.Context, userID int64, eventID uint) ([]*entity.Gift, error)
 
+	// HasByUserAndEvent сообщает, создавал ли пользователь хотя бы один подарок для события.
+	HasByUserAndEvent(ctx context.Context, userID int64, eventID uint) (bool, error)
+
 	// SetManualRecipient заменяет или очищает получателя ручного подарка.
 	// Операция не изменяет остальные поля подарка и защищает инвариант одного события.
 	SetManualRecipient(ctx context.Context, giftID uint, recipientParticipantID *uint) error

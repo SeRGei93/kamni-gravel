@@ -32,6 +32,7 @@ type MiniappHandler struct {
 	getParticipantByUserHandler       *query.GetParticipantByUserAndEventHandler
 	resultRepo                        repository.ResultRepository
 	getOwnerManualGiftsHandler        *query.GetOwnerManualGiftsHandler
+	hasOwnerGiftsHandler              *query.HasOwnerGiftsHandler
 	getMiniappParticipantsHandler     *query.GetMiniappParticipantsHandler
 	setManualGiftRecipientHandler     *command.SetManualGiftRecipientHandler
 	fileFetcher                       miniappFileFetcher
@@ -42,10 +43,12 @@ type MiniappHandler struct {
 // base Mini App handler is constructed. All handlers remain server-owned.
 func (h *MiniappHandler) ConfigureManualGiftManagement(
 	getOwnerManualGiftsHandler *query.GetOwnerManualGiftsHandler,
+	hasOwnerGiftsHandler *query.HasOwnerGiftsHandler,
 	getMiniappParticipantsHandler *query.GetMiniappParticipantsHandler,
 	setManualGiftRecipientHandler *command.SetManualGiftRecipientHandler,
 ) {
 	h.getOwnerManualGiftsHandler = getOwnerManualGiftsHandler
+	h.hasOwnerGiftsHandler = hasOwnerGiftsHandler
 	h.getMiniappParticipantsHandler = getMiniappParticipantsHandler
 	h.setManualGiftRecipientHandler = setManualGiftRecipientHandler
 }
@@ -122,6 +125,7 @@ func newMiniappHandlerWithFileFetcher(
 type MiniappSessionResponse struct {
 	User                  MiniappTelegramUserDTO `json:"user"`
 	Event                 MiniappEventDTO        `json:"event"`
+	HasMyGifts            bool                   `json:"has_my_gifts"`
 	MyResultParticipantID *uint                  `json:"my_result_participant_id,omitempty"`
 }
 
@@ -171,10 +175,24 @@ func (h *MiniappHandler) Session(w http.ResponseWriter, r *http.Request) {
 	}
 
 	myResultParticipantID := miniappMyResultParticipantID(participant)
-	log.Printf("INFO [FIX] Miniapp session resolved: telegram_user_id=%d event_id=%d has_my_result=%t", user.ID, event.ID, myResultParticipantID != nil)
+	hasMyGifts := false
+	if h.hasOwnerGiftsHandler != nil {
+		var hasOwnerGiftsErr error
+		hasMyGifts, hasOwnerGiftsErr = h.hasOwnerGiftsHandler.Handle(r.Context(), query.HasOwnerGiftsQuery{
+			OwnerTelegramUserID: user.ID,
+			EventID:             event.ID,
+		})
+		if hasOwnerGiftsErr != nil {
+			log.Printf("WARN Miniapp owner gifts presence lookup failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, hasOwnerGiftsErr)
+			hasMyGifts = false
+		}
+	}
+
+	log.Printf("INFO [FIX] Miniapp session resolved: telegram_user_id=%d event_id=%d has_my_gifts=%t has_my_result=%t", user.ID, event.ID, hasMyGifts, myResultParticipantID != nil)
 	response.Success(w, MiniappSessionResponse{
 		User:                  miniappTelegramUserDTO(user),
 		Event:                 miniappEventDTO(event),
+		HasMyGifts:            hasMyGifts,
 		MyResultParticipantID: myResultParticipantID,
 	})
 }

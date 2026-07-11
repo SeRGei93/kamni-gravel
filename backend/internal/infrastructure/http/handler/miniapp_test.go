@@ -50,6 +50,33 @@ func TestMiniappSessionReturnsTelegramUserAndActiveEvent(t *testing.T) {
 	if got.Event.ID != 77 || got.Event.Name != "Gravel Race" {
 		t.Fatalf("event mismatch: %#v", got.Event)
 	}
+	if got.HasMyGifts {
+		t.Fatal("has my gifts = true, want false")
+	}
+}
+
+func TestMiniappSessionIncludesOwnerGiftPresence(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}},
+		&miniappHandlerGiftRepoFake{hasOwnerGifts: true},
+		nil,
+		nil,
+	)
+
+	rr := miniappRequest(t, token, now, h.Session, "/api/miniapp/session")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got MiniappSessionResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.HasMyGifts {
+		t.Fatal("has my gifts = false, want true")
+	}
 }
 
 func TestMiniappSessionIncludesCurrentUsersFinishedResult(t *testing.T) {
@@ -613,6 +640,7 @@ func newMiniappTestHandler(
 	)
 	handler.ConfigureManualGiftManagement(
 		query.NewGetOwnerManualGiftsHandler(giftRepo),
+		query.NewHasOwnerGiftsHandler(giftRepo),
 		query.NewGetMiniappParticipantsHandler(participantRepo),
 		command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo),
 	)
@@ -688,6 +716,8 @@ type miniappHandlerGiftRepoFake struct {
 	setRecipientID     *uint
 	setRecipientErr    error
 	setCalls           int
+	hasOwnerGifts      bool
+	hasOwnerGiftsErr   error
 }
 
 func (r *miniappHandlerGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error {
@@ -750,6 +780,9 @@ func (r *miniappHandlerGiftRepoFake) FindByUserAndEvent(ctx context.Context, use
 		}
 	}
 	return matched, nil
+}
+func (r *miniappHandlerGiftRepoFake) HasByUserAndEvent(ctx context.Context, userID int64, eventID uint) (bool, error) {
+	return r.hasOwnerGifts, r.hasOwnerGiftsErr
 }
 func (r *miniappHandlerGiftRepoFake) SetManualRecipient(ctx context.Context, giftID uint, recipientParticipantID *uint) error {
 	r.setCalls++

@@ -537,6 +537,25 @@ func (r *giftRepository) FindByUserAndEvent(ctx context.Context, userID int64, e
 	return gifts, nil
 }
 
+func (r *giftRepository) HasByUserAndEvent(ctx context.Context, userID int64, eventID uint) (bool, error) {
+	const query = `
+		SELECT EXISTS(
+			SELECT 1
+			FROM gifts
+			WHERE user_id = $1 AND event_id = $2
+		)
+	`
+
+	var hasGifts bool
+	if err := r.db.QueryRowContext(ctx, query, userID, eventID).Scan(&hasGifts); err != nil {
+		log.Printf("ERROR gift owner existence lookup failed: user_id=%d event_id=%d error=%v", userID, eventID, err)
+		return false, err
+	}
+
+	log.Printf("DEBUG gift owner existence lookup completed: user_id=%d event_id=%d has_gifts=%t", userID, eventID, hasGifts)
+	return hasGifts, nil
+}
+
 func scanGifts(rows *sql.Rows, queryErr error) ([]*entity.Gift, error) {
 	if queryErr != nil {
 		return nil, queryErr

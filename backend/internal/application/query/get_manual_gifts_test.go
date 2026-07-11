@@ -80,6 +80,24 @@ func TestGetManualGiftsHandlersPropagateRepositoryFailures(t *testing.T) {
 	if _, err := ownerHandler.Handle(context.Background(), GetOwnerManualGiftsQuery{OwnerTelegramUserID: 100, EventID: 77}); !errors.Is(err, repoErr) {
 		t.Fatalf("owner query error = %v, want wrapped repository error", err)
 	}
+
+	hasOwnerHandler := NewHasOwnerGiftsHandler(&manualGiftsRepoFake{hasOwnerErr: repoErr})
+	if _, err := hasOwnerHandler.Handle(context.Background(), HasOwnerGiftsQuery{OwnerTelegramUserID: 100, EventID: 77}); !errors.Is(err, repoErr) {
+		t.Fatalf("owner gift presence error = %v, want wrapped repository error", err)
+	}
+}
+
+func TestHasOwnerGiftsHandlerReportsGiftPresence(t *testing.T) {
+	repo := &manualGiftsRepoFake{hasOwnerGifts: true}
+	handler := NewHasOwnerGiftsHandler(repo)
+
+	hasGifts, err := handler.Handle(context.Background(), HasOwnerGiftsQuery{OwnerTelegramUserID: 100, EventID: 77})
+	if err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+	if !hasGifts || repo.ownerID != 100 || repo.ownerEventID != 77 {
+		t.Fatalf("has gifts = %t, scope=%d/%d", hasGifts, repo.ownerID, repo.ownerEventID)
+	}
 }
 
 func containsJSONKey(body []byte, key string) bool {
@@ -93,13 +111,15 @@ func containsJSONKey(body []byte, key string) bool {
 
 type manualGiftsRepoFake struct {
 	repository.ManualGiftRepository
-	eventID      uint
-	eventGifts   []*entity.Gift
-	eventErr     error
-	ownerID      int64
-	ownerEventID uint
-	ownerGifts   []*entity.Gift
-	ownerErr     error
+	eventID       uint
+	eventGifts    []*entity.Gift
+	eventErr      error
+	ownerID       int64
+	ownerEventID  uint
+	ownerGifts    []*entity.Gift
+	ownerErr      error
+	hasOwnerGifts bool
+	hasOwnerErr   error
 }
 
 func (r *manualGiftsRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
@@ -111,4 +131,10 @@ func (r *manualGiftsRepoFake) FindByUserAndEvent(ctx context.Context, userID int
 	r.ownerID = userID
 	r.ownerEventID = eventID
 	return r.ownerGifts, r.ownerErr
+}
+
+func (r *manualGiftsRepoFake) HasByUserAndEvent(ctx context.Context, userID int64, eventID uint) (bool, error) {
+	r.ownerID = userID
+	r.ownerEventID = eventID
+	return r.hasOwnerGifts, r.hasOwnerErr
 }

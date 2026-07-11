@@ -302,6 +302,7 @@ export interface MiniappEvent {
 export interface MiniappSessionResponse {
   user: MiniappTelegramUser;
   event: MiniappEvent;
+  has_my_gifts: boolean;
   my_result_participant_id?: number;
 }
 

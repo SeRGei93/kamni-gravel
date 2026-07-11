@@ -79,9 +79,6 @@ export default function MiniappMyGiftsPage() {
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
         <header className="tg-card rounded-xl border p-3">
           <h1 className="tg-title text-lg font-semibold">Мои призы</h1>
-          <p className="tg-muted mt-1 text-xs leading-4">
-            Выберите получателя только для призов, которым администратор включил ручное распределение.
-          </p>
         </header>
         {gifts.length === 0 ? (
           <section className="tg-card rounded-xl border p-5 text-center">

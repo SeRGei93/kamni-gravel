@@ -1766,6 +1766,9 @@ components:
           $ref: '#/components/schemas/MiniappTelegramUser'
         event:
           $ref: '#/components/schemas/MiniappEvent'
+        has_my_gifts:
+          type: boolean
+          description: Показывает, создал ли текущий пользователь хотя бы один приз для активного события.
         my_result_participant_id:
           type: integer
           nullable: true

@@ -1,11 +1,6 @@
 "use client";
 
 import type { ManualGift, MiniappParticipantOption } from "@/types";
-import {
-  miniappGiftModeLabel,
-  miniappGiftRecipientLabel,
-  miniappGiftReviewLabel,
-} from "@/utils/miniappMyGifts";
 import MyGiftRecipientSelect from "./MyGiftRecipientSelect";
 
 interface MyGiftCardProps {
@@ -21,39 +16,18 @@ export default function MyGiftCard({
   savingGiftID,
   onSaveRecipient,
 }: MyGiftCardProps) {
-  const isManual = gift.manual_distribution;
-
   return (
     <article className="tg-card rounded-xl border p-3">
-      <div className="min-w-0">
-        <h2 className="tg-title break-words text-sm font-semibold leading-5">
-          {gift.description}
-        </h2>
-        <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${
-          isManual ? "tg-soft-accent" : "tg-divider tg-muted border"
-        }`}>
-          {miniappGiftModeLabel(gift)}
-        </span>
-        <p className="tg-muted mt-1 text-xs">{miniappGiftReviewLabel(gift)}</p>
-      </div>
-
-      {isManual ? (
-        <>
-          <p className="tg-muted mt-3 text-xs leading-4">
-            Сейчас: <span className="tg-title font-semibold">{miniappGiftRecipientLabel(gift)}</span>
-          </p>
-          <MyGiftRecipientSelect
-            key={`${gift.id}:${gift.recipient?.id ?? "none"}`}
-            gift={gift}
-            participants={participants}
-            isSaving={savingGiftID === gift.id}
-            onSave={onSaveRecipient}
-          />
-        </>
-      ) : (
-        <p className="tg-muted tg-divider mt-3 rounded-lg border px-3 py-2 text-xs leading-4">
-          Этот приз участвует в автоматическом распределении. Получателя для него выбирает система по условиям приза.
-        </p>
+      <h2 className="tg-title break-words text-sm font-semibold leading-5">
+        {gift.description}
+      </h2>
+      {gift.manual_distribution && !gift.recipient && (
+        <MyGiftRecipientSelect
+          gift={gift}
+          participants={participants}
+          isSaving={savingGiftID === gift.id}
+          onSave={onSaveRecipient}
+        />
       )}
     </article>
   );
