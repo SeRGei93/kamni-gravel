@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/domain/valueobject"
 )
 
@@ -209,6 +210,118 @@ func TestUpdateGiftHandlerDoesNotRepublishAlreadyApprovedGift(t *testing.T) {
 	}
 }
 
+func TestUpdateGiftHandlerManualDistributionPresenceSemantics(t *testing.T) {
+	manualRecipientID := uint(20)
+	manualGift := baseUpdateGift()
+	manualGift.ManualDistribution = true
+	manualGift.ManualRecipientParticipantID = &manualRecipientID
+	repo := &updateGiftRepoFake{gift: manualGift}
+	h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: 21, EventID: 77}})
+
+	description := "Updated"
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{GiftID: 1, Description: &description}); err != nil {
+		t.Fatalf("preserve manual state error: %v", err)
+	}
+	if !repo.updatedGift.ManualDistribution || repo.updatedGift.ManualRecipientParticipantID == nil || *repo.updatedGift.ManualRecipientParticipantID != 20 {
+		t.Fatalf("manual state changed when omitted: %+v", repo.updatedGift)
+	}
+
+	manualDistribution := false
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{GiftID: 1, ManualDistribution: &manualDistribution}); err != nil {
+		t.Fatalf("disable manual distribution error: %v", err)
+	}
+	if repo.updatedGift.ManualDistribution || repo.updatedGift.ManualRecipientParticipantID != nil {
+		t.Fatalf("disable should clear recipient: %+v", repo.updatedGift)
+	}
+
+	manualDistribution = true
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:                          1,
+		ManualDistribution:              &manualDistribution,
+		ManualRecipientParticipantIDSet: true,
+		ManualRecipientParticipantID:    nil,
+	}); err != nil {
+		t.Fatalf("explicit recipient clear error: %v", err)
+	}
+	if !repo.updatedGift.ManualDistribution || repo.updatedGift.ManualRecipientParticipantID != nil {
+		t.Fatalf("explicit recipient clear state = %+v", repo.updatedGift)
+	}
+}
+
+func TestUpdateGiftHandlerManualDistributionRejectsInvalidRecipientMatrix(t *testing.T) {
+	recipientID := uint(21)
+	manualDistribution := false
+	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
+	h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77}})
+
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:                          1,
+		ManualDistribution:              &manualDistribution,
+		ManualRecipientParticipantIDSet: true,
+		ManualRecipientParticipantID:    &recipientID,
+	}); !errors.Is(err, ErrManualGiftRecipientConflict) {
+		t.Fatalf("false with recipient error = %v, want ErrManualGiftRecipientConflict", err)
+	}
+	if repo.updatedGift != nil {
+		t.Fatal("invalid command must not persist")
+	}
+
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:                          1,
+		ManualRecipientParticipantIDSet: true,
+		ManualRecipientParticipantID:    &recipientID,
+	}); !errors.Is(err, ErrManualGiftNotManual) {
+		t.Fatalf("automatic gift recipient error = %v, want ErrManualGiftNotManual", err)
+	}
+}
+
+func TestUpdateGiftHandlerManualDistributionValidatesRecipientAndUpdatesAtomically(t *testing.T) {
+	recipientID := uint(21)
+	manualDistribution := true
+	criteriaIDs := []uint{5}
+	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
+	h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77}})
+
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:                          1,
+		ManualDistribution:              &manualDistribution,
+		ManualRecipientParticipantIDSet: true,
+		ManualRecipientParticipantID:    &recipientID,
+		CriteriaIDs:                     criteriaIDs,
+		CriteriaIDsSet:                  true,
+	}); err != nil {
+		t.Fatalf("enable and assign error: %v", err)
+	}
+	if !repo.updateWithCriteriaCalled {
+		t.Fatal("manual configuration with criteria must use the transactional update path")
+	}
+	if !repo.updatedGift.ManualDistribution || repo.updatedGift.ManualRecipientParticipantID == nil || *repo.updatedGift.ManualRecipientParticipantID != recipientID {
+		t.Fatalf("manual recipient state = %+v", repo.updatedGift)
+	}
+
+	missingRecipientRepo := &manualGiftParticipantRepoFake{err: repository.ErrParticipantNotFound}
+	h = NewUpdateGiftHandler(&updateGiftRepoFake{gift: baseUpdateGift()}, missingRecipientRepo)
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:                          1,
+		ManualDistribution:              &manualDistribution,
+		ManualRecipientParticipantIDSet: true,
+		ManualRecipientParticipantID:    &recipientID,
+	}); !errors.Is(err, ErrManualGiftRecipientNotFound) {
+		t.Fatalf("missing recipient error = %v, want ErrManualGiftRecipientNotFound", err)
+	}
+
+	crossEventRepo := &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 88}}
+	h = NewUpdateGiftHandler(&updateGiftRepoFake{gift: baseUpdateGift()}, crossEventRepo)
+	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
+		GiftID:                          1,
+		ManualDistribution:              &manualDistribution,
+		ManualRecipientParticipantIDSet: true,
+		ManualRecipientParticipantID:    &recipientID,
+	}); !errors.Is(err, ErrManualGiftRecipientEvent) {
+		t.Fatalf("cross-event recipient error = %v, want ErrManualGiftRecipientEvent", err)
+	}
+}
+
 func baseUpdateGift() *entity.Gift {
 	return &entity.Gift{
 		ID:             1,
@@ -226,6 +339,19 @@ type updateGiftRepoFake struct {
 	updatedGift              *entity.Gift
 	criteriaIDs              []uint
 	updateWithCriteriaCalled bool
+}
+
+type manualGiftParticipantRepoFake struct {
+	repository.ParticipantRepository
+	participant *entity.Participant
+	err         error
+}
+
+func (r *manualGiftParticipantRepoFake) FindByID(ctx context.Context, id uint) (*entity.Participant, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.participant, nil
 }
 
 func (r *updateGiftRepoFake) Create(ctx context.Context, gift *entity.Gift) error { return nil }

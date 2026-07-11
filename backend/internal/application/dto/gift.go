@@ -9,21 +9,22 @@ import (
 
 // GiftDTO представляет DTO подарка для API
 type GiftDTO struct {
-	ID             uint                 `json:"id"`
-	UserID         int64                `json:"user_id"`
-	Username       string               `json:"username,omitempty"`
-	FirstName      string               `json:"first_name,omitempty"`
-	LastName       string               `json:"last_name,omitempty"`
-	EventID        uint                 `json:"event_id"`
-	Description    string               `json:"description"`
-	GenderFilter   string               `json:"gender_filter,omitempty"`    // all, male, female
-	BikeTypeFilter string               `json:"bike_type_filter,omitempty"` // all, gravel, mtb, road, single_speed, tandem
-	ReviewStatus   string               `json:"review_status"`
-	Place          *int                 `json:"place,omitempty"` // место (позиция)
-	PlaceRule      *GiftPlaceRuleDTO    `json:"place_rule"`
-	Attachments    []*GiftAttachmentDTO `json:"attachments,omitempty"`
-	Criteria       []*CriteriaDTO       `json:"criteria,omitempty"`
-	CreatedAt      time.Time            `json:"created_at"`
+	ID                 uint                 `json:"id"`
+	UserID             int64                `json:"user_id"`
+	Username           string               `json:"username,omitempty"`
+	FirstName          string               `json:"first_name,omitempty"`
+	LastName           string               `json:"last_name,omitempty"`
+	EventID            uint                 `json:"event_id"`
+	Description        string               `json:"description"`
+	GenderFilter       string               `json:"gender_filter,omitempty"`    // all, male, female
+	BikeTypeFilter     string               `json:"bike_type_filter,omitempty"` // all, gravel, mtb, road, single_speed, tandem
+	ReviewStatus       string               `json:"review_status"`
+	ManualDistribution bool                 `json:"manual_distribution"`
+	Place              *int                 `json:"place,omitempty"` // место (позиция)
+	PlaceRule          *GiftPlaceRuleDTO    `json:"place_rule"`
+	Attachments        []*GiftAttachmentDTO `json:"attachments,omitempty"`
+	Criteria           []*CriteriaDTO       `json:"criteria,omitempty"`
+	CreatedAt          time.Time            `json:"created_at"`
 }
 
 // GiftPlaceRuleDTO представляет правило привязки подарка к местам.
@@ -44,16 +45,17 @@ type GiftAttachmentDTO struct {
 // FromGift создаёт DTO из entity.Gift
 func FromGift(g *entity.Gift) *GiftDTO {
 	dto := &GiftDTO{
-		ID:             g.ID,
-		UserID:         g.UserID,
-		EventID:        g.EventID,
-		Description:    g.Description,
-		GenderFilter:   g.GenderFilter,
-		BikeTypeFilter: g.BikeTypeFilter,
-		ReviewStatus:   g.ReviewStatus.String(),
-		Place:          g.FirstLegacyPlace(),
-		PlaceRule:      FromGiftPlaceRule(g.PlaceRule),
-		CreatedAt:      g.CreatedAt,
+		ID:                 g.ID,
+		UserID:             g.UserID,
+		EventID:            g.EventID,
+		Description:        g.Description,
+		GenderFilter:       g.GenderFilter,
+		BikeTypeFilter:     g.BikeTypeFilter,
+		ReviewStatus:       g.ReviewStatus.String(),
+		ManualDistribution: g.ManualDistribution,
+		Place:              g.FirstLegacyPlace(),
+		PlaceRule:          FromGiftPlaceRule(g.PlaceRule),
+		CreatedAt:          g.CreatedAt,
 	}
 
 	// Добавляем данные пользователя

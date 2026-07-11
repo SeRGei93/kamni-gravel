@@ -49,12 +49,19 @@ type Gift struct {
 	ReviewStatus   GiftReviewStatus
 	Place          *int // место (позиция), nil если не задано
 	PlaceRule      valueobject.GiftPlaceRule
-	CreatedAt      time.Time
+	// ManualDistribution исключает подарок из автоматического распределения.
+	ManualDistribution bool
+	// ManualRecipientParticipantID — выбранный получатель ручного подарка.
+	// nil означает, что получатель ещё не выбран.
+	ManualRecipientParticipantID *uint
+	CreatedAt                    time.Time
 
 	// Связанные сущности
 	User        *User
 	Attachments []GiftAttachment
 	Criteria    []*Criteria // Критерии, привязанные к подарку
+	// ManualRecipient загружается только для защищённых owner/admin сценариев.
+	ManualRecipient *Participant
 }
 
 // HasAttachments проверяет, есть ли у подарка прикреплённые файлы

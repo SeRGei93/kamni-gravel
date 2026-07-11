@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gravel_bot/internal/domain/entity"
+	"gravel_bot/internal/domain/repository"
 	"gravel_bot/internal/domain/valueobject"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -21,7 +22,7 @@ func TestGiftRepositoryFindByIDLoadsNoPlaceRule(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT g\.id, g\.user_id, g\.event_id, g\.description`).
 		WithArgs(uint(1)).
-		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "all", "all", "approved", nil, time.Now(), "rider", "", ""))
+		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "all", "all", "approved", nil, false, nil, time.Now(), "rider", "", ""))
 	mock.ExpectQuery(`FROM gift_place_rules r`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(giftPlaceRuleRows())
@@ -34,6 +35,9 @@ func TestGiftRepositoryFindByIDLoadsNoPlaceRule(t *testing.T) {
 
 	if !gift.PlaceRule.IsNone() {
 		t.Fatalf("place rule = %s, want none", gift.PlaceRule.Type())
+	}
+	if gift.ManualDistribution || gift.ManualRecipientParticipantID != nil || gift.ManualRecipient != nil {
+		t.Fatalf("automatic gift manual state = %+v/%v/%v, want false/nil/nil", gift.ManualDistribution, gift.ManualRecipientParticipantID, gift.ManualRecipient)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
@@ -49,7 +53,7 @@ func TestGiftRepositoryFindByIDLoadsPlacesRule(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT g\.id, g\.user_id, g\.event_id, g\.description`).
 		WithArgs(uint(1)).
-		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "all", "all", "approved", 10, time.Now(), "rider", "", ""))
+		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "all", "all", "approved", 10, false, nil, time.Now(), "rider", "", ""))
 	mock.ExpectQuery(`FROM gift_place_rules r`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(giftPlaceRuleRows().
@@ -77,7 +81,7 @@ func TestGiftRepositoryFindByEventAndReviewStatusLoadsLastNRule(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT g\.id, g\.user_id, g\.event_id, g\.description`).
 		WithArgs(uint(77), entity.GiftReviewStatusApproved.String()).
-		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "female", "gravel", "approved", nil, time.Now(), "rider", "", ""))
+		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "female", "gravel", "approved", nil, false, nil, time.Now(), "rider", "", ""))
 	mock.ExpectQuery(`FROM gift_place_rules r`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(giftPlaceRuleRows().AddRow(1, "last_n", 5, nil))
@@ -205,6 +209,140 @@ func TestGiftRepositoryUpdateWithCriteriaRollsBackOnRuleInsertFailure(t *testing
 	}
 }
 
+func TestGiftRepositoryFindByIDLoadsManualGiftWithoutRecipient(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New error: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT g\.id, g\.user_id, g\.event_id, g\.description`).
+		WithArgs(uint(1)).
+		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "all", "all", "pending_review", nil, true, nil, time.Now(), "rider", "", ""))
+	mock.ExpectQuery(`FROM gift_place_rules r`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(giftPlaceRuleRows())
+
+	repo := NewGiftRepository(db)
+	gift, err := repo.FindByID(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("FindByID error: %v", err)
+	}
+	if !gift.ManualDistribution || gift.ManualRecipientParticipantID != nil || gift.ManualRecipient != nil {
+		t.Fatalf("manual gift state = %+v/%v/%v, want true/nil/nil", gift.ManualDistribution, gift.ManualRecipientParticipantID, gift.ManualRecipient)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestGiftRepositoryFindByIDLoadsManualRecipient(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New error: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT g\.id, g\.user_id, g\.event_id, g\.description`).
+		WithArgs(uint(1)).
+		WillReturnRows(giftRows().AddRow(1, int64(100), 77, "gift", "all", "all", "approved", nil, true, 42, time.Now(), "donor", "", ""))
+	mock.ExpectQuery(`FROM gift_place_rules r`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(giftPlaceRuleRows())
+	mock.ExpectQuery(`FROM participants p`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "event_id", "status", "username", "first_name", "last_name"}).
+			AddRow(42, int64(200), 77, "active", "recipient", "Recipient", "Rider"))
+
+	repo := NewGiftRepository(db)
+	gift, err := repo.FindByID(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("FindByID error: %v", err)
+	}
+	if gift.ManualRecipientParticipantID == nil || *gift.ManualRecipientParticipantID != 42 {
+		t.Fatalf("manual recipient ID = %v, want 42", gift.ManualRecipientParticipantID)
+	}
+	if gift.ManualRecipient == nil || gift.ManualRecipient.ID != 42 || gift.ManualRecipient.User == nil || gift.ManualRecipient.User.Username != "recipient" {
+		t.Fatalf("manual recipient = %+v, want loaded participant", gift.ManualRecipient)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestGiftRepositorySetManualRecipientUpdatesAndClears(t *testing.T) {
+	for _, recipientID := range []*uint{uintPointer(42), nil} {
+		t.Run(manualRecipientTestName(recipientID), func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("sqlmock.New error: %v", err)
+			}
+			defer db.Close()
+
+			mock.ExpectQuery(`WITH target_gift AS`).
+				WithArgs(uint(1), recipientID).
+				WillReturnRows(sqlmock.NewRows([]string{"case"}).AddRow("updated"))
+
+			repo := NewGiftRepository(db)
+			if err := repo.SetManualRecipient(context.Background(), 1, recipientID); err != nil {
+				t.Fatalf("SetManualRecipient error: %v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatalf("sql expectations: %v", err)
+			}
+		})
+	}
+}
+
+func TestGiftRepositorySetManualRecipientRejectsCrossEventParticipant(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New error: %v", err)
+	}
+	defer db.Close()
+
+	recipientID := uint(42)
+	mock.ExpectQuery(`WITH target_gift AS`).
+		WithArgs(uint(1), &recipientID).
+		WillReturnRows(sqlmock.NewRows([]string{"case"}).AddRow("recipient_event_mismatch"))
+
+	repo := NewGiftRepository(db)
+	err = repo.SetManualRecipient(context.Background(), 1, &recipientID)
+	if !errors.Is(err, repository.ErrManualRecipientEventMismatch) {
+		t.Fatalf("SetManualRecipient error = %v, want ErrManualRecipientEventMismatch", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestGiftRepositoryFindByUserAndEvent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New error: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(`FROM gifts`).
+		WithArgs(int64(100), uint(77)).
+		WillReturnRows(giftOwnerRows().AddRow(1, int64(100), 77, "gift", "all", "all", "approved", nil, true, nil, time.Now()))
+	mock.ExpectQuery(`FROM gift_place_rules r`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(giftPlaceRuleRows())
+
+	repo := NewGiftRepository(db)
+	gifts, err := repo.FindByUserAndEvent(context.Background(), 100, 77)
+	if err != nil {
+		t.Fatalf("FindByUserAndEvent error: %v", err)
+	}
+	if len(gifts) != 1 || !gifts[0].ManualDistribution || gifts[0].ManualRecipientParticipantID != nil {
+		t.Fatalf("gifts = %+v, want one unassigned manual gift", gifts)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func giftRows() *sqlmock.Rows {
 	return sqlmock.NewRows([]string{
 		"id",
@@ -215,10 +353,28 @@ func giftRows() *sqlmock.Rows {
 		"bike_type_filter",
 		"review_status",
 		"place",
+		"manual_distribution",
+		"manual_recipient_participant_id",
 		"created_at",
 		"username",
 		"first_name",
 		"last_name",
+	})
+}
+
+func giftOwnerRows() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{
+		"id",
+		"user_id",
+		"event_id",
+		"description",
+		"gender_filter",
+		"bike_type_filter",
+		"review_status",
+		"place",
+		"manual_distribution",
+		"manual_recipient_participant_id",
+		"created_at",
 	})
 }
 
@@ -242,8 +398,19 @@ func giftRepoUpdateGift(t *testing.T) *entity.Gift {
 
 func expectGiftFieldsUpdate(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(`UPDATE gifts SET description`).
-		WithArgs("gift", "all", "all", entity.GiftReviewStatusApproved.String(), sqlmock.AnyArg(), uint(1)).
+		WithArgs("gift", "all", "all", entity.GiftReviewStatusApproved.String(), sqlmock.AnyArg(), false, nil, uint(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+}
+
+func uintPointer(value uint) *uint {
+	return &value
+}
+
+func manualRecipientTestName(recipientID *uint) string {
+	if recipientID == nil {
+		return "clear"
+	}
+	return "assign"
 }
 
 func mustGiftRepoPlacesRule(t *testing.T, places []int) valueobject.GiftPlaceRule {
