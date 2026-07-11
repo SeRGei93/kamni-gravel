@@ -206,7 +206,7 @@ export default function ParticipantsPage() {
   }, [visibleColumns, sortKey, setSort]);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
         <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
           Участники
