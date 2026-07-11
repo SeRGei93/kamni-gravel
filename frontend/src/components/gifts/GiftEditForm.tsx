@@ -10,6 +10,7 @@ import Badge from '@/components/ui/badge/Badge';
 import { Modal } from '@/components/ui/modal';
 import { useModal } from '@/hooks/useModal';
 import CriteriaForm from '@/components/criteria/CriteriaForm';
+import RecipientAutocomplete from '@/components/gifts/RecipientAutocomplete';
 import { PlusIcon, TrashBinIcon } from '@/icons';
 import { addSelectedCriterionId, getCriteriaColor } from '@/utils/criteria';
 import type {
@@ -38,9 +39,7 @@ import {
 } from '@/constants';
 import {
   buildManualGiftUpdate,
-  formatManualRecipientSearchLabel,
 } from '@/utils/manualGiftAssignment';
-import { matchesSearchQuery } from '@/utils/search';
 
 interface GiftEditFormProps {
   gift: Gift;
@@ -91,7 +90,6 @@ export default function GiftEditForm({
   );
   const [manualRecipientParticipantID, setManualRecipientParticipantID] =
     useState<number | null>(manualGift?.recipient?.id ?? null);
-  const [recipientSearch, setRecipientSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +143,6 @@ export default function GiftEditForm({
       gift.manual_distribution ?? manualGift?.manual_distribution ?? false
     );
     setManualRecipientParticipantID(manualGift?.recipient?.id ?? null);
-    setRecipientSearch('');
     setError(null);
   }, [gift, manualGift]);
 
@@ -166,29 +163,6 @@ export default function GiftEditForm({
         : [...current, criteriaId]
     );
   };
-
-  const filteredRecipientOptions = useMemo(() => {
-    return participants.filter((participant) =>
-      matchesSearchQuery(recipientSearch, [
-        participant.first_name,
-        participant.last_name,
-        participant.username,
-        participant.id,
-        participant.user_id,
-      ])
-    );
-  }, [participants, recipientSearch]);
-
-  useEffect(() => {
-    if (!recipientSearch.trim()) {
-      return;
-    }
-    console.debug('[FIX:recipient-search] admin filter completed', {
-      gift_id: gift.id,
-      result_count: filteredRecipientOptions.length,
-      has_username_prefix: recipientSearch.trim().startsWith('@'),
-    });
-  }, [filteredRecipientOptions.length, gift.id, recipientSearch]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -375,38 +349,13 @@ export default function GiftEditForm({
             <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
               Можно назначить любого участника этого события, включая участника без результата.
             </p>
-            <input
-              type="search"
-              value={recipientSearch}
-              onChange={(event) => setRecipientSearch(event.target.value)}
-              placeholder="Поиск по имени или username"
-              className="mb-3 h-10 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 outline-none focus:border-brand-500 dark:border-gray-700 dark:text-white/90"
+            <RecipientAutocomplete
+              giftID={gift.id}
+              participants={participants}
+              selectedID={manualRecipientParticipantID}
+              onSelect={setManualRecipientParticipantID}
+              disabled={isSubmitting}
             />
-            <select
-              value={manualRecipientParticipantID ?? ''}
-              onChange={(event) => {
-                const value = event.target.value;
-                setManualRecipientParticipantID(value ? Number(value) : null);
-              }}
-              className="h-10 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 outline-none focus:border-brand-500 dark:border-gray-700 dark:text-white/90"
-            >
-              <option value="">Получатель пока не выбран</option>
-              {filteredRecipientOptions.map((participant) => {
-                const displayName = [participant.first_name, participant.last_name]
-                  .filter(Boolean)
-                  .join(' ') || `Участник #${participant.id}`;
-                return (
-                  <option key={participant.id} value={participant.id}>
-                    {formatManualRecipientSearchLabel(displayName, participant.username)}
-                  </option>
-                );
-              })}
-            </select>
-            {participants.length === 0 && (
-              <p className="mt-2 text-xs text-warning-600 dark:text-warning-400">
-                В этом событии пока нет доступных участников.
-              </p>
-            )}
           </div>
         )}
       </div>
