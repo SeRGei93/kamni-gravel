@@ -18,8 +18,6 @@ interface MyGiftRecipientSelectProps {
   onSave: (giftID: number, participantID: number | null) => Promise<void>;
 }
 
-const MAX_VISIBLE_OPTIONS = 8;
-
 function recipientLabel(participant: MiniappParticipantOption): string {
   const username = participant.username?.replace(/^@+/, "").trim();
   return username
@@ -50,11 +48,6 @@ export default function MyGiftRecipientSelect({
     );
   }, [participants, search]);
 
-  const visibleOptions = useMemo(
-    () => options.slice(0, MAX_VISIBLE_OPTIONS),
-    [options]
-  );
-
   useEffect(() => {
     if (!search.trim()) {
       return;
@@ -66,7 +59,10 @@ export default function MyGiftRecipientSelect({
     });
   }, [gift.id, options.length, search]);
 
-  const saveRecipient = async (participantID: number) => {
+  const saveRecipient = async (
+    participantID: number | null,
+    reopenPickerOnError: boolean,
+  ) => {
     try {
       setError(null);
       await onSave(gift.id, participantID);
@@ -77,7 +73,9 @@ export default function MyGiftRecipientSelect({
         message: saveError instanceof Error ? saveError.message : "Unknown error",
       });
       setError(miniappGiftMutationErrorMessage(saveError));
-      setIsPickerOpen(true);
+      if (reopenPickerOnError) {
+        setIsPickerOpen(true);
+      }
     }
   };
 
@@ -85,7 +83,11 @@ export default function MyGiftRecipientSelect({
     setSearch(recipientLabel(participant));
     setIsPickerOpen(false);
     setHighlightedIndex(-1);
-    void saveRecipient(participant.id);
+    void saveRecipient(participant.id, true);
+  };
+
+  const clearRecipient = () => {
+    void saveRecipient(null, false);
   };
 
   const openPicker = () => {
@@ -112,14 +114,14 @@ export default function MyGiftRecipientSelect({
       return;
     }
 
-    if (!search.trim() || visibleOptions.length === 0) {
+    if (options.length === 0) {
       return;
     }
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setHighlightedIndex((current) =>
-        Math.min(current + 1, visibleOptions.length - 1)
+        Math.min(current + 1, options.length - 1)
       );
       return;
     }
@@ -132,20 +134,47 @@ export default function MyGiftRecipientSelect({
 
     if (event.key === "Enter" && highlightedIndex >= 0) {
       event.preventDefault();
-      selectRecipient(visibleOptions[highlightedIndex]);
+      selectRecipient(options[highlightedIndex]);
     }
   };
 
   return (
     <>
-      <button
-        type="button"
-        onClick={openPicker}
-        disabled={isSaving}
-        className="tg-divider tg-title mt-3 h-10 w-full rounded-lg border bg-transparent px-3 text-left text-base disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        Выберите получателя
-      </button>
+      {gift.recipient ? (
+        <div className="mt-3">
+          <p className="tg-muted text-sm leading-5">
+            Получатель: <span className="tg-title font-semibold">{recipientLabel(gift.recipient)}</span>
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={openPicker}
+              disabled={isSaving}
+              className="tg-link-button inline-flex min-h-9 items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Изменить
+            </button>
+            <button
+              type="button"
+              onClick={clearRecipient}
+              disabled={isSaving}
+              className="tg-link-button inline-flex min-h-9 items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Отменить
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={openPicker}
+          disabled={isSaving}
+          className="tg-divider tg-title mt-3 h-10 w-full rounded-lg border bg-transparent px-3 text-left text-base disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Выберите получателя
+        </button>
+      )}
+      {!isPickerOpen && error && <p className="tg-error mt-2 text-sm leading-5">{error}</p>}
       {isPickerOpen && (
         <section
           role="dialog"
@@ -154,7 +183,9 @@ export default function MyGiftRecipientSelect({
           className="tg-screen fixed inset-0 z-50 flex min-h-dvh flex-col px-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+0.75rem)]"
         >
           <header className="flex items-center justify-between gap-3">
-            <h2 id={titleId} className="tg-title text-lg font-semibold">Выберите получателя</h2>
+            <h2 id={titleId} className="tg-title text-lg font-semibold">
+              {gift.recipient ? "Изменить получателя" : "Выберите получателя"}
+            </h2>
             <button
               type="button"
               onClick={closePicker}
@@ -179,7 +210,7 @@ export default function MyGiftRecipientSelect({
             aria-expanded
             aria-activedescendant={
               highlightedIndex >= 0
-                ? `${listboxId}-option-${visibleOptions[highlightedIndex]?.id}`
+                ? `${listboxId}-option-${options[highlightedIndex]?.id}`
                 : undefined
             }
             disabled={isSaving}
@@ -192,16 +223,12 @@ export default function MyGiftRecipientSelect({
             aria-label="Результаты поиска участников"
             className="tg-card tg-divider mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border p-1"
           >
-            {!search.trim() ? (
-              <p className="tg-muted px-3 py-4 text-sm">
-                Введите имя или @ник участника
-              </p>
-            ) : visibleOptions.length === 0 ? (
+            {options.length === 0 ? (
               <p className="tg-muted px-3 py-4 text-sm">
                 Участники по этому запросу не найдены.
               </p>
             ) : (
-              visibleOptions.map((participant, index) => (
+              options.map((participant, index) => (
                 <button
                   key={participant.id}
                   id={`${listboxId}-option-${participant.id}`}

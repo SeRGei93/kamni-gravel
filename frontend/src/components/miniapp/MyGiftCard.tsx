@@ -21,7 +21,7 @@ export default function MyGiftCard({
       <h2 className="tg-title break-words text-sm font-semibold leading-5">
         {gift.description}
       </h2>
-      {gift.manual_distribution && !gift.recipient && (
+      {gift.manual_distribution && (
         <MyGiftRecipientSelect
           gift={gift}
           participants={participants}
