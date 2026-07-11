@@ -16,6 +16,7 @@ import Input from '@/components/form/input/InputField';
 import Select from '@/components/form/Select';
 import Label from '@/components/form/Label';
 import TextArea from '@/components/form/input/TextArea';
+import GiftOwnerFilter from '@/components/gifts/GiftOwnerFilter';
 import { BIKE_TYPE_OPTIONS, GENDER_OPTIONS, GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
 import { CheckLineIcon, CloseLineIcon, PlusIcon } from '@/icons';
 import { getManualGiftErrorMessage } from '@/utils/manualGiftErrors';
@@ -43,12 +44,6 @@ function parseOwnerUserID(value: string | null): number | undefined {
   return Number.isSafeInteger(ownerUserID) && ownerUserID > 0
     ? ownerUserID
     : undefined;
-}
-
-function giftOwnerLabel(participant: Participant): string {
-  const name = `${participant.first_name} ${participant.last_name}`.trim();
-  if (name && participant.username) return `${name} (@${participant.username.replace(/^@+/, '')})`;
-  return name || participant.username || String(participant.user_id);
 }
 
 function pageGifts(gifts: Gift[], page: number, pageSize: number | 'all'): Gift[] {
@@ -432,20 +427,6 @@ export default function GiftsPage() {
   // Счётчики по статусам приходят с сервера (по всему событию, не по странице).
   const totalGiftsCount = statusCounts.all ?? 0;
   const totalPendingReviewCount = statusCounts.pending_review ?? 0;
-  const giftOwnerOptions = useMemo(
-    () => [
-      { value: 'all', label: 'Все авторы' },
-      ...giftOwners
-        .slice()
-        .sort((left, right) => giftOwnerLabel(left).localeCompare(giftOwnerLabel(right), 'ru'))
-        .map((participant) => ({
-          value: String(participant.user_id),
-          label: giftOwnerLabel(participant),
-        })),
-    ],
-    [giftOwners],
-  );
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -577,12 +558,11 @@ export default function GiftsPage() {
           </div>
           <div>
             <Label>Автор приза</Label>
-            <Select
-              options={giftOwnerOptions}
-              key={`gift-owner-${ownerUserIDFilter ?? 'all'}`}
-              defaultValue={ownerUserIDFilter ? String(ownerUserIDFilter) : 'all'}
-              onChange={(value) => {
-                updateListQuery({ ownerUserID: value === 'all' ? undefined : Number(value) });
+            <GiftOwnerFilter
+              owners={giftOwners}
+              value={ownerUserIDFilter}
+              onChange={(ownerUserID) => {
+                updateListQuery({ ownerUserID });
               }}
             />
           </div>
