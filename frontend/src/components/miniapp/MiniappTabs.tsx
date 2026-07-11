@@ -58,7 +58,7 @@ export default function MiniappTabs() {
   return (
     <nav
       aria-label="Навигация Mini App"
-      className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-30 px-4"
+      className="tg-miniapp-bottom-nav fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-30 px-4"
     >
       <div className="tg-liquid-glass-nav mx-auto flex w-full max-w-md items-stretch rounded-[1.75rem] p-1">
         {navigationItems.map((item) => {

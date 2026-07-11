@@ -25,18 +25,16 @@ export default function MyGiftCard({
 
   return (
     <article className="tg-card rounded-xl border p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="tg-title break-words text-sm font-semibold leading-5">
-            {gift.description}
-          </h2>
-          <p className="tg-muted mt-1 text-xs">{miniappGiftReviewLabel(gift)}</p>
-        </div>
-        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${
+      <div className="min-w-0">
+        <h2 className="tg-title break-words text-sm font-semibold leading-5">
+          {gift.description}
+        </h2>
+        <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${
           isManual ? "tg-soft-accent" : "tg-divider tg-muted border"
         }`}>
           {miniappGiftModeLabel(gift)}
         </span>
+        <p className="tg-muted mt-1 text-xs">{miniappGiftReviewLabel(gift)}</p>
       </div>
 
       {isManual ? (

@@ -757,6 +757,10 @@ span.flatpickr-weekday,
   color-scheme: dark;
 }
 
+.tg-miniapp:has([role="combobox"][aria-expanded="true"]) .tg-miniapp-bottom-nav {
+  display: none;
+}
+
 .tg-screen {
   color: var(--tg-text-color);
   background: var(--tg-secondary-bg-color);

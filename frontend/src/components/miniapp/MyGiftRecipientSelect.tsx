@@ -188,7 +188,7 @@ export default function MyGiftRecipientSelect({
               : undefined
           }
           disabled={isSaving}
-          className="tg-divider tg-title h-10 w-full rounded-lg border bg-transparent px-3 text-sm outline-none focus:border-[var(--tg-button-color)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="tg-divider tg-title h-10 w-full rounded-lg border bg-transparent px-3 text-base outline-none focus:border-[var(--tg-button-color)] disabled:cursor-not-allowed disabled:opacity-60"
         />
         {isDropdownOpen && (
           <div
