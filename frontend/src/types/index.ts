@@ -232,6 +232,10 @@ export interface Gift {
   place_rule?: GiftPlaceRule | null;
   attachments?: GiftAttachment[];
   criteria?: Criteria[];
+  // Public metadata only. Recipient identity is available exclusively through
+  // the protected manual-gift management responses below.
+  manual_distribution?: boolean;
+  manual_assignment?: ManualGift;
   created_at: string;
 }
 
@@ -242,6 +246,41 @@ export interface GiftListResponse {
   page_size?: number;
   status_counts?: Record<string, number>;
   participant_count?: number;
+}
+
+export interface ManualGiftRecipient {
+  id: number;
+  display_name: string;
+  username?: string;
+  status: ParticipantStatus;
+}
+
+// Protected owner/admin read model. It intentionally omits Telegram user IDs,
+// notes, results, and registration metadata.
+export interface ManualGift {
+  id: number;
+  event_id: number;
+  description: string;
+  review_status: GiftReviewStatus;
+  manual_distribution: boolean;
+  recipient?: ManualGiftRecipient;
+  created_at: string;
+}
+
+export interface ManualGiftListResponse {
+  gifts: ManualGift[];
+}
+
+export interface MiniappParticipantOption {
+  id: number;
+  display_name: string;
+  username?: string;
+  status: ParticipantStatus;
+}
+
+export interface MiniappParticipantOptionsResponse {
+  participants: MiniappParticipantOption[];
+  total: number;
 }
 
 export interface MiniappTelegramUser {
@@ -539,6 +578,9 @@ export interface UpdateGiftRequest {
   place?: number | null;
   place_rule?: GiftPlaceRule | null;
   criteria_ids?: number[];
+  manual_distribution?: boolean;
+  // Omitted preserves the existing recipient; null explicitly clears it.
+  manual_recipient_participant_id?: number | null;
 }
 
 export interface PrizeDistribution {

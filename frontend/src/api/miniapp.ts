@@ -3,7 +3,9 @@ import type {
   GenderFilter,
   GiftListResponse,
   MiniappLeaderboardResponse,
+  MiniappParticipantOptionsResponse,
   MiniappSessionResponse,
+  ManualGiftListResponse,
 } from '@/types';
 import { getTelegramInitData } from '@/utils/telegramWebApp';
 
@@ -130,6 +132,32 @@ export const miniappApi = {
     return miniappRequest<MiniappLeaderboardResponse>(
       `${MINIAPP_PREFIX}/leaderboard`,
       { method: 'GET' }
+    );
+  },
+
+  async getMyGifts(): Promise<ManualGiftListResponse> {
+    return miniappRequest<ManualGiftListResponse>(`${MINIAPP_PREFIX}/my-gifts`, {
+      method: 'GET',
+    });
+  },
+
+  async getParticipants(): Promise<MiniappParticipantOptionsResponse> {
+    return miniappRequest<MiniappParticipantOptionsResponse>(
+      `${MINIAPP_PREFIX}/participants`,
+      { method: 'GET' }
+    );
+  },
+
+  async updateMyGiftRecipient(
+    giftID: number,
+    participantID: number | null
+  ): Promise<void> {
+    await miniappRequest<void>(
+      `${MINIAPP_PREFIX}/my-gifts/${encodeURIComponent(String(giftID))}/recipient`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ participant_id: participantID }),
+      }
     );
   },
 

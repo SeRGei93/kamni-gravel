@@ -161,10 +161,10 @@ export default function PrizeDistributionPage() {
     <div className="space-y-6">
       <div>
         <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
-          Распределение призов
+          Автоматическое распределение призов
         </h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Автоматическое распределение призов по критериям и местам
+          Расчёт по критериям и местам. Призы с ручным распределением сюда не входят.
         </p>
       </div>
 
@@ -207,7 +207,7 @@ export default function PrizeDistributionPage() {
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            С призами
+            С автоматическими призами
           </p>
           <p className="mt-1 text-2xl font-semibold text-success-600 dark:text-success-400">
             {withPrizes}
@@ -215,7 +215,7 @@ export default function PrizeDistributionPage() {
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Призовых слотов
+            Автоматических слотов
           </p>
           <p className="mt-1 text-2xl font-semibold text-brand-600 dark:text-brand-400">
             {totalPrizeAssignments}
@@ -223,7 +223,7 @@ export default function PrizeDistributionPage() {
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Без призов
+            Без автоматического приза
           </p>
           <p className="mt-1 text-2xl font-semibold text-gray-600 dark:text-gray-400">
             {withoutPrizes}
@@ -234,7 +234,7 @@ export default function PrizeDistributionPage() {
       {unassignedSlots.length > 0 && (
         <div className="rounded-xl border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
           <p className="text-sm font-semibold text-warning-700 dark:text-warning-300">
-            Невыданные слоты: {unassignedSlots.length}
+            Невыданные автоматические слоты: {unassignedSlots.length}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {unassignedSlots.map((slot, index) => (

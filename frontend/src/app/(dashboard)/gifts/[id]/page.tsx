@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { criteriaApi } from '@/api/criteria';
 import { giftsApi } from '@/api/gifts';
+import { participantsApi } from '@/api/participants';
 import GiftEditForm from '@/components/gifts/GiftEditForm';
 import GiftPhotoPreviewGrid from '@/components/gifts/GiftPhotoPreviewGrid';
 import Badge from '@/components/ui/badge/Badge';
@@ -13,6 +14,8 @@ import type {
   CreateCriteriaRequest,
   Criteria,
   Gift,
+  ManualGift,
+  Participant,
   UpdateGiftRequest,
 } from '@/types';
 
@@ -40,6 +43,8 @@ export default function GiftEditPage() {
 
   const [gift, setGift] = useState<Gift | null>(null);
   const [criteria, setCriteria] = useState<Criteria[]>([]);
+  const [manualGift, setManualGift] = useState<ManualGift | undefined>();
+  const [participants, setParticipants] = useState<Participant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,8 +62,16 @@ export default function GiftEditPage() {
         giftsApi.getById(giftId),
         criteriaApi.getAll(),
       ]);
+      const [participantResponse, manualGiftResponse] = await Promise.all([
+        participantsApi.getByEvent(giftResponse.event_id),
+        giftsApi.getManualByEvent(giftResponse.event_id),
+      ]);
       setGift(giftResponse);
       setCriteria(criteriaResponse.criteria);
+      setParticipants(participantResponse.participants);
+      setManualGift(
+        manualGiftResponse.gifts.find((candidate) => candidate.id === giftResponse.id)
+      );
     } catch (err) {
       setGift(null);
       setError('Приз не найден или недоступен');
@@ -168,6 +181,8 @@ export default function GiftEditPage() {
             <GiftEditForm
               gift={gift}
               criteria={criteria}
+              manualGift={manualGift}
+              participants={participants}
               onSubmit={handleSubmit}
               onCancel={() => router.push(returnHref)}
               onDelete={handleDelete}

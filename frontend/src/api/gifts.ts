@@ -1,5 +1,13 @@
 import { get, post, put, del } from './client';
-import type { CreateGiftRequest, Gift, GiftListResponse, GiftReviewStatus, PageSize, UpdateGiftRequest } from '@/types';
+import type {
+  CreateGiftRequest,
+  Gift,
+  GiftListResponse,
+  GiftReviewStatus,
+  ManualGiftListResponse,
+  PageSize,
+  UpdateGiftRequest,
+} from '@/types';
 
 const GIFTS_PREFIX = '/api/gifts';
 const EVENTS_PREFIX = '/api/events';
@@ -41,6 +49,14 @@ export const giftsApi = {
 
   async getById(id: number): Promise<Gift> {
     return get<Gift>(`${GIFTS_PREFIX}/${id}`);
+  },
+
+  // Protected administrator enrichment. Public gift DTOs deliberately never
+  // contain manual recipient identity.
+  async getManualByEvent(eventId: number): Promise<ManualGiftListResponse> {
+    return get<ManualGiftListResponse>(
+      `${EVENTS_PREFIX}/${eventId}/manual-gifts`
+    );
   },
 
   async create(eventId: number, data: CreateGiftRequest): Promise<Gift> {

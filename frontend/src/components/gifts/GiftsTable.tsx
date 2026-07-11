@@ -9,6 +9,7 @@ import Button from '../ui/button/Button';
 import { CheckLineIcon, PencilIcon } from '@/icons';
 import { getCriteriaColor } from '@/utils/criteria';
 import { formatGiftPlaceRule } from '@/utils/giftPlaceRule';
+import { getManualGiftStatus } from '@/utils/manualGiftAssignment';
 import type { Gift } from '@/types';
 import { useGiftPhotoUrls } from './useGiftPhotoUrls';
 
@@ -149,6 +150,10 @@ export default function GiftsTable({
                   ? photoUrls[firstPhoto.id]?.url || null
                   : null;
                 const isPendingReview = gift.review_status === 'pending_review';
+                const distributionStatus = getManualGiftStatus(
+                  gift,
+                  assignedGiftIds ?? new Set<number>()
+                );
 
                 return (
                   <TableRow
@@ -244,20 +249,14 @@ export default function GiftsTable({
                     </TableCell>
                     <TableCell className="px-5 py-4 text-start">
                       <div className="flex items-center gap-2">
-                        <div className={`h-2.5 w-2.5 rounded-full ${
-                          isPendingReview
-                            ? 'bg-warning-500'
-                            : assignedGiftIds && assignedGiftIds.has(gift.id)
-                            ? 'bg-success-500'
-                            : 'bg-error-500'
-                        }`} />
-                        <span className="text-sm text-gray-800 dark:text-white/90">
-                          {isPendingReview
-                            ? 'На проверке / Не участвует'
-                            : assignedGiftIds && assignedGiftIds.has(gift.id)
-                              ? 'Да'
-                              : 'Нет'}
-                        </span>
+                        <Badge color={distributionStatus.color} size="sm">
+                          {distributionStatus.label}
+                        </Badge>
+                        {distributionStatus.status === 'manual_assigned' && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {gift.manual_assignment?.recipient?.display_name}
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="px-5 py-4 text-start">

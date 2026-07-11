@@ -47,17 +47,26 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
 
             <DetailRow label="От кого" value={donor} username={donorUsername || undefined} />
 
-            <div className="tg-divider grid grid-cols-2 rounded-lg border text-sm">
-              <DetailCell label="Пол" value={genderText[gender] ?? gender} />
-              <DetailCell label="Велосипед" value={bikeText[bikeType] ?? bikeType} />
-              <DetailCell
-                label="Места"
-                value={formatGiftPlaceRule(gift.place_rule ?? (gift.place ? { type: "places", places: [gift.place] } : null))}
-                wide
-              />
-            </div>
+            {gift.manual_distribution ? (
+              <div className="tg-soft-accent rounded-lg border px-3 py-2 text-sm">
+                <p className="tg-title font-medium">Ручное распределение</p>
+                <p className="tg-muted mt-1 text-xs leading-4">
+                  Получателя этого приза выбирает его даритель. Условия по полу, велосипеду, местам и критериям не применяются.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="tg-divider grid grid-cols-2 rounded-lg border text-sm">
+                  <DetailCell label="Пол" value={genderText[gender] ?? gender} />
+                  <DetailCell label="Велосипед" value={bikeText[bikeType] ?? bikeType} />
+                  <DetailCell
+                    label="Места"
+                    value={formatGiftPlaceRule(gift.place_rule ?? (gift.place ? { type: "places", places: [gift.place] } : null))}
+                    wide
+                  />
+                </div>
 
-            {criteria.length > 0 ? (
+                {criteria.length > 0 ? (
               <div>
                 <p className="tg-muted text-[10px] font-semibold uppercase">
                   Критерии
@@ -73,10 +82,12 @@ export default function GiftDetailView({ gift }: GiftDetailViewProps) {
                   ))}
                 </div>
               </div>
-            ) : (
-              <p className="tg-divider tg-muted rounded-lg border px-3 py-2 text-xs font-medium">
-                Без дополнительных критериев.
-              </p>
+                ) : (
+                  <p className="tg-divider tg-muted rounded-lg border px-3 py-2 text-xs font-medium">
+                    Без дополнительных критериев.
+                  </p>
+                )}
+              </>
             )}
           </div>
         </article>
