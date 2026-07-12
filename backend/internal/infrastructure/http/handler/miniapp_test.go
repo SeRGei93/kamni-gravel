@@ -164,14 +164,21 @@ func TestMiniappMyGiftsReturnsOnlyVerifiedUsersActiveEventGifts(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()
 	recipientID := uint(11)
+	place := 2
 	giftRepo := &miniappHandlerGiftRepoFake{
 		ownerGifts: []*entity.Gift{
 			{ID: 1, UserID: 42, EventID: 77, Description: "Manual bottle", ManualDistribution: true, ManualRecipientParticipantID: &recipientID, ReviewStatus: entity.GiftReviewStatusPendingReview, ManualRecipient: &entity.Participant{ID: recipientID, User: &entity.User{FirstName: "Ivan", Username: "ivan"}}},
-			{ID: 2, UserID: 42, EventID: 77, Description: "Automatic cap", ReviewStatus: entity.GiftReviewStatusApproved},
+			{ID: 2, UserID: 42, EventID: 77, Description: "Automatic cap", GenderFilter: "female", BikeTypeFilter: "gravel", Place: &place, ReviewStatus: entity.GiftReviewStatusApproved},
+		},
+		attachments: map[uint][]*entity.GiftAttachment{
+			1: {{ID: 13, GiftID: 1, TelegramFileID: "gift-photo", FileType: "photo"}},
 		},
 	}
+	criteriaRepo := &miniappHandlerCriteriaRepoFake{criteriaByGift: map[uint][]*entity.Criteria{
+		2: {{ID: 5, Name: "Самая быстрая", CriteriaType: "speed"}},
+	}}
 	h := newMiniappTestHandler(
-		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}}, giftRepo, nil, nil,
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}}, giftRepo, criteriaRepo, nil,
 	)
 
 	rr := miniappRequest(t, token, now, h.MyGifts, "/api/miniapp/my-gifts")
@@ -184,6 +191,12 @@ func TestMiniappMyGiftsReturnsOnlyVerifiedUsersActiveEventGifts(t *testing.T) {
 	}
 	if len(got.Gifts) != 2 || got.Gifts[0].ID != 1 || got.Gifts[1].ID != 2 || got.Gifts[0].Recipient == nil || got.Gifts[0].Recipient.ID != recipientID {
 		t.Fatalf("my gifts mismatch: %#v", got.Gifts)
+	}
+	if len(got.Gifts[0].Attachments) != 1 || got.Gifts[0].Attachments[0].TelegramFileID != "gift-photo" {
+		t.Fatalf("my gift attachments mismatch: %#v", got.Gifts[0].Attachments)
+	}
+	if got.Gifts[1].GenderFilter != "female" || got.Gifts[1].BikeTypeFilter != "gravel" || got.Gifts[1].Place == nil || *got.Gifts[1].Place != place || len(got.Gifts[1].Criteria) != 1 || got.Gifts[1].Criteria[0].ID != 5 {
+		t.Fatalf("automatic gift conditions mismatch: %#v", got.Gifts[1])
 	}
 	if strings.Contains(rr.Body.String(), "user_id") {
 		t.Fatalf("response leaks recipient telegram user id: %s", rr.Body.String())
@@ -640,7 +653,7 @@ func newMiniappTestHandler(
 		nil,
 	)
 	handler.ConfigureManualGiftManagement(
-		query.NewGetOwnerManualGiftsHandler(giftRepo),
+		query.NewGetOwnerManualGiftsHandler(giftRepo, criteriaRepo),
 		query.NewHasOwnerGiftsHandler(giftRepo),
 		query.NewGetMiniappParticipantsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{}),
 		command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo),

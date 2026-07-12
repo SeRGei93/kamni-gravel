@@ -565,9 +565,30 @@ func manualGiftDTOFromReadModel(model *query.ManualGiftReadModel) *dto.ManualGif
 		ID:                 model.ID,
 		EventID:            model.EventID,
 		Description:        model.Description,
+		GenderFilter:       model.GenderFilter,
+		BikeTypeFilter:     model.BikeTypeFilter,
 		ReviewStatus:       model.ReviewStatus,
 		ManualDistribution: model.ManualDistribution,
+		Place:              model.Place,
+		PlaceRule:          dto.FromGiftPlaceRule(model.PlaceRule),
 		CreatedAt:          model.CreatedAt,
+	}
+	if len(model.Attachments) > 0 {
+		dtoModel.Attachments = make([]*dto.GiftAttachmentDTO, len(model.Attachments))
+		for index, attachment := range model.Attachments {
+			dtoModel.Attachments[index] = &dto.GiftAttachmentDTO{
+				ID:             attachment.ID,
+				GiftID:         attachment.GiftID,
+				TelegramFileID: attachment.TelegramFileID,
+				FileType:       attachment.FileType,
+			}
+		}
+	}
+	if len(model.Criteria) > 0 {
+		dtoModel.Criteria = make([]*dto.CriteriaDTO, len(model.Criteria))
+		for index, criteria := range model.Criteria {
+			dtoModel.Criteria[index] = dto.FromCriteria(criteria)
+		}
 	}
 	if model.Recipient != nil {
 		dtoModel.Recipient = &dto.ManualGiftRecipientDTO{

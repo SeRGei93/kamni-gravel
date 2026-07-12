@@ -15,8 +15,14 @@ type ManualGiftDTO struct {
 	ID                 uint                    `json:"id"`
 	EventID            uint                    `json:"event_id"`
 	Description        string                  `json:"description"`
+	GenderFilter       string                  `json:"gender_filter,omitempty"`
+	BikeTypeFilter     string                  `json:"bike_type_filter,omitempty"`
 	ReviewStatus       string                  `json:"review_status"`
 	ManualDistribution bool                    `json:"manual_distribution"`
+	Place              *int                    `json:"place,omitempty"`
+	PlaceRule          *GiftPlaceRuleDTO       `json:"place_rule"`
+	Attachments        []*GiftAttachmentDTO    `json:"attachments,omitempty"`
+	Criteria           []*CriteriaDTO          `json:"criteria,omitempty"`
 	Recipient          *ManualGiftRecipientDTO `json:"recipient,omitempty"`
 	CreatedAt          time.Time               `json:"created_at"`
 }
@@ -55,9 +61,30 @@ func FromManualGift(gift *entity.Gift) *ManualGiftDTO {
 		ID:                 gift.ID,
 		EventID:            gift.EventID,
 		Description:        gift.Description,
+		GenderFilter:       gift.GenderFilter,
+		BikeTypeFilter:     gift.BikeTypeFilter,
 		ReviewStatus:       gift.ReviewStatus.String(),
 		ManualDistribution: gift.ManualDistribution,
+		Place:              gift.FirstLegacyPlace(),
+		PlaceRule:          FromGiftPlaceRule(gift.PlaceRule),
 		CreatedAt:          gift.CreatedAt,
+	}
+	if len(gift.Attachments) > 0 {
+		dto.Attachments = make([]*GiftAttachmentDTO, len(gift.Attachments))
+		for index, attachment := range gift.Attachments {
+			dto.Attachments[index] = &GiftAttachmentDTO{
+				ID:             attachment.ID,
+				GiftID:         attachment.GiftID,
+				TelegramFileID: attachment.TelegramFileID,
+				FileType:       attachment.FileType,
+			}
+		}
+	}
+	if len(gift.Criteria) > 0 {
+		dto.Criteria = make([]*CriteriaDTO, len(gift.Criteria))
+		for index, criteria := range gift.Criteria {
+			dto.Criteria[index] = FromCriteria(criteria)
+		}
 	}
 	if gift.ManualRecipient != nil {
 		dto.Recipient = FromManualGiftRecipient(gift.ManualRecipient)

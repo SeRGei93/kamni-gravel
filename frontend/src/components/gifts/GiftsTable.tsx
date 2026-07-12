@@ -213,9 +213,15 @@ export default function GiftsTable({
                       </div>
                     </TableCell>
                     <TableCell className="px-5 py-4 text-start">
-                      <p className="max-w-md text-sm text-gray-800 dark:text-white/90">
+                      <Link
+                        href={`/gifts/${gift.id}${
+                          editQueryString ? `?${editQueryString}` : ''
+                        }`}
+                        title="Открыть приз"
+                        className="block max-w-md text-sm text-gray-800 transition hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:text-white/90 dark:hover:text-brand-400"
+                      >
                         {gift.description}
-                      </p>
+                      </Link>
                     </TableCell>
                     <TableCell className="px-5 py-4 text-start">
                       <div>

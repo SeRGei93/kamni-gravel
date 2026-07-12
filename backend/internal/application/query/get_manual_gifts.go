@@ -18,8 +18,14 @@ type ManualGiftReadModel struct {
 	ID                 uint
 	EventID            uint
 	Description        string
+	GenderFilter       string
+	BikeTypeFilter     string
 	ReviewStatus       string
 	ManualDistribution bool
+	Place              *int
+	PlaceRule          valueobject.GiftPlaceRule
+	Attachments        []entity.GiftAttachment
+	Criteria           []*entity.Criteria
 	Recipient          *ManualGiftRecipientReadModel
 	CreatedAt          time.Time
 }
@@ -59,7 +65,11 @@ func (h *GetManualGiftsHandler) Handle(ctx context.Context, query GetManualGifts
 		if !gift.ManualDistribution {
 			continue
 		}
-		manualGifts = append(manualGifts, newManualGiftReadModel(gift))
+		manualGift, err := newManualGiftReadModel(ctx, h.giftRepo, nil, gift)
+		if err != nil {
+			return nil, fmt.Errorf("load manual gift %d: %w", gift.ID, err)
+		}
+		manualGifts = append(manualGifts, manualGift)
 	}
 	log.Printf("DEBUG manual gifts query completed: scope=admin event_id=%d returned_count=%d", query.EventID, len(manualGifts))
 	return manualGifts, nil
@@ -74,11 +84,18 @@ type GetOwnerManualGiftsQuery struct {
 
 // GetOwnerManualGiftsHandler returns the protected owner view used by My Prizes.
 type GetOwnerManualGiftsHandler struct {
-	giftRepo repository.ManualGiftRepository
+	giftRepo     repository.ManualGiftRepository
+	criteriaRepo repository.CriteriaRepository
 }
 
-func NewGetOwnerManualGiftsHandler(giftRepo repository.ManualGiftRepository) *GetOwnerManualGiftsHandler {
-	return &GetOwnerManualGiftsHandler{giftRepo: giftRepo}
+func NewGetOwnerManualGiftsHandler(
+	giftRepo repository.ManualGiftRepository,
+	criteriaRepo repository.CriteriaRepository,
+) *GetOwnerManualGiftsHandler {
+	return &GetOwnerManualGiftsHandler{
+		giftRepo:     giftRepo,
+		criteriaRepo: criteriaRepo,
+	}
 }
 
 func (h *GetOwnerManualGiftsHandler) Handle(ctx context.Context, query GetOwnerManualGiftsQuery) ([]*ManualGiftReadModel, error) {
@@ -91,25 +108,56 @@ func (h *GetOwnerManualGiftsHandler) Handle(ctx context.Context, query GetOwnerM
 
 	ownerGifts := make([]*ManualGiftReadModel, 0, len(gifts))
 	for _, gift := range gifts {
-		ownerGifts = append(ownerGifts, newManualGiftReadModel(gift))
+		ownerGift, err := newManualGiftReadModel(ctx, h.giftRepo, h.criteriaRepo, gift)
+		if err != nil {
+			return nil, fmt.Errorf("load owner gift %d: %w", gift.ID, err)
+		}
+		ownerGifts = append(ownerGifts, ownerGift)
 	}
 	log.Printf("DEBUG manual gifts query completed: scope=owner owner_user_id=%d event_id=%d returned_count=%d", query.OwnerTelegramUserID, query.EventID, len(ownerGifts))
 	return ownerGifts, nil
 }
 
-func newManualGiftReadModel(gift *entity.Gift) *ManualGiftReadModel {
+func newManualGiftReadModel(
+	ctx context.Context,
+	giftRepo repository.GiftRepository,
+	criteriaRepo repository.CriteriaRepository,
+	gift *entity.Gift,
+) (*ManualGiftReadModel, error) {
+	attachments, err := giftRepo.GetAttachments(ctx, gift.ID)
+	if err != nil {
+		return nil, fmt.Errorf("get attachments: %w", err)
+	}
+
 	model := &ManualGiftReadModel{
 		ID:                 gift.ID,
 		EventID:            gift.EventID,
 		Description:        gift.Description,
+		GenderFilter:       gift.GenderFilter,
+		BikeTypeFilter:     gift.BikeTypeFilter,
 		ReviewStatus:       gift.ReviewStatus.String(),
 		ManualDistribution: gift.ManualDistribution,
+		Place:              gift.FirstLegacyPlace(),
+		PlaceRule:          gift.PlaceRule,
 		CreatedAt:          gift.CreatedAt,
+	}
+	if len(attachments) > 0 {
+		model.Attachments = make([]entity.GiftAttachment, len(attachments))
+		for index, attachment := range attachments {
+			model.Attachments[index] = *attachment
+		}
+	}
+	if criteriaRepo != nil {
+		criteria, err := criteriaRepo.FindByGift(ctx, gift.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get criteria: %w", err)
+		}
+		model.Criteria = criteria
 	}
 	if gift.ManualRecipient != nil {
 		model.Recipient = newManualGiftRecipientReadModel(gift.ManualRecipient)
 	}
-	return model
+	return model, nil
 }
 
 func newManualGiftRecipientReadModel(participant *entity.Participant) *ManualGiftRecipientReadModel {

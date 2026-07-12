@@ -134,6 +134,10 @@ func (r *manualGiftAdminQueryRepoFake) FindByEvent(ctx context.Context, eventID 
 	return r.gifts, nil
 }
 
+func (r *manualGiftAdminQueryRepoFake) GetAttachments(ctx context.Context, giftID uint) ([]*entity.GiftAttachment, error) {
+	return nil, nil
+}
+
 func TestGiftsHandlerNotifyPublicGiftApprovedUsesRetryNotifier(t *testing.T) {
 	notifier := &giftPublicationNotifierFake{}
 	h := &GiftsHandler{publicGiftNotifier: notifier}

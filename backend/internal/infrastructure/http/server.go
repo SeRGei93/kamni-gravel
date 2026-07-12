@@ -312,7 +312,7 @@ func NewServer(
 	)
 	if manualGiftRepo, ok := giftRepo.(repository.ManualGiftRepository); ok {
 		miniappHandler.ConfigureManualGiftManagement(
-			query.NewGetOwnerManualGiftsHandler(manualGiftRepo),
+			query.NewGetOwnerManualGiftsHandler(manualGiftRepo, criteriaRepo),
 			query.NewHasOwnerGiftsHandler(manualGiftRepo),
 			query.NewGetMiniappParticipantsHandler(participantRepo, manualGiftRepo, getPrizeDistributionHandlerTemp),
 			command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo),

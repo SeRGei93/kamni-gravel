@@ -261,8 +261,14 @@ export interface ManualGift {
   id: number;
   event_id: number;
   description: string;
+  gender_filter?: GenderFilter;
+  bike_type_filter?: BikeTypeFilter;
   review_status: GiftReviewStatus;
   manual_distribution: boolean;
+  place?: number;
+  place_rule?: GiftPlaceRule | null;
+  attachments?: GiftAttachment[];
+  criteria?: Criteria[];
   recipient?: ManualGiftRecipient;
   created_at: string;
 }

@@ -27,7 +27,11 @@ func TestGetManualGiftsHandlerReturnsOnlyManualGiftsWithSafeRecipient(t *testing
 				User:   &entity.User{ID: 900, FirstName: "Alex", LastName: "Rider", Username: "alex"},
 			},
 		},
-	}}
+	},
+		attachments: map[uint][]*entity.GiftAttachment{
+			2: {{ID: 7, GiftID: 2, TelegramFileID: "photo-7", FileType: "photo"}},
+		},
+	}
 	handler := NewGetManualGiftsHandler(repo)
 
 	gifts, err := handler.Handle(context.Background(), GetManualGiftsQuery{EventID: 77})
@@ -40,6 +44,9 @@ func TestGetManualGiftsHandlerReturnsOnlyManualGiftsWithSafeRecipient(t *testing
 	if gifts[0].Recipient == nil || gifts[0].Recipient.ID != recipientID || gifts[0].Recipient.DisplayName != "Alex Rider" {
 		t.Fatalf("recipient = %+v", gifts[0].Recipient)
 	}
+	if len(gifts[0].Attachments) != 1 || gifts[0].Attachments[0].TelegramFileID != "photo-7" {
+		t.Fatalf("attachments = %+v", gifts[0].Attachments)
+	}
 
 	body, err := json.Marshal(gifts[0])
 	if err != nil {
@@ -51,11 +58,15 @@ func TestGetManualGiftsHandlerReturnsOnlyManualGiftsWithSafeRecipient(t *testing
 }
 
 func TestGetOwnerManualGiftsHandlerReturnsPendingAndApprovedGiftsForOwnerAndEvent(t *testing.T) {
+	place := 3
 	repo := &manualGiftsRepoFake{ownerGifts: []*entity.Gift{
 		{ID: 1, EventID: 77, ReviewStatus: entity.GiftReviewStatusPendingReview, ManualDistribution: true},
-		{ID: 2, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved},
+		{ID: 2, EventID: 77, GenderFilter: "female", BikeTypeFilter: "gravel", Place: &place, ReviewStatus: entity.GiftReviewStatusApproved},
 	}}
-	handler := NewGetOwnerManualGiftsHandler(repo)
+	criteriaRepo := &manualGiftCriteriaRepoFake{criteriaByGift: map[uint][]*entity.Criteria{
+		2: {{ID: 4, Name: "Самый быстрый", CriteriaType: "speed"}},
+	}}
+	handler := NewGetOwnerManualGiftsHandler(repo, criteriaRepo)
 
 	gifts, err := handler.Handle(context.Background(), GetOwnerManualGiftsQuery{OwnerTelegramUserID: 100, EventID: 77})
 	if err != nil {
@@ -67,6 +78,9 @@ func TestGetOwnerManualGiftsHandlerReturnsPendingAndApprovedGiftsForOwnerAndEven
 	if gifts[0].ReviewStatus != entity.GiftReviewStatusPendingReview.String() || gifts[1].ReviewStatus != entity.GiftReviewStatusApproved.String() {
 		t.Fatalf("review statuses = %q, %q", gifts[0].ReviewStatus, gifts[1].ReviewStatus)
 	}
+	if gifts[1].GenderFilter != "female" || gifts[1].BikeTypeFilter != "gravel" || gifts[1].Place == nil || *gifts[1].Place != place || len(gifts[1].Criteria) != 1 || gifts[1].Criteria[0].ID != 4 {
+		t.Fatalf("automatic gift conditions = %+v", gifts[1])
+	}
 }
 
 func TestGetManualGiftsHandlersPropagateRepositoryFailures(t *testing.T) {
@@ -76,7 +90,8 @@ func TestGetManualGiftsHandlersPropagateRepositoryFailures(t *testing.T) {
 		t.Fatalf("admin query error = %v, want wrapped repository error", err)
 	}
 
-	ownerHandler := NewGetOwnerManualGiftsHandler(&manualGiftsRepoFake{ownerErr: repoErr})
+	ownerRepo := &manualGiftsRepoFake{ownerErr: repoErr}
+	ownerHandler := NewGetOwnerManualGiftsHandler(ownerRepo, &manualGiftCriteriaRepoFake{})
 	if _, err := ownerHandler.Handle(context.Background(), GetOwnerManualGiftsQuery{OwnerTelegramUserID: 100, EventID: 77}); !errors.Is(err, repoErr) {
 		t.Fatalf("owner query error = %v, want wrapped repository error", err)
 	}
@@ -118,6 +133,7 @@ type manualGiftsRepoFake struct {
 	ownerEventID  uint
 	ownerGifts    []*entity.Gift
 	ownerErr      error
+	attachments   map[uint][]*entity.GiftAttachment
 	hasOwnerGifts bool
 	hasOwnerErr   error
 }
@@ -137,4 +153,17 @@ func (r *manualGiftsRepoFake) HasByUserAndEvent(ctx context.Context, userID int6
 	r.ownerID = userID
 	r.ownerEventID = eventID
 	return r.hasOwnerGifts, r.hasOwnerErr
+}
+
+func (r *manualGiftsRepoFake) GetAttachments(ctx context.Context, giftID uint) ([]*entity.GiftAttachment, error) {
+	return r.attachments[giftID], nil
+}
+
+type manualGiftCriteriaRepoFake struct {
+	repository.CriteriaRepository
+	criteriaByGift map[uint][]*entity.Criteria
+}
+
+func (r *manualGiftCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error) {
+	return r.criteriaByGift[giftID], nil
 }
