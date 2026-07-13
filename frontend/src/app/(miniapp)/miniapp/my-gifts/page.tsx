@@ -73,24 +73,21 @@ export default function MiniappMyGiftsPage() {
   }, [load]);
 
   if (isSessionLoading) {
-    return <MyGiftsState title="Мои призы" text="Загружаем активное событие" loading />;
+    return <MyGiftsState title="Призы от меня" text="Загружаем активное событие" loading />;
   }
   if (sessionError || !session) {
-    return <MyGiftsState title="Мои призы недоступны" text={sessionError ?? "Нет активного события"} />;
+    return <MyGiftsState title="Призы от меня недоступны" text={sessionError ?? "Нет активного события"} />;
   }
   if (error) {
-    return <MyGiftsState title="Мои призы недоступны" text={error} onRetry={load} />;
+    return <MyGiftsState title="Призы от меня недоступны" text={error} onRetry={load} />;
   }
   if (isLoading && gifts.length === 0) {
-    return <MyGiftsState title="Мои призы" text="Загружаем добавленные призы" loading />;
+    return <MyGiftsState title="Призы от меня" text="Загружаем добавленные призы" loading />;
   }
 
   return (
     <main className="tg-screen min-h-screen">
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
-        <header className="tg-card rounded-xl border p-3">
-          <h1 className="tg-title text-lg font-semibold">Мои призы</h1>
-        </header>
         {gifts.length === 0 ? (
           <section className="tg-card rounded-xl border p-5 text-center">
             <p className="tg-title text-sm font-semibold">Вы пока не добавили призы</p>

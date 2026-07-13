@@ -13,12 +13,15 @@ export default function GiftPhotoGallery({
   attachments,
 }: GiftPhotoGalleryProps) {
   const photos = attachments?.filter((attachment) => attachment.file_type === "photo") ?? [];
+  if (photos.length === 0) {
+    return null;
+  }
+
   const [primaryPhoto, ...secondaryPhotos] = photos;
-  const hasPrimaryPhoto = Boolean(primaryPhoto);
 
   return (
     <div className="tg-placeholder tg-divider border-b">
-      <div className={hasPrimaryPhoto ? "flex justify-center" : "h-36"}>
+      <div className="flex justify-center">
         <GiftImage giftId={giftId} attachment={primaryPhoto} variant="detail" />
       </div>
 
