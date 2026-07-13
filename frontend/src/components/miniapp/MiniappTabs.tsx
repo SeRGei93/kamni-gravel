@@ -35,7 +35,7 @@ const myGiftsNavigationItem: MiniappNavigationItem = {
 };
 
 const navigationItemClass =
-  "flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[1.5rem] px-1.5 py-1.5 text-[10px] font-semibold leading-3 transition active:scale-[0.96]";
+  "flex min-w-0 flex-col items-center gap-0.5 rounded-[1.5rem] px-1.5 py-1.5 text-[10px] font-semibold leading-3 transition-[flex,background-color,color,box-shadow,transform] duration-300 ease-out motion-reduce:transition-none active:scale-[0.96]";
 
 const scrollDirectionThreshold = 12;
 
@@ -110,12 +110,12 @@ export default function MiniappTabs() {
               aria-current={isActive ? "page" : undefined}
               className={`${navigationItemClass} ${
                 isActive
-                  ? "tg-liquid-glass-nav-active tg-title"
-                  : "tg-muted hover:bg-[var(--tg-hover-bg-color)]"
+                  ? "tg-liquid-glass-nav-active tg-title flex-[1.6]"
+                  : "tg-muted flex-1 hover:bg-[var(--tg-hover-bg-color)]"
               }`}
             >
               <NavigationIcon icon={item.icon} />
-              <span className="truncate">{item.label}</span>
+              <span className={isActive ? "whitespace-nowrap" : "truncate"}>{item.label}</span>
             </Link>
           );
         })}
