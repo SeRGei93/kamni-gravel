@@ -462,6 +462,46 @@ func TestPrizeDistributionNoPlaceGiftsStillSkipHigherPriorityParticipants(t *tes
 	})
 }
 
+func TestPrizeDistributionAssignsCriteriaGiftToEveryEligibleParticipant(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(3)
+	setPrizeResultCriteria(results, 1, 1)
+	setPrizeResultCriteria(results, 2, 1)
+	criteriaGift := prizeDistributionApprovedGift(10)
+	criteriaGift.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	genericGift := prizeDistributionApprovedGift(20)
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{criteriaGift, genericGift}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		1: {{giftID: 10, ruleType: "none", assignedRank: 1}},
+		2: {{giftID: 10, ruleType: "none", assignedRank: 2}},
+		3: {{giftID: 20, ruleType: "none", assignedRank: 3}},
+	})
+}
+
+func TestPrizeDistributionDoesNotBlockCriteriaGiftAfterCriteriaPlaceGift(t *testing.T) {
+	h := &GetPrizeDistributionHandler{}
+	results, participants := prizeDistributionRankedScenario(2)
+	setPrizeResultCriteria(results, 1, 1)
+
+	gravelGift := prizeDistributionApprovedGift(10)
+	gravelGift.BikeTypeFilter = "gravel"
+	gravelGift.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+	gravelGift.PlaceRule = mustGiftPlaceRulePlaces(t, []int{1})
+	absoluteGift := prizeDistributionApprovedGift(20)
+	absoluteGift.Criteria = []*entity.Criteria{prizeDistributionCriteria(1)}
+
+	output := h.distributePrizeSlots(results, []*entity.Gift{gravelGift, absoluteGift}, participants)
+
+	assertOnlyPrizeAssignments(t, output.Results, map[uint][]prizeAssignmentExpectation{
+		1: {
+			{giftID: 10, ruleType: "places", targetRank: 1, assignedRank: 1},
+			{giftID: 20, ruleType: "none", assignedRank: 1},
+		},
+	})
+}
+
 func TestPrizeDistributionLastNLargerThanGroupAssignsAllEligible(t *testing.T) {
 	h := &GetPrizeDistributionHandler{}
 	results, participants := prizeDistributionRankedScenario(2)

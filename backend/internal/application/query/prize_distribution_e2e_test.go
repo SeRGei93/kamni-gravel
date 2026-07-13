@@ -317,7 +317,10 @@ func prizeDistributionE2EAssertAssignmentInvariants(
 		}
 		for _, assignment := range row.MatchedGiftAssignments {
 			gift := assignment.Gift
-			if giftPlaceRuleForDistribution(gift).HasPlaceConstraint() {
+			// Критерийный приз — самостоятельная награда за выполненное условие;
+			// он может добавляться поверх criterion+place. Ограничение приоритета
+			// применяется только к обычным призам без критериев и места.
+			if len(gift.Criteria) > 0 || giftPlaceRuleForDistribution(gift).HasPlaceConstraint() {
 				continue
 			}
 			if rowBestPriority != nil && rowPriorities[gift.ID] != *rowBestPriority {

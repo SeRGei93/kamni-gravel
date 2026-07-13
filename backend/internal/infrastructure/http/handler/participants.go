@@ -396,6 +396,7 @@ var participantSortComparators = map[string]participantSorter{
 	"avg_speed_kmh":            floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgSpeedKmh }),
 	"avg_moving_speed_kmh":     floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.AvgMovingSpeedKmh }),
 	"peak_avg_speed_delta_kmh": floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.PeakAvgSpeedDeltaKmh }),
+	"heart_rate_time_product":  floatPtrSorter(func(d *dto.ParticipantDTO) *float64 { return d.HeartRateTimeProduct }),
 	"started_at":               timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.StartedAt }),
 	"ride_finished_at":         timePtrSorter(func(d *dto.ParticipantDTO) *time.Time { return d.RideFinishedAt }),
 	"ride_date":                strPtrSorter(func(d *dto.ParticipantDTO) *string { return d.RideDate }),

@@ -178,6 +178,28 @@ func TestSortParticipantDTOsPeakAvgSpeedDelta(t *testing.T) {
 	}
 }
 
+func TestSortParticipantDTOsHeartRateTimeProduct(t *testing.T) {
+	build := func() []*dto.ParticipantDTO {
+		return []*dto.ParticipantDTO{
+			{ID: 1, HeartRateTimeProduct: sortFloatPtr(7200)},
+			{ID: 2, HeartRateTimeProduct: nil},
+			{ID: 3, HeartRateTimeProduct: sortFloatPtr(6900)},
+		}
+	}
+
+	asc := build()
+	sortParticipantDTOs(asc, "heart_rate_time_product", "asc")
+	if got := idsOf(asc); !equalIDs(got, []uint{3, 1, 2}) {
+		t.Fatalf("heart_rate_time_product asc mismatch: %v", got)
+	}
+
+	desc := build()
+	sortParticipantDTOs(desc, "heart_rate_time_product", "desc")
+	if got := idsOf(desc); !equalIDs(got, []uint{1, 3, 2}) {
+		t.Fatalf("heart_rate_time_product desc mismatch: %v", got)
+	}
+}
+
 // Сортировка стабильна: при равных значениях исходный порядок сохраняется —
 // это гарантирует консистентную нарезку страниц (сортировка идёт до пагинации).
 func TestSortParticipantDTOsStableForEqualValues(t *testing.T) {

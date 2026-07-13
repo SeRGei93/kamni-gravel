@@ -124,6 +124,18 @@ func (r *Result) PeakAvgSpeedDeltaKmh() *float64 {
 	return &delta
 }
 
+// HeartRateTimeProduct возвращает произведение общего времени в минутах на
+// средний пульс. По смыслу это приблизительное число сокращений сердца заезд;
+// nil означает, что для расчёта недостаточно корректных исходных данных.
+func (r *Result) HeartRateTimeProduct() *float64 {
+	if r.ElapsedTimeSec == nil || *r.ElapsedTimeSec <= 0 || r.AvgHeartRate == nil || *r.AvgHeartRate <= 0 {
+		return nil
+	}
+
+	product := float64(*r.ElapsedTimeSec) / 60 * float64(*r.AvgHeartRate)
+	return &product
+}
+
 // speedKmh считает скорость в км/ч из дистанции (метры) и времени (секунды).
 // Возвращает nil, если данных недостаточно (защита от деления на ноль).
 func speedKmh(distanceMeters, timeSec *int) *float64 {

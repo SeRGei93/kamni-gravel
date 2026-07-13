@@ -61,6 +61,7 @@ type ParticipantDTO struct {
 	AvgSpeedKmh          *float64 `json:"avg_speed_kmh,omitempty"`            // Средняя скорость, км/ч
 	AvgMovingSpeedKmh    *float64 `json:"avg_moving_speed_kmh,omitempty"`     // Средняя скорость в движении, км/ч
 	PeakAvgSpeedDeltaKmh *float64 `json:"peak_avg_speed_delta_kmh,omitempty"` // Пиковая − средняя скорость, км/ч
+	HeartRateTimeProduct *float64 `json:"heart_rate_time_product,omitempty"`  // Общее время (мин) × средний пульс
 }
 
 // SetPrevElapsed выставляет «время прошлого года» и, если известно текущее
@@ -142,6 +143,7 @@ func FromParticipant(p *entity.Participant) *ParticipantDTO {
 			dto.AvgSpeedKmh = rd.AvgSpeedKmh
 			dto.AvgMovingSpeedKmh = rd.AvgMovingSpeedKmh
 			dto.PeakAvgSpeedDeltaKmh = rd.PeakAvgSpeedDeltaKmh
+			dto.HeartRateTimeProduct = rd.HeartRateTimeProduct
 		}
 	}
 

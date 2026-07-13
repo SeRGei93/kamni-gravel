@@ -150,15 +150,22 @@ func (h *GetPrizeDistributionHandler) HandleDetailed(ctx context.Context, query 
 	// Распределяем призы
 	output := h.distributePrizeSlots(resultsWithPlaces, gifts, participantMap)
 	assignedSlots := 0
+	criteriaAssignments := 0
 	for _, result := range output.Results {
 		assignedSlots += len(result.MatchedGiftAssignments)
+		for _, assignment := range result.MatchedGiftAssignments {
+			if assignment.MatchReason == "criteria" {
+				criteriaAssignments++
+			}
+		}
 	}
 	log.Printf(
-		"level=info msg=\"Prize distribution calculated\" event_id=%d participants=%d automatic_gifts=%d assigned_slots=%d unassigned_slots=%d",
+		"level=info msg=\"[FIX:criteria-prize] Prize distribution calculated\" event_id=%d participants=%d automatic_gifts=%d assigned_slots=%d criteria_assignments=%d unassigned_slots=%d",
 		query.EventID,
 		len(output.Results),
 		len(gifts),
 		assignedSlots,
+		criteriaAssignments,
 		len(output.UnassignedSlots),
 	)
 

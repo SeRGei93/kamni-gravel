@@ -101,7 +101,7 @@ func (h *GetPrizeDistributionHandler) distributePrizeSlots(
 
 			rule := giftPlaceRuleForDistribution(gift)
 			if rule.IsNone() {
-				if assignment := assignNoPlaceGift(gift, eligible, blockedByHigherPriority); assignment != nil {
+				for _, assignment := range assignNoPlaceGift(gift, eligible, blockedByHigherPriority) {
 					rowsByParticipant[assignment.ParticipantID].appendGiftAssignment(assignment)
 					assignedThisPriority[assignment.ParticipantID] = true
 				}
@@ -392,20 +392,37 @@ func assignNoPlaceGift(
 	gift *entity.Gift,
 	eligible []*prizeEligibleContext,
 	blockedByHigherPriority map[uint]bool,
-) *PrizeGiftAssignment {
+) []*PrizeGiftAssignment {
+	// Приз по критерию означает награду за выполненное условие, поэтому его
+	// получает каждый совпавший участник. В частности, приз с criteria+place
+	// не должен скрывать отдельный приз «только критерий» у того же человека.
+	if len(gift.Criteria) > 0 {
+		assignments := make([]*PrizeGiftAssignment, 0, len(eligible))
+		for _, candidate := range eligible {
+			assignments = append(assignments, newNoPlacePrizeGiftAssignment(gift, candidate))
+		}
+		return assignments
+	}
+
+	// Обычный приз без условия остаётся единичным и каскадирует к следующему
+	// свободному участнику, если более приоритетный приз уже занял лидера.
 	for _, candidate := range eligible {
 		if blockedByHigherPriority[candidate.participant.ID] {
 			continue
 		}
-		return &PrizeGiftAssignment{
-			ParticipantID: candidate.participant.ID,
-			Gift:          gift,
-			MatchReason:   giftMatchReasonForAssignment(gift),
-			RuleType:      string(valueobject.GiftPlaceRuleTypeNone),
-			AssignedRank:  candidate.rank,
-		}
+		return []*PrizeGiftAssignment{newNoPlacePrizeGiftAssignment(gift, candidate)}
 	}
 	return nil
+}
+
+func newNoPlacePrizeGiftAssignment(gift *entity.Gift, candidate *prizeEligibleContext) *PrizeGiftAssignment {
+	return &PrizeGiftAssignment{
+		ParticipantID: candidate.participant.ID,
+		Gift:          gift,
+		MatchReason:   giftMatchReasonForAssignment(gift),
+		RuleType:      string(valueobject.GiftPlaceRuleTypeNone),
+		AssignedRank:  candidate.rank,
+	}
 }
 
 func assignPrizeRuleSlot(

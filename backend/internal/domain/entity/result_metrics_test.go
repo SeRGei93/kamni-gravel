@@ -92,6 +92,46 @@ func TestResultAvgSpeedsNilWhenInputMissing(t *testing.T) {
 	}
 }
 
+func TestResultHeartRateTimeProduct(t *testing.T) {
+	tests := []struct {
+		name    string
+		elapsed *int
+		avgHR   *int
+		want    *float64
+	}{
+		{
+			name:    "one hour at 120 bpm",
+			elapsed: intp(3600),
+			avgHR:   intp(120),
+			want:    f64p(7200),
+		},
+		{
+			name:    "uses seconds as fractional minutes",
+			elapsed: intp(90),
+			avgHR:   intp(100),
+			want:    f64p(150),
+		},
+		{name: "missing elapsed time", avgHR: intp(120)},
+		{name: "missing average heart rate", elapsed: intp(3600)},
+		{name: "zero elapsed time", elapsed: intp(0), avgHR: intp(120)},
+		{name: "zero average heart rate", elapsed: intp(3600), avgHR: intp(0)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Result{ElapsedTimeSec: tt.elapsed, AvgHeartRate: tt.avgHR}
+			got := r.HeartRateTimeProduct()
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("HeartRateTimeProduct() = %v, want nil", *got)
+				}
+				return
+			}
+			assertFloatPtrApprox(t, got, tt.want)
+		})
+	}
+}
+
 func TestResultRideDate(t *testing.T) {
 	loc := time.FixedZone("Minsk", 3*3600)
 	start := time.Date(2025, 6, 15, 23, 45, 0, 0, loc)

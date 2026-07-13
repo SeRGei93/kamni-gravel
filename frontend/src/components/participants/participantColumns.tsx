@@ -43,6 +43,13 @@ const BIKE_TYPE_LABELS: Record<string, string> = {
 const cellText = 'text-gray-800 text-theme-sm dark:text-white/90';
 const cellMuted = 'text-gray-500 text-theme-sm dark:text-gray-400';
 
+export function formatHeartRateTimeProduct(value?: number | null): string | undefined {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.round(value).toLocaleString('ru-RU');
+}
+
 /** Текст ячейки или прочерк, если значение отсутствует. */
 function textOrDash(value?: string | number | null): React.ReactNode {
   if (value === undefined || value === null || value === '') {
@@ -158,6 +165,12 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     label: 'Общее время',
     defaultVisible: true,
     render: (p) => textOrDash(p.elapsed_time),
+  },
+  {
+    key: 'heart_rate_time_product',
+    label: 'ЧСС × время',
+    defaultVisible: true,
+    render: (p) => textOrDash(formatHeartRateTimeProduct(p.heart_rate_time_product)),
   },
   {
     key: 'moving_time',
@@ -360,6 +373,7 @@ export const SORTABLE_COLUMN_KEYS: ReadonlySet<string> = new Set<string>([
   'avg_speed_kmh',
   'avg_moving_speed_kmh',
   'peak_avg_speed_delta_kmh',
+  'heart_rate_time_product',
   'calories',
   'avg_heart_rate',
   'max_heart_rate',

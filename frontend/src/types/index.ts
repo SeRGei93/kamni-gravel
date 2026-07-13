@@ -113,6 +113,7 @@ export interface Participant {
   avg_speed_kmh?: number;
   avg_moving_speed_kmh?: number;
   peak_avg_speed_delta_kmh?: number; // пиковая − средняя скорость, км/ч
+  heart_rate_time_product?: number; // общее время (мин) × средний пульс
 }
 
 export interface ParticipantDetail extends Participant {
@@ -516,6 +517,7 @@ export interface Result {
   avg_speed_kmh?: number;
   avg_moving_speed_kmh?: number;
   peak_avg_speed_delta_kmh?: number; // пиковая − средняя скорость, км/ч
+  heart_rate_time_product?: number; // общее время (мин) × средний пульс
 }
 
 export interface ResultListResponse {

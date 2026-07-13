@@ -576,6 +576,9 @@ func TestParticipantsHandlerListIncludesRideMetrics(t *testing.T) {
 	if wr.AvgHeartRate == nil || *wr.AvgHeartRate != avgHR {
 		t.Errorf("avg_heart_rate mismatch: got %v, want %d", wr.AvgHeartRate, avgHR)
 	}
+	if wr.HeartRateTimeProduct == nil || *wr.HeartRateTimeProduct != 18000 {
+		t.Errorf("heart_rate_time_product mismatch: got %v, want 18000", wr.HeartRateTimeProduct)
+	}
 	if wr.MaxHeartRate == nil || *wr.MaxHeartRate != maxHR {
 		t.Errorf("max_heart_rate mismatch: got %v, want %d", wr.MaxHeartRate, maxHR)
 	}
@@ -608,7 +611,8 @@ func TestParticipantsHandlerListIncludesRideMetrics(t *testing.T) {
 	}
 	if wo.StartedAt != nil || wo.RideFinishedAt != nil || wo.DistanceMeters != nil ||
 		wo.AvgHeartRate != nil || wo.PeakSpeedKmh != nil || wo.RideDate != nil ||
-		wo.AvgSpeedKmh != nil || wo.AvgMovingSpeedKmh != nil || wo.PeakAvgSpeedDeltaKmh != nil {
+		wo.AvgSpeedKmh != nil || wo.AvgMovingSpeedKmh != nil || wo.PeakAvgSpeedDeltaKmh != nil ||
+		wo.HeartRateTimeProduct != nil {
 		t.Error("participant without result should have nil ride metrics and computed fields")
 	}
 }
