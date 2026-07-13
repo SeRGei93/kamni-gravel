@@ -311,11 +311,14 @@ func NewServer(
 		miniappGiftsCache,
 	)
 	if manualGiftRepo, ok := giftRepo.(repository.ManualGiftRepository); ok {
+		participantOptionsHandler := query.NewGetMiniappParticipantsHandler(participantRepo, manualGiftRepo, getPrizeDistributionHandlerTemp)
+		setManualGiftRecipientHandler := command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo)
 		miniappHandler.ConfigureManualGiftManagement(
 			query.NewGetOwnerManualGiftsHandler(manualGiftRepo, criteriaRepo),
 			query.NewHasOwnerGiftsHandler(manualGiftRepo),
-			query.NewGetMiniappParticipantsHandler(participantRepo, manualGiftRepo, getPrizeDistributionHandlerTemp),
-			command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo),
+			participantOptionsHandler,
+			setManualGiftRecipientHandler,
+			command.NewAssignRandomManualGiftRecipientHandler(participantOptionsHandler, setManualGiftRecipientHandler),
 		)
 	} else {
 		log.Printf("ERROR Miniapp manual gift management unavailable: gift repository does not implement ManualGiftRepository")
@@ -519,6 +522,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Get("/my-gifts", s.miniappHandler.MyGifts)
 			r.Get("/participants", s.miniappHandler.Participants)
 			r.Put("/my-gifts/{giftId}/recipient", s.miniappHandler.UpdateMyGiftRecipient)
+			r.Post("/my-gifts/{giftId}/random-recipient", s.miniappHandler.AssignRandomMyGiftRecipient)
 			r.Get("/leaderboard", s.miniappHandler.Leaderboard)
 			r.Get("/telegram/files/{fileId}", s.miniappHandler.TelegramFile)
 		})

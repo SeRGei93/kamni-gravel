@@ -10,6 +10,7 @@ interface MyGiftCardProps {
   participants: MiniappParticipantOption[];
   savingGiftID: number | null;
   onSaveRecipient: (giftID: number, participantID: number | null) => Promise<void>;
+  onAssignRandomRecipient: (giftID: number) => Promise<void>;
 }
 
 export default function MyGiftCard({
@@ -17,6 +18,7 @@ export default function MyGiftCard({
   participants,
   savingGiftID,
   onSaveRecipient,
+  onAssignRandomRecipient,
 }: MyGiftCardProps) {
   return (
     <article className="tg-card overflow-hidden rounded-xl border">
@@ -37,6 +39,7 @@ export default function MyGiftCard({
               participants={participants}
               isSaving={savingGiftID === gift.id}
               onSave={onSaveRecipient}
+              onAssignRandom={onAssignRandomRecipient}
             />
           </div>
         ) : (

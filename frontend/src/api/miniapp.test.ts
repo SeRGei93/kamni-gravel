@@ -45,4 +45,16 @@ describe('miniappApi manual gift endpoints', () => {
       'http://localhost:8080/api/miniapp/participants',
     ]);
   });
+
+	it('assigns a random recipient through the owner endpoint', async () => {
+	  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+	  vi.stubGlobal('fetch', fetchMock);
+
+	  await miniappApi.assignRandomMyGiftRecipient(15);
+
+	  expect(fetchMock).toHaveBeenCalledWith(
+		'http://localhost:8080/api/miniapp/my-gifts/15/random-recipient',
+		expect.objectContaining({ method: 'POST' })
+	  );
+	});
 });

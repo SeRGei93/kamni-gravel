@@ -16,6 +16,7 @@ interface MyGiftRecipientSelectProps {
   participants: MiniappParticipantOption[];
   isSaving: boolean;
   onSave: (giftID: number, participantID: number | null) => Promise<void>;
+  onAssignRandom: (giftID: number) => Promise<void>;
 }
 
 interface RecipientLabelParticipant {
@@ -35,6 +36,7 @@ export default function MyGiftRecipientSelect({
   participants,
   isSaving,
   onSave,
+  onAssignRandom,
 }: MyGiftRecipientSelectProps) {
   const [search, setSearch] = useState("");
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -87,6 +89,19 @@ export default function MyGiftRecipientSelect({
 
   const clearRecipient = () => {
     void saveRecipient(null, false);
+  };
+
+  const assignRandomRecipient = async () => {
+    try {
+      setError(null);
+      await onAssignRandom(gift.id);
+    } catch (saveError) {
+      console.warn("[miniapp] random manual recipient update failed", {
+        giftId: gift.id,
+        message: saveError instanceof Error ? saveError.message : "Unknown error",
+      });
+      setError(miniappGiftMutationErrorMessage(saveError));
+    }
   };
 
   const openPicker = () => {
@@ -164,14 +179,24 @@ export default function MyGiftRecipientSelect({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={openPicker}
-          disabled={isSaving}
-          className="tg-divider tg-title mt-3 h-10 w-full rounded-lg border bg-transparent px-3 text-left text-base disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Выберите получателя
-        </button>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={openPicker}
+            disabled={isSaving}
+            className="tg-divider tg-title min-h-12 flex-1 rounded-lg border bg-transparent px-3 py-2 text-left text-base disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Выберите получателя
+          </button>
+          <button
+            type="button"
+            onClick={() => void assignRandomRecipient()}
+            disabled={isSaving}
+            className="tg-link-button min-h-12 flex-1 rounded-lg border px-3 py-2 text-left text-xs font-semibold leading-4 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Отдать рандомному участнику без награды
+          </button>
+        </div>
       )}
       {!isPickerOpen && error && <p className="tg-error mt-2 text-sm leading-5">{error}</p>}
       {isPickerOpen && (

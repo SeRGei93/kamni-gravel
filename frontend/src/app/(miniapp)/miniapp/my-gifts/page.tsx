@@ -61,6 +61,17 @@ export default function MiniappMyGiftsPage() {
     }
   }, [load]);
 
+  const assignRandomRecipient = useCallback(async (giftID: number) => {
+    try {
+      setSavingGiftID(giftID);
+      await miniappApi.assignRandomMyGiftRecipient(giftID);
+      console.info("[miniapp] random manual recipient assigned", { giftId: giftID });
+      await load();
+    } finally {
+      setSavingGiftID(null);
+    }
+  }, [load]);
+
   if (isSessionLoading) {
     return <MyGiftsState title="Мои призы" text="Загружаем активное событие" loading />;
   }
@@ -93,6 +104,7 @@ export default function MiniappMyGiftsPage() {
               participants={participants}
               savingGiftID={savingGiftID}
               onSaveRecipient={saveRecipient}
+              onAssignRandomRecipient={assignRandomRecipient}
             />
           ))
         )}

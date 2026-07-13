@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	"gravel_bot/internal/domain/entity"
 	"gravel_bot/internal/domain/repository"
 )
 
@@ -54,26 +55,9 @@ func (h *SetManualGiftRecipientHandler) Handle(ctx context.Context, cmd SetManua
 		manualGiftRecipientIDLogValue(cmd.RecipientParticipantID),
 	)
 
-	gift, err := h.giftRepo.FindByID(ctx, cmd.GiftID)
+	gift, err := h.manualGiftForCommand(ctx, cmd)
 	if err != nil {
-		if errors.Is(err, repository.ErrGiftNotFound) {
-			log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=gift_not_found", cmd.GiftID)
-			return ErrGiftNotFound
-		}
-		log.Printf("ERROR manual gift recipient command failed: actor_type=telegram gift_id=%d stage=find_gift error=%v", cmd.GiftID, err)
-		return fmt.Errorf("find manual gift: %w", err)
-	}
-	if gift.UserID != cmd.Actor.TelegramUserID {
-		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=owner_mismatch", cmd.GiftID)
-		return ErrManualGiftOwnerForbidden
-	}
-	if cmd.EventID != 0 && gift.EventID != cmd.EventID {
-		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=event_mismatch", cmd.GiftID)
-		return ErrManualGiftOwnerForbidden
-	}
-	if !gift.ManualDistribution {
-		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=manual_distribution_disabled", cmd.GiftID)
-		return ErrManualGiftNotManual
+		return err
 	}
 	if manualGiftRecipientIDsEqual(gift.ManualRecipientParticipantID, cmd.RecipientParticipantID) {
 		log.Printf("DEBUG manual gift recipient command idempotent: actor_type=telegram gift_id=%d recipient_participant_id=%s", cmd.GiftID, manualGiftRecipientIDLogValue(cmd.RecipientParticipantID))
@@ -106,6 +90,33 @@ func (h *SetManualGiftRecipientHandler) Handle(ctx context.Context, cmd SetManua
 		manualGiftRecipientIDLogValue(cmd.RecipientParticipantID),
 	)
 	return nil
+}
+
+// manualGiftForCommand validates that a gift belongs to the verified owner,
+// belongs to the active event, and is configured for manual distribution.
+func (h *SetManualGiftRecipientHandler) manualGiftForCommand(ctx context.Context, cmd SetManualGiftRecipientCommand) (*entity.Gift, error) {
+	gift, err := h.giftRepo.FindByID(ctx, cmd.GiftID)
+	if err != nil {
+		if errors.Is(err, repository.ErrGiftNotFound) {
+			log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=gift_not_found", cmd.GiftID)
+			return nil, ErrGiftNotFound
+		}
+		log.Printf("ERROR manual gift recipient command failed: actor_type=telegram gift_id=%d stage=find_gift error=%v", cmd.GiftID, err)
+		return nil, fmt.Errorf("find manual gift: %w", err)
+	}
+	if gift.UserID != cmd.Actor.TelegramUserID {
+		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=owner_mismatch", cmd.GiftID)
+		return nil, ErrManualGiftOwnerForbidden
+	}
+	if cmd.EventID != 0 && gift.EventID != cmd.EventID {
+		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=event_mismatch", cmd.GiftID)
+		return nil, ErrManualGiftOwnerForbidden
+	}
+	if !gift.ManualDistribution {
+		log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d reason=manual_distribution_disabled", cmd.GiftID)
+		return nil, ErrManualGiftNotManual
+	}
+	return gift, nil
 }
 
 func mapManualGiftRecipientRepositoryError(cmd SetManualGiftRecipientCommand, err error) error {

@@ -310,6 +310,33 @@ func TestMiniappUpdateMyGiftRecipientIsOwnerScopedAndValidatesEvent(t *testing.T
 	}
 }
 
+func TestMiniappAssignRandomMyGiftRecipientUsesOnlyUnawardedParticipants(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	manualGift := &entity.Gift{ID: 9, UserID: 42, EventID: 77, ManualDistribution: true}
+	giftRepo := &miniappHandlerGiftRepoFake{
+		giftByID:              manualGift,
+		manualRecipientCounts: map[uint]int{11: 1},
+	}
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Active: true}},
+		giftRepo,
+		nil,
+		&miniappHandlerParticipantRepoFake{participants: []*entity.Participant{
+			{ID: 11, EventID: 77},
+			{ID: 12, EventID: 77},
+		}},
+	)
+
+	rr := miniappAssignRandomRecipientRequest(t, token, now, h)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status mismatch: got %d, want %d body=%s", rr.Code, http.StatusNoContent, rr.Body.String())
+	}
+	if giftRepo.setCalls != 1 || giftRepo.setRecipientID == nil || *giftRepo.setRecipientID != 12 {
+		t.Fatalf("random recipient write mismatch: calls=%d recipient=%v, want 12", giftRepo.setCalls, giftRepo.setRecipientID)
+	}
+}
+
 func TestMiniappGiftsUsesActiveEventAndApprovedCatalog(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()
@@ -652,11 +679,14 @@ func newMiniappTestHandler(
 		}),
 		nil,
 	)
+	participantOptionsHandler := query.NewGetMiniappParticipantsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{})
+	setRecipientHandler := command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo)
 	handler.ConfigureManualGiftManagement(
 		query.NewGetOwnerManualGiftsHandler(giftRepo, criteriaRepo),
 		query.NewHasOwnerGiftsHandler(giftRepo),
-		query.NewGetMiniappParticipantsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{}),
-		command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo),
+		participantOptionsHandler,
+		setRecipientHandler,
+		command.NewAssignRandomManualGiftRecipientHandler(participantOptionsHandler, setRecipientHandler),
 	)
 	return handler
 }
@@ -687,6 +717,15 @@ func miniappUpdateRecipientRequest(t *testing.T, token string, now time.Time, h 
 		routeContext.URLParams.Add("giftId", "9")
 		h.UpdateMyGiftRecipient(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, routeContext)))
 	}, "/api/miniapp/my-gifts/9/recipient", strings.NewReader(body))
+}
+
+func miniappAssignRandomRecipientRequest(t *testing.T, token string, now time.Time, h *MiniappHandler) *httptest.ResponseRecorder {
+	t.Helper()
+	return miniappRequestWithMethod(t, token, now, http.MethodPost, func(w http.ResponseWriter, r *http.Request) {
+		routeContext := chi.NewRouteContext()
+		routeContext.URLParams.Add("giftId", "9")
+		h.AssignRandomMyGiftRecipient(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, routeContext)))
+	}, "/api/miniapp/my-gifts/9/random-recipient", nil)
 }
 
 func miniappIntPtr(v int) *int { return &v }

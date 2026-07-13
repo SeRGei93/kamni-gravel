@@ -1498,6 +1498,33 @@ paths:
         '409':
           description: Подарок не в ручном режиме или участник принадлежит другому событию
 
+  /miniapp/my-gifts/{giftId}/random-recipient:
+    post:
+      tags: [Miniapp]
+      summary: Случайно назначить ручной приз участнику без награды
+      description: >-
+        Владелец и активное событие определяются на сервере из Telegram init data.
+        Получатель случайно выбирается только среди участников, у которых нет
+        автоматического или вручную назначенного приза.
+      security:
+        - TelegramWebAppInitData: []
+      parameters:
+        - name: giftId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: Случайный получатель назначен
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Нет активного события или подарок недоступен владельцу
+        '409':
+          description: Подарок не ручной или не осталось участников без награды
+
   /miniapp/telegram/files/{fileId}:
     get:
       tags: [Miniapp]
