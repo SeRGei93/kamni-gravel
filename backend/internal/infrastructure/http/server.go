@@ -66,21 +66,25 @@ type Server struct {
 	listAdminUsersHandler         *query.ListAdminUsersHandler
 
 	// HTTP handlers
-	authHandler              *handler.AuthHandler
-	eventsHandler            *handler.EventsHandler
-	participantsHandler      *handler.ParticipantsHandler
-	resultsHandler           *handler.ResultsHandler
-	giftsHandler             *handler.GiftsHandler
-	criteriaHandler          *handler.CriteriaHandler
-	prizeAssignmentsHandler  *handler.PrizeAssignmentsHandler
-	prizeDistributionHandler *handler.PrizeDistributionHandler
-	statsHandler             *handler.StatsHandler
-	telegramHandler          *handler.TelegramHandler
-	miniappHandler           *handler.MiniappHandler
-	userBlacklistHandler     *handler.UserBlacklistHandler
-	adminUsersHandler        *handler.AdminUsersHandler
-	participantLockHandler   *handler.ParticipantLockHandler
-	chatMembersHandler       *handler.ChatMembersHandler
+	authHandler                     *handler.AuthHandler
+	eventsHandler                   *handler.EventsHandler
+	participantsHandler             *handler.ParticipantsHandler
+	resultsHandler                  *handler.ResultsHandler
+	giftsHandler                    *handler.GiftsHandler
+	criteriaHandler                 *handler.CriteriaHandler
+	prizeAssignmentsHandler         *handler.PrizeAssignmentsHandler
+	prizeDistributionHandler        *handler.PrizeDistributionHandler
+	statsHandler                    *handler.StatsHandler
+	telegramHandler                 *handler.TelegramHandler
+	miniappHandler                  *handler.MiniappHandler
+	userBlacklistHandler            *handler.UserBlacklistHandler
+	adminUsersHandler               *handler.AdminUsersHandler
+	participantLockHandler          *handler.ParticipantLockHandler
+	chatMembersHandler              *handler.ChatMembersHandler
+	participantNotificationsHandler *handler.ParticipantNotificationsHandler
+	participantNotificationJobs     *command.ParticipantNotificationJobManager
+	participantNotificationJobsCtx  context.Context
+	participantNotificationJobsStop context.CancelFunc
 
 	// Lock manager (in-memory participant edit locks)
 	lockManager *lock.Manager
@@ -370,6 +374,23 @@ func NewServer(
 		command.NewExecuteChatPurgeHandler(chatMemberRepo, giftRepo, chatPurgeKicker),
 	)
 
+	var participantNotifier command.ParticipantNotifier
+	notifier, err := telegraminfra.NewParticipantNotifierFromToken(cfg.BotToken)
+	if err != nil {
+		log.Printf("WARN Participant notifications disabled: error=%v", err)
+	} else if notifier != nil {
+		participantNotifier = notifier
+	}
+	participantNotificationJobsCtx, participantNotificationJobsStop := context.WithCancel(context.Background())
+	participantNotificationJobs := command.NewParticipantNotificationJobManager(
+		command.NewSendParticipantNotificationsHandler(participantRepo, participantNotifier),
+	)
+	participantNotificationsHandler := handler.NewParticipantNotificationsHandler(
+		eventRepo,
+		query.NewGetNotificationRecipientsHandler(participantRepo, giftRepo, getPrizeDistributionHandlerTemp),
+		participantNotificationJobs,
+	)
+
 	s := &Server{
 		userRepo:                         userRepo,
 		eventRepo:                        eventRepo,
@@ -418,6 +439,10 @@ func NewServer(
 		adminUsersHandler:                adminUsersHandler,
 		participantLockHandler:           participantLockHandler,
 		chatMembersHandler:               chatMembersHandler,
+		participantNotificationsHandler:  participantNotificationsHandler,
+		participantNotificationJobs:      participantNotificationJobs,
+		participantNotificationJobsCtx:   participantNotificationJobsCtx,
+		participantNotificationJobsStop:  participantNotificationJobsStop,
 		lockManager:                      lockManager,
 		jwtManager:                       jwtManager,
 		telegramWebAppAuth: middleware.TelegramWebAppAuthWithConfig(middleware.TelegramWebAppAuthConfig{
@@ -573,6 +598,11 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Get("/chat-purge/candidates", s.chatMembersHandler.Candidates)
 			r.Post("/chat-purge/execute", s.chatMembersHandler.Execute)
 
+			// Participant notification admin routes
+			r.Get("/participant-notifications/recipients", s.participantNotificationsHandler.Recipients)
+			r.Post("/participant-notifications/send", s.participantNotificationsHandler.Send)
+			r.Get("/participant-notifications/jobs/{id}", s.participantNotificationsHandler.Status)
+
 			// User blacklist admin routes
 			r.Get("/user-blacklist", s.userBlacklistHandler.GetAll)
 			r.Post("/user-blacklist", s.userBlacklistHandler.Create)
@@ -603,6 +633,9 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 
 // Start запускает сервер
 func (s *Server) Start() error {
+	if s.participantNotificationJobs != nil && s.participantNotificationJobsCtx != nil {
+		go s.participantNotificationJobs.Run(s.participantNotificationJobsCtx)
+	}
 	log.Printf("Starting HTTP server on %s", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }
@@ -610,5 +643,8 @@ func (s *Server) Start() error {
 // Shutdown gracefully останавливает сервер
 func (s *Server) Shutdown(ctx context.Context) error {
 	log.Println("Shutting down HTTP server...")
+	if s.participantNotificationJobsStop != nil {
+		s.participantNotificationJobsStop()
+	}
 	return s.httpServer.Shutdown(ctx)
 }

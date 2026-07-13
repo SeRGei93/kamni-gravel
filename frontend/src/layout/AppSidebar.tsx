@@ -7,6 +7,7 @@ import { useSidebar } from "../context/SidebarContext";
 import {
   BoxCubeIcon,
   BoxIcon,
+	BellIcon,
   CalenderIcon,
   ChevronDownIcon,
   GridIcon,
@@ -66,6 +67,11 @@ const navItems: NavItem[] = [
     icon: <GroupIcon />,
     name: "Чистка чата",
     path: "/chat-purge",
+  },
+  {
+    icon: <BellIcon />,
+    name: "Уведомления",
+    path: "/participant-notifications",
   },
   {
     icon: <UserIcon />,
