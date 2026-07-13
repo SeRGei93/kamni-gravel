@@ -318,7 +318,8 @@ func (h *MiniappHandler) UpdateMyGiftRecipient(w http.ResponseWriter, r *http.Re
 			log.Printf("WARN Miniapp manual recipient update rejected: telegram_user_id=%d event_id=%d gift_id=%d reason=not_found", user.ID, event.ID, giftID)
 			response.NotFound(w, "Gift or participant not found")
 		case errors.Is(err, command.ErrManualGiftNotManual),
-			errors.Is(err, command.ErrManualGiftRecipientEvent):
+			errors.Is(err, command.ErrManualGiftRecipientEvent),
+			errors.Is(err, command.ErrManualGiftRecipientIneligible):
 			log.Printf("WARN Miniapp manual recipient update rejected: telegram_user_id=%d event_id=%d gift_id=%d reason=conflict", user.ID, event.ID, giftID)
 			response.Conflict(w, err.Error())
 		default:
@@ -370,6 +371,7 @@ func (h *MiniappHandler) AssignRandomMyGiftRecipient(w http.ResponseWriter, r *h
 			response.NotFound(w, "Gift or participant not found")
 		case errors.Is(err, command.ErrManualGiftNotManual),
 			errors.Is(err, command.ErrManualGiftRecipientEvent),
+			errors.Is(err, command.ErrManualGiftRecipientIneligible),
 			errors.Is(err, command.ErrManualGiftNoUnawardedParticipants):
 			response.Conflict(w, err.Error())
 		default:

@@ -10,22 +10,41 @@ import (
 	"gravel_bot/internal/domain/valueobject"
 )
 
-func TestSetManualGiftRecipientHandlerAssignsSelfForEveryParticipantStatus(t *testing.T) {
-	statuses := []valueobject.ParticipantStatus{
-		valueobject.ParticipantStatusActive,
-		valueobject.ParticipantStatusDNF,
-		valueobject.ParticipantStatusDisqualified,
+func TestSetManualGiftRecipientHandlerAllowsOnlyEligibleParticipants(t *testing.T) {
+	tests := []struct {
+		name        string
+		participant *entity.Participant
+		wantErr     error
+	}{
+		{
+			name:        "finished participant",
+			participant: &entity.Participant{Status: valueobject.ParticipantStatusActive, Result: &entity.Result{}},
+		},
+		{
+			name:        "dnf participant",
+			participant: &entity.Participant{Status: valueobject.ParticipantStatusDNF},
+		},
+		{
+			name:        "dns participant",
+			participant: &entity.Participant{Status: valueobject.ParticipantStatusActive},
+			wantErr:     ErrManualGiftRecipientIneligible,
+		},
+		{
+			name:        "disqualified participant",
+			participant: &entity.Participant{Status: valueobject.ParticipantStatusDisqualified, Result: &entity.Result{}},
+			wantErr:     ErrManualGiftRecipientIneligible,
+		},
 	}
-	for _, status := range statuses {
-		t.Run(status.String(), func(t *testing.T) {
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			recipientID := uint(20)
 			giftRepo := &manualRecipientGiftRepoFake{gift: manualRecipientGift(nil)}
-			participantRepo := &manualRecipientParticipantRepoFake{participant: &entity.Participant{
-				ID:      recipientID,
-				UserID:  100,
-				EventID: 77,
-				Status:  status,
-			}}
+			participant := *testCase.participant
+			participant.ID = recipientID
+			participant.UserID = 100
+			participant.EventID = 77
+			participantRepo := &manualRecipientParticipantRepoFake{participant: &participant}
 			handler := NewSetManualGiftRecipientHandler(giftRepo, participantRepo)
 
 			err := handler.Handle(context.Background(), SetManualGiftRecipientCommand{
@@ -33,8 +52,14 @@ func TestSetManualGiftRecipientHandlerAssignsSelfForEveryParticipantStatus(t *te
 				Actor:                  ManualGiftRecipientActor{TelegramUserID: 100},
 				RecipientParticipantID: &recipientID,
 			})
-			if err != nil {
-				t.Fatalf("Handle error: %v", err)
+			if !errors.Is(err, testCase.wantErr) {
+				t.Fatalf("Handle error = %v, want %v", err, testCase.wantErr)
+			}
+			if testCase.wantErr != nil {
+				if giftRepo.setCalls != 0 {
+					t.Fatalf("rejected recipient must not be written, calls=%d", giftRepo.setCalls)
+				}
+				return
 			}
 			if giftRepo.setCalls != 1 || giftRepo.recipientID == nil || *giftRepo.recipientID != recipientID {
 				t.Fatalf("recipient update = calls:%d id:%v, want one self assignment", giftRepo.setCalls, giftRepo.recipientID)
@@ -142,7 +167,7 @@ func TestSetManualGiftRecipientHandlerMapsWriteTimeRaceErrors(t *testing.T) {
 		gift:   manualRecipientGift(nil),
 		setErr: repository.ErrManualRecipientEventMismatch,
 	}
-	handler := NewSetManualGiftRecipientHandler(giftRepo, &manualRecipientParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77}})
+	handler := NewSetManualGiftRecipientHandler(giftRepo, &manualRecipientParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77, Result: &entity.Result{}}})
 
 	err := handler.Handle(context.Background(), SetManualGiftRecipientCommand{
 		GiftID:                 1,

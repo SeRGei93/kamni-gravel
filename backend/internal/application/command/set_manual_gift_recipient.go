@@ -78,6 +78,10 @@ func (h *SetManualGiftRecipientHandler) Handle(ctx context.Context, cmd SetManua
 			log.Printf("WARN manual gift recipient command rejected: actor_type=telegram gift_id=%d recipient_participant_id=%s reason=recipient_event_mismatch", cmd.GiftID, manualGiftRecipientIDLogValue(cmd.RecipientParticipantID))
 			return ErrManualGiftRecipientEvent
 		}
+		if !recipient.IsEligibleForManualGift() {
+			log.Printf("WARN [FIX:manual-recipient-eligibility] manual gift recipient command rejected: actor_type=telegram gift_id=%d recipient_participant_id=%s status=%s has_result=%t reason=recipient_ineligible", cmd.GiftID, manualGiftRecipientIDLogValue(cmd.RecipientParticipantID), recipient.Status, recipient.IsFinished())
+			return ErrManualGiftRecipientIneligible
+		}
 	}
 
 	if err := h.giftRepo.SetManualRecipient(ctx, cmd.GiftID, cmd.RecipientParticipantID); err != nil {

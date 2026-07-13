@@ -13,16 +13,17 @@ import (
 )
 
 var (
-	ErrInvalidGiftGenderFilter     = errors.New("invalid gift gender filter")
-	ErrInvalidGiftBikeTypeFilter   = errors.New("invalid gift bike type filter")
-	ErrInvalidGiftReviewStatus     = errors.New("invalid gift review status")
-	ErrInvalidGiftPlace            = errors.New("gift place must be greater than zero")
-	ErrInvalidGiftPlaceRule        = errors.New("invalid gift place rule")
-	ErrGiftCriteriaPayloadRequired = errors.New("criteria_ids are required when approving a gift")
-	ErrManualGiftRecipientConflict = errors.New("manual recipient requires manual distribution")
-	ErrManualGiftNotManual         = errors.New("gift is not configured for manual distribution")
-	ErrManualGiftRecipientNotFound = errors.New("manual gift recipient participant not found")
-	ErrManualGiftRecipientEvent    = errors.New("manual gift recipient belongs to another event")
+	ErrInvalidGiftGenderFilter       = errors.New("invalid gift gender filter")
+	ErrInvalidGiftBikeTypeFilter     = errors.New("invalid gift bike type filter")
+	ErrInvalidGiftReviewStatus       = errors.New("invalid gift review status")
+	ErrInvalidGiftPlace              = errors.New("gift place must be greater than zero")
+	ErrInvalidGiftPlaceRule          = errors.New("invalid gift place rule")
+	ErrGiftCriteriaPayloadRequired   = errors.New("criteria_ids are required when approving a gift")
+	ErrManualGiftRecipientConflict   = errors.New("manual recipient requires manual distribution")
+	ErrManualGiftNotManual           = errors.New("gift is not configured for manual distribution")
+	ErrManualGiftRecipientNotFound   = errors.New("manual gift recipient participant not found")
+	ErrManualGiftRecipientEvent      = errors.New("manual gift recipient belongs to another event")
+	ErrManualGiftRecipientIneligible = errors.New("manual gift recipient must have finished or be marked dnf")
 )
 
 // UpdateGiftCommand представляет команду административного обновления подарка.
@@ -213,6 +214,10 @@ func (h *UpdateGiftHandler) applyManualDistribution(ctx context.Context, gift *e
 	if recipient.EventID != gift.EventID {
 		log.Printf("WARN manual gift update rejected: gift_id=%d recipient_participant_id=%s reason=recipient_event_mismatch", cmd.GiftID, manualGiftRecipientIDLogValue(cmd.ManualRecipientParticipantID))
 		return ErrManualGiftRecipientEvent
+	}
+	if !recipient.IsEligibleForManualGift() {
+		log.Printf("WARN [FIX:manual-recipient-eligibility] manual gift update rejected: gift_id=%d recipient_participant_id=%s status=%s has_result=%t reason=recipient_ineligible", cmd.GiftID, manualGiftRecipientIDLogValue(cmd.ManualRecipientParticipantID), recipient.Status, recipient.IsFinished())
+		return ErrManualGiftRecipientIneligible
 	}
 
 	gift.ManualRecipientParticipantID = cmd.ManualRecipientParticipantID

@@ -70,7 +70,12 @@ func (h *GetMiniappParticipantsHandler) Handle(ctx context.Context, query GetMin
 	}
 
 	options := make([]*MiniappParticipantOption, 0, len(participants))
+	excludedCount := 0
 	for _, participant := range participants {
+		if !participant.IsEligibleForManualGift() {
+			excludedCount++
+			continue
+		}
 		option := newMiniappParticipantOption(participant)
 		option.HasPrize = automaticPrizeCounts[participant.ID]+manualPrizeCounts[participant.ID] > 0
 		options = append(options, option)
@@ -87,7 +92,13 @@ func (h *GetMiniappParticipantsHandler) Handle(ctx context.Context, query GetMin
 		return leftName < rightName
 	})
 
-	log.Printf("DEBUG miniapp participant options query completed: event_id=%d returned_count=%d", query.EventID, len(options))
+	log.Printf(
+		"INFO [FIX:manual-recipient-eligibility] miniapp participant options filtered: event_id=%d source_count=%d returned_count=%d excluded_count=%d",
+		query.EventID,
+		len(participants),
+		len(options),
+		excludedCount,
+	)
 	return options, nil
 }
 

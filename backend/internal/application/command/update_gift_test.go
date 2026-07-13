@@ -252,7 +252,7 @@ func TestUpdateGiftHandlerManualDistributionRejectsInvalidRecipientMatrix(t *tes
 	recipientID := uint(21)
 	manualDistribution := false
 	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
-	h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77}})
+	h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77, Result: &entity.Result{}}})
 
 	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
 		GiftID:                          1,
@@ -280,7 +280,7 @@ func TestUpdateGiftHandlerManualDistributionValidatesRecipientAndUpdatesAtomical
 	manualDistribution := true
 	criteriaIDs := []uint{5}
 	repo := &updateGiftRepoFake{gift: baseUpdateGift()}
-	h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77}})
+	h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: &entity.Participant{ID: recipientID, EventID: 77, Result: &entity.Result{}}})
 
 	if _, err := h.Handle(context.Background(), UpdateGiftCommand{
 		GiftID:                          1,
@@ -319,6 +319,44 @@ func TestUpdateGiftHandlerManualDistributionValidatesRecipientAndUpdatesAtomical
 		ManualRecipientParticipantID:    &recipientID,
 	}); !errors.Is(err, ErrManualGiftRecipientEvent) {
 		t.Fatalf("cross-event recipient error = %v, want ErrManualGiftRecipientEvent", err)
+	}
+}
+
+func TestUpdateGiftHandlerManualDistributionRejectsIneligibleRecipient(t *testing.T) {
+	recipientID := uint(21)
+	manualDistribution := true
+	tests := []struct {
+		name        string
+		participant *entity.Participant
+	}{
+		{
+			name:        "dns participant",
+			participant: &entity.Participant{ID: recipientID, EventID: 77, Status: valueobject.ParticipantStatusActive},
+		},
+		{
+			name:        "disqualified participant",
+			participant: &entity.Participant{ID: recipientID, EventID: 77, Status: valueobject.ParticipantStatusDisqualified, Result: &entity.Result{}},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			repo := &updateGiftRepoFake{gift: baseUpdateGift()}
+			h := NewUpdateGiftHandler(repo, &manualGiftParticipantRepoFake{participant: testCase.participant})
+
+			_, err := h.Handle(context.Background(), UpdateGiftCommand{
+				GiftID:                          1,
+				ManualDistribution:              &manualDistribution,
+				ManualRecipientParticipantIDSet: true,
+				ManualRecipientParticipantID:    &recipientID,
+			})
+			if !errors.Is(err, ErrManualGiftRecipientIneligible) {
+				t.Fatalf("Handle error = %v, want %v", err, ErrManualGiftRecipientIneligible)
+			}
+			if repo.updatedGift != nil {
+				t.Fatal("ineligible recipient must not be persisted")
+			}
+		})
 	}
 }
 

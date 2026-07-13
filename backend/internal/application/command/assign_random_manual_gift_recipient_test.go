@@ -13,7 +13,7 @@ func TestAssignRandomManualGiftRecipientHandlerSelectsOnlyUnawardedParticipant(t
 	eligibleRecipientID := uint(30)
 	setRecipientHandler := NewSetManualGiftRecipientHandler(
 		&manualRecipientGiftRepoFake{gift: manualRecipientGift(nil)},
-		&manualRecipientParticipantRepoFake{participant: &entity.Participant{ID: eligibleRecipientID, EventID: 77}},
+		&manualRecipientParticipantRepoFake{participant: &entity.Participant{ID: eligibleRecipientID, EventID: 77, Result: &entity.Result{}}},
 	)
 	optionsReader := &randomManualGiftRecipientOptionsReaderFake{options: []*query.MiniappParticipantOption{
 		{ID: 10, HasPrize: true},

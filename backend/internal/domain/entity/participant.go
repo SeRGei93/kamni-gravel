@@ -52,6 +52,13 @@ func (p *Participant) IsFinished() bool {
 	return p.Result != nil
 }
 
+// IsEligibleForManualGift сообщает, можно ли вручную назначить участнику приз.
+// Участник с результатом и сошедший с дистанции допустимы; DNS и
+// дисквалифицированные исключены.
+func (p *Participant) IsEligibleForManualGift() bool {
+	return !p.IsDisqualified() && (p.IsDNF() || p.IsFinished())
+}
+
 // ElapsedTimeFormatted возвращает общее время в формате ЧЧ:ММ:СС
 func (p *Participant) ElapsedTimeFormatted() string {
 	if p.Result == nil {

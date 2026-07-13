@@ -213,7 +213,9 @@ func TestMiniappParticipantsReturnsMinimalActiveEventOptions(t *testing.T) {
 		nil,
 		&miniappHandlerParticipantRepoFake{participants: []*entity.Participant{
 			{ID: 2, EventID: 77, UserID: 202, Status: valueobject.ParticipantStatusDNF, Notes: "private", User: &entity.User{FirstName: "Zoe", Username: "zoe"}},
-			{ID: 1, EventID: 77, UserID: 101, Status: valueobject.ParticipantStatusActive, User: &entity.User{FirstName: "Alex", Username: "alex"}},
+			{ID: 1, EventID: 77, UserID: 101, Status: valueobject.ParticipantStatusActive, User: &entity.User{FirstName: "Alex", Username: "alex"}, Result: &entity.Result{}},
+			{ID: 3, EventID: 77, UserID: 303, Status: valueobject.ParticipantStatusDisqualified, User: &entity.User{FirstName: "Dsq", Username: "dsq"}, Result: &entity.Result{}},
+			{ID: 4, EventID: 77, UserID: 404, Status: valueobject.ParticipantStatusActive, User: &entity.User{FirstName: "Dns", Username: "dns"}},
 		}},
 	)
 
@@ -241,7 +243,7 @@ func TestMiniappUpdateMyGiftRecipient(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	manualGift := &entity.Gift{ID: 9, UserID: 42, EventID: 77, ManualDistribution: true}
 	giftRepo := &miniappHandlerGiftRepoFake{giftByID: manualGift}
-	participantRepo := &miniappHandlerParticipantRepoFake{participants: []*entity.Participant{{ID: 11, EventID: 77}}}
+	participantRepo := &miniappHandlerParticipantRepoFake{participants: []*entity.Participant{{ID: 11, EventID: 77, Result: &entity.Result{}}}}
 	h := newMiniappTestHandler(&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Active: true}}, giftRepo, nil, participantRepo)
 
 	rr := miniappUpdateRecipientRequest(t, token, now, h, `{"participant_id":11}`)
@@ -288,6 +290,18 @@ func TestMiniappUpdateMyGiftRecipientIsOwnerScopedAndValidatesEvent(t *testing.T
 			participants: []*entity.Participant{{ID: 11, EventID: 88}},
 			wantStatus:   http.StatusConflict,
 		},
+		{
+			name:         "dns recipient conflicts",
+			gift:         &entity.Gift{ID: 9, UserID: 42, EventID: 77, ManualDistribution: true},
+			participants: []*entity.Participant{{ID: 11, EventID: 77, Status: valueobject.ParticipantStatusActive}},
+			wantStatus:   http.StatusConflict,
+		},
+		{
+			name:         "disqualified recipient conflicts",
+			gift:         &entity.Gift{ID: 9, UserID: 42, EventID: 77, ManualDistribution: true},
+			participants: []*entity.Participant{{ID: 11, EventID: 77, Status: valueobject.ParticipantStatusDisqualified, Result: &entity.Result{}}},
+			wantStatus:   http.StatusConflict,
+		},
 	}
 
 	for _, tt := range tests {
@@ -316,15 +330,18 @@ func TestMiniappAssignRandomMyGiftRecipientUsesOnlyUnawardedParticipants(t *test
 	manualGift := &entity.Gift{ID: 9, UserID: 42, EventID: 77, ManualDistribution: true}
 	giftRepo := &miniappHandlerGiftRepoFake{
 		giftByID:              manualGift,
-		manualRecipientCounts: map[uint]int{11: 1},
+		manualRecipientCounts: map[uint]int{11: 1, 13: 1},
 	}
 	h := newMiniappTestHandler(
 		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Active: true}},
 		giftRepo,
 		nil,
 		&miniappHandlerParticipantRepoFake{participants: []*entity.Participant{
-			{ID: 11, EventID: 77},
-			{ID: 12, EventID: 77},
+			{ID: 11, EventID: 77, Result: &entity.Result{}},
+			{ID: 12, EventID: 77, Result: &entity.Result{}},
+			{ID: 13, EventID: 77, Status: valueobject.ParticipantStatusDNF},
+			{ID: 14, EventID: 77, Status: valueobject.ParticipantStatusDisqualified, Result: &entity.Result{}},
+			{ID: 15, EventID: 77, Status: valueobject.ParticipantStatusActive},
 		}},
 	)
 

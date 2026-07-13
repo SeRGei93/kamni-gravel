@@ -109,7 +109,7 @@ func (h *AssignRandomManualGiftRecipientHandler) Handle(
 		return 0, err
 	}
 
-	log.Printf("INFO random manual gift recipient assigned: gift_id=%d event_id=%d recipient_participant_id=%d", cmd.GiftID, cmd.EventID, recipientID)
+	log.Printf("INFO [FIX:manual-recipient-eligibility] random manual gift recipient assigned: gift_id=%d event_id=%d candidate_count=%d recipient_participant_id=%d", cmd.GiftID, cmd.EventID, len(candidateIDs), recipientID)
 	return recipientID, nil
 }
 

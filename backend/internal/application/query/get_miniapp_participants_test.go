@@ -13,9 +13,9 @@ import (
 
 func TestGetMiniappParticipantsHandlerReturnsMinimalDeterministicallySortedOptions(t *testing.T) {
 	repo := &miniappParticipantsRepoFake{participants: []*entity.Participant{
-		{ID: 3, UserID: 300, EventID: 77, Status: valueobject.ParticipantStatusDisqualified, Notes: "private", User: &entity.User{FirstName: "Zoe", Username: "zoe"}},
+		{ID: 3, UserID: 300, EventID: 77, Status: valueobject.ParticipantStatusDisqualified, Notes: "private", User: &entity.User{FirstName: "Zoe", Username: "zoe"}, Result: &entity.Result{}},
 		{ID: 2, UserID: 200, EventID: 77, Status: valueobject.ParticipantStatusDNF, Notes: "private", User: &entity.User{FirstName: "Alex", LastName: "Rider", Username: "alex"}},
-		{ID: 1, UserID: 100, EventID: 77, Status: valueobject.ParticipantStatusActive, Notes: "private", User: &entity.User{FirstName: "Alex", LastName: "Rider", Username: "alex2"}},
+		{ID: 1, UserID: 100, EventID: 77, Status: valueobject.ParticipantStatusActive, Notes: "private", User: &entity.User{FirstName: "Alex", LastName: "Rider", Username: "alex2"}, Result: &entity.Result{}},
 		{ID: 4, UserID: 400, EventID: 77, User: &entity.User{}},
 	}}
 	handler := NewGetMiniappParticipantsHandler(
@@ -31,16 +31,16 @@ func TestGetMiniappParticipantsHandlerReturnsMinimalDeterministicallySortedOptio
 	if err != nil {
 		t.Fatalf("Handle error: %v", err)
 	}
-	if repo.eventID != 77 || len(options) != 4 {
+	if repo.eventID != 77 || len(options) != 2 {
 		t.Fatalf("options = %+v, event_id=%d", options, repo.eventID)
 	}
-	if options[0].ID != 2 || options[1].ID != 4 || options[2].ID != 1 || options[3].ID != 3 {
-		t.Fatalf("deterministic order = [%d %d %d %d]", options[0].ID, options[1].ID, options[2].ID, options[3].ID)
+	if options[0].ID != 2 || options[1].ID != 1 {
+		t.Fatalf("deterministic order = [%d %d]", options[0].ID, options[1].ID)
 	}
-	if options[0].Status != "dnf" || options[1].Status != "active" || options[2].Status != "active" || options[3].Status != "disqualified" {
+	if options[0].Status != "dnf" || options[1].Status != "active" {
 		t.Fatalf("participant statuses = %+v", options)
 	}
-	if options[0].HasPrize || options[1].HasPrize || !options[2].HasPrize || !options[3].HasPrize {
+	if options[0].HasPrize || !options[1].HasPrize {
 		t.Fatalf("participant prize flags = %+v", options)
 	}
 

@@ -144,7 +144,7 @@ func newInvalidationGiftsHandler(giftRepo *invalidationGiftRepoFake, cacheFake *
 	return &GiftsHandler{
 		giftRepo:           giftRepo,
 		getGiftByIDHandler: query.NewGetGiftByIDHandler(giftRepo, criteriaRepo),
-		updateGiftHandler:  command.NewUpdateGiftHandler(giftRepo, &invalidationParticipantRepoFake{participant: &entity.Participant{ID: 42, EventID: 77}}),
+		updateGiftHandler:  command.NewUpdateGiftHandler(giftRepo, &invalidationParticipantRepoFake{participant: &entity.Participant{ID: 42, EventID: 77, Result: &entity.Result{}}}),
 		giftsCache:         cacheFake,
 	}
 }

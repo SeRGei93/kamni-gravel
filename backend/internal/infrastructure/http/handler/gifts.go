@@ -379,7 +379,8 @@ func (h *GiftsHandler) Update(w http.ResponseWriter, r *http.Request) {
 			errors.Is(err, command.ErrManualGiftRecipientConflict):
 			response.BadRequest(w, err.Error())
 		case errors.Is(err, command.ErrManualGiftNotManual),
-			errors.Is(err, command.ErrManualGiftRecipientEvent):
+			errors.Is(err, command.ErrManualGiftRecipientEvent),
+			errors.Is(err, command.ErrManualGiftRecipientIneligible):
 			response.Conflict(w, err.Error())
 		default:
 			response.InternalServerError(w, "Failed to update gift")
