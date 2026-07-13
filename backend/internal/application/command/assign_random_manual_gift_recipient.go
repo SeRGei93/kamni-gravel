@@ -14,10 +14,10 @@ import (
 // ErrManualGiftNoUnawardedParticipants means every participant already has a prize.
 var ErrManualGiftNoUnawardedParticipants = errors.New("no participants without prizes")
 
-// randomManualGiftRecipientOptionsReader returns privacy-safe participant options
-// with the current automatic and manual prize state.
-type randomManualGiftRecipientOptionsReader interface {
-	Handle(ctx context.Context, query query.GetMiniappParticipantsQuery) ([]*query.MiniappParticipantOption, error)
+// randomManualGiftRecipientIDsReader returns recipient IDs that are eligible
+// for a manual gift and have no automatic or manual prize.
+type randomManualGiftRecipientIDsReader interface {
+	Handle(ctx context.Context, query query.GetEligibleUnawardedParticipantIDsQuery) ([]uint, error)
 }
 
 // AssignRandomManualGiftRecipientCommand selects an unawarded participant for a
@@ -31,33 +31,33 @@ type AssignRandomManualGiftRecipientCommand struct {
 // AssignRandomManualGiftRecipientHandler assigns a manual gift to a randomly
 // selected participant who currently has no automatic or manual prize.
 type AssignRandomManualGiftRecipientHandler struct {
-	participantOptionsReader randomManualGiftRecipientOptionsReader
-	setRecipientHandler      *SetManualGiftRecipientHandler
-	randomIndex              func(max int) (int, error)
+	participantIDsReader randomManualGiftRecipientIDsReader
+	setRecipientHandler  *SetManualGiftRecipientHandler
+	randomIndex          func(max int) (int, error)
 }
 
 // NewAssignRandomManualGiftRecipientHandler creates a handler that uses
 // crypto/rand so the recipient cannot be predicted by a client.
 func NewAssignRandomManualGiftRecipientHandler(
-	participantOptionsReader randomManualGiftRecipientOptionsReader,
+	participantIDsReader randomManualGiftRecipientIDsReader,
 	setRecipientHandler *SetManualGiftRecipientHandler,
 ) *AssignRandomManualGiftRecipientHandler {
 	return newAssignRandomManualGiftRecipientHandler(
-		participantOptionsReader,
+		participantIDsReader,
 		setRecipientHandler,
 		cryptoRandomIndex,
 	)
 }
 
 func newAssignRandomManualGiftRecipientHandler(
-	participantOptionsReader randomManualGiftRecipientOptionsReader,
+	participantIDsReader randomManualGiftRecipientIDsReader,
 	setRecipientHandler *SetManualGiftRecipientHandler,
 	randomIndex func(max int) (int, error),
 ) *AssignRandomManualGiftRecipientHandler {
 	return &AssignRandomManualGiftRecipientHandler{
-		participantOptionsReader: participantOptionsReader,
-		setRecipientHandler:      setRecipientHandler,
-		randomIndex:              randomIndex,
+		participantIDsReader: participantIDsReader,
+		setRecipientHandler:  setRecipientHandler,
+		randomIndex:          randomIndex,
 	}
 }
 
@@ -75,19 +75,12 @@ func (h *AssignRandomManualGiftRecipientHandler) Handle(
 		return 0, err
 	}
 
-	options, err := h.participantOptionsReader.Handle(ctx, query.GetMiniappParticipantsQuery{EventID: cmd.EventID})
+	candidateIDs, err := h.participantIDsReader.Handle(ctx, query.GetEligibleUnawardedParticipantIDsQuery{EventID: cmd.EventID})
 	if err != nil {
 		return 0, fmt.Errorf("find random manual gift recipient candidates: %w", err)
 	}
-
-	candidateIDs := make([]uint, 0, len(options))
-	for _, option := range options {
-		if option != nil && !option.HasPrize {
-			candidateIDs = append(candidateIDs, option.ID)
-		}
-	}
 	if len(candidateIDs) == 0 {
-		log.Printf("INFO random manual gift recipient unavailable: gift_id=%d event_id=%d reason=no_unawarded_participants", cmd.GiftID, cmd.EventID)
+		log.Printf("WARN random manual gift recipient unavailable: gift_id=%d event_id=%d reason=no_unawarded_participants", cmd.GiftID, cmd.EventID)
 		return 0, ErrManualGiftNoUnawardedParticipants
 	}
 

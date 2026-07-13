@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attachManualGiftAssignments,
   buildManualGiftUpdate,
+  canAssignRandomRecipient,
   formatManualRecipientSearchLabel,
   getManualGiftStatus,
   isGiftDistributed,
@@ -88,5 +89,25 @@ describe('manual gift assignment helpers', () => {
     expect(isGiftDistributed(manualGift, new Set())).toBe(true);
     expect(isGiftDistributed(automaticGift, new Set())).toBe(false);
     expect(isGiftDistributed({ ...automaticGift, review_status: 'pending_review' }, new Set([1]))).toBe(false);
+  });
+
+  it('allows random distribution only for approved unassigned gifts', () => {
+    expect(canAssignRandomRecipient(automaticGift, new Set())).toBe(true);
+    expect(canAssignRandomRecipient({ ...automaticGift, manual_distribution: true }, new Set())).toBe(true);
+    expect(canAssignRandomRecipient(automaticGift, new Set([automaticGift.id]))).toBe(false);
+    expect(canAssignRandomRecipient({ ...automaticGift, review_status: 'pending_review' }, new Set())).toBe(false);
+    expect(canAssignRandomRecipient({
+      ...automaticGift,
+      manual_distribution: true,
+      manual_assignment: {
+        id: automaticGift.id,
+        event_id: automaticGift.event_id,
+        description: automaticGift.description,
+        review_status: 'approved',
+        manual_distribution: true,
+        recipient: { id: 12, display_name: 'Alex', status: 'active' },
+        created_at: automaticGift.created_at,
+      },
+    }, new Set())).toBe(false);
   });
 });

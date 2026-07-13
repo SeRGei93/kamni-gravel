@@ -359,6 +359,66 @@ func TestGiftRepositorySetManualRecipientRejectsCrossEventParticipant(t *testing
 	}
 }
 
+func TestGiftRepositoryAssignRandomManualRecipientClaimsRecipientTransactionally(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		reviewStatus     string
+		giftRecipientID  any
+		recipientEventID uint
+		hasManualPrize   bool
+		wantErr          error
+		wantAssignment   bool
+	}{
+		{name: "updated", reviewStatus: "approved", recipientEventID: 77, wantAssignment: true},
+		{name: "recipient already assigned to target gift", reviewStatus: "approved", giftRecipientID: uint(7), wantErr: repository.ErrRandomGiftRecipientAlreadyAssigned},
+		{name: "recipient claimed by another gift after candidate lookup", reviewStatus: "approved", recipientEventID: 77, hasManualPrize: true, wantErr: repository.ErrRandomGiftRecipientAlreadyAssigned},
+		{name: "unapproved gift", reviewStatus: "pending_review", wantErr: repository.ErrRandomGiftRecipientGiftNotApproved},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("sqlmock.New error: %v", err)
+			}
+			defer db.Close()
+
+			mock.ExpectBegin()
+			mock.ExpectQuery(`SELECT event_id, review_status, manual_recipient_participant_id\s+FROM gifts\s+WHERE id = \$1\s+FOR UPDATE`).
+				WithArgs(uint(1)).
+				WillReturnRows(sqlmock.NewRows([]string{"event_id", "review_status", "manual_recipient_participant_id"}).AddRow(77, testCase.reviewStatus, testCase.giftRecipientID))
+			if testCase.reviewStatus != "approved" || testCase.giftRecipientID != nil {
+				mock.ExpectRollback()
+			} else {
+				mock.ExpectQuery(`SELECT event_id\s+FROM participants`).
+					WithArgs(uint(42)).
+					WillReturnRows(sqlmock.NewRows([]string{"event_id"}).AddRow(testCase.recipientEventID))
+				mock.ExpectQuery(`SELECT EXISTS`).
+					WithArgs(uint(77), uint(42), uint(1)).
+					WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(testCase.hasManualPrize))
+				if testCase.hasManualPrize {
+					mock.ExpectRollback()
+				} else if testCase.wantAssignment {
+					mock.ExpectExec(`UPDATE gifts`).
+						WithArgs(uint(42), uint(1)).
+						WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectCommit()
+				}
+			}
+
+			repo, ok := NewGiftRepository(db).(repository.RandomManualGiftRecipientRepository)
+			if !ok {
+				t.Fatal("gift repository does not implement RandomManualGiftRecipientRepository")
+			}
+			err = repo.AssignRandomManualRecipient(context.Background(), 1, 42)
+			if !errors.Is(err, testCase.wantErr) {
+				t.Fatalf("AssignRandomManualRecipient error = %v, want %v", err, testCase.wantErr)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatalf("sql expectations: %v", err)
+			}
+		})
+	}
+}
+
 func TestGiftRepositoryFindByUserAndEvent(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

@@ -15,6 +15,10 @@ var (
 	ErrManualRecipientNotFound = errors.New("manual recipient participant not found")
 	// ErrManualRecipientEventMismatch означает, что получатель принадлежит другому событию.
 	ErrManualRecipientEventMismatch = errors.New("manual recipient participant belongs to another event")
+	// ErrRandomGiftRecipientAlreadyAssigned means another request assigned the gift first.
+	ErrRandomGiftRecipientAlreadyAssigned = errors.New("gift recipient is already assigned")
+	// ErrRandomGiftRecipientGiftNotApproved means a random recipient may only be assigned to an approved gift.
+	ErrRandomGiftRecipientGiftNotApproved = errors.New("gift is not approved")
 )
 
 // GiftRepository определяет интерфейс для работы с подарками
@@ -99,4 +103,12 @@ type ManualGiftRepository interface {
 // participant for an event. It is separate from automatic prize distribution.
 type ManualGiftRecipientCountRepository interface {
 	ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error)
+}
+
+// RandomManualGiftRecipientRepository atomically converts an eligible gift to
+// manual distribution and claims an unawarded recipient for a random admin
+// assignment. It is intentionally a separate contract: owner-driven manual
+// assignment does not need this transactional claim operation.
+type RandomManualGiftRecipientRepository interface {
+	AssignRandomManualRecipient(ctx context.Context, giftID uint, recipientParticipantID uint) error
 }

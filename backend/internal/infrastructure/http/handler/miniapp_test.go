@@ -697,13 +697,14 @@ func newMiniappTestHandler(
 		nil,
 	)
 	participantOptionsHandler := query.NewGetMiniappParticipantsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{})
+	eligibleUnawardedParticipantIDsHandler := query.NewGetEligibleUnawardedParticipantIDsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{})
 	setRecipientHandler := command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo)
 	handler.ConfigureManualGiftManagement(
 		query.NewGetOwnerManualGiftsHandler(giftRepo, criteriaRepo),
 		query.NewHasOwnerGiftsHandler(giftRepo),
 		participantOptionsHandler,
 		setRecipientHandler,
-		command.NewAssignRandomManualGiftRecipientHandler(participantOptionsHandler, setRecipientHandler),
+		command.NewAssignRandomManualGiftRecipientHandler(eligibleUnawardedParticipantIDsHandler, setRecipientHandler),
 	)
 	return handler
 }

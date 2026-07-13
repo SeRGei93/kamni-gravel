@@ -889,6 +889,40 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /gifts/{id}/random-recipient:
+    post:
+      tags: [Gifts]
+      summary: Случайно распределить невыданный приз
+      description: >-
+        Защищённое административное действие без тела запроса. Сервер выбирает
+        случайного участника того же события, который финишировал или имеет
+        статус DNF, не дисквалифицирован и ещё не получил автоматический или
+        ручной приз. Доступно только для проверенного нераспределённого приза.
+        Автоматический приз при успехе переводится в ручное распределение.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: ID приза
+      responses:
+        '204':
+          description: Получатель выбран и назначен; тело ответа отсутствует
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Приз или выбранный участник не найден
+        '409':
+          description: >-
+            Приз не проверен, уже распределён, не осталось участников без
+            приза или состояние изменилось одновременно с запросом.
+
   /gifts/{id}:
     get:
       tags: [Gifts]

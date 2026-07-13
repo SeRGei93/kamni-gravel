@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -685,6 +686,125 @@ func (r *giftRepository) SetManualRecipient(ctx context.Context, giftID uint, re
 		log.Printf("ERROR manual gift recipient update failed: gift_id=%d recipient_participant_id=%s stage=classify outcome=%s", giftID, recipientIDLogValue, outcome)
 		return fmt.Errorf("manual gift recipient update rejected for gift %d", giftID)
 	}
+}
+
+// AssignRandomManualRecipient atomically assigns the first recipient selected
+// by the administrator. It locks both the gift and participant before checking
+// existing manual awards, so concurrent random assignments cannot give the
+// same participant two gifts.
+func (r *giftRepository) AssignRandomManualRecipient(ctx context.Context, giftID uint, recipientParticipantID uint) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("ERROR [FIX:random-recipient-claim] transaction begin failed: gift_id=%d recipient_participant_id=%d error=%v", giftID, recipientParticipantID, err)
+		return fmt.Errorf("begin random gift recipient transaction: %w", err)
+	}
+
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && rollbackErr != sql.ErrTxDone {
+			log.Printf("ERROR [FIX:random-recipient-claim] transaction rollback failed: gift_id=%d recipient_participant_id=%d error=%v", giftID, recipientParticipantID, rollbackErr)
+		}
+	}()
+
+	log.Printf("DEBUG [FIX:random-recipient-claim] transaction started: gift_id=%d recipient_participant_id=%d", giftID, recipientParticipantID)
+	var eventID uint
+	var reviewStatus entity.GiftReviewStatus
+	var manualRecipientParticipantID sql.NullInt64
+	err = tx.QueryRowContext(ctx, `
+		SELECT event_id, review_status, manual_recipient_participant_id
+		FROM gifts
+		WHERE id = $1
+		FOR UPDATE
+	`, giftID).Scan(&eventID, &reviewStatus, &manualRecipientParticipantID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("WARN [FIX:random-recipient-claim] transaction rejected: gift_id=%d recipient_participant_id=%d reason=gift_not_found", giftID, recipientParticipantID)
+			return fmt.Errorf("%w: %d", repository.ErrGiftNotFound, giftID)
+		}
+		log.Printf("ERROR [FIX:random-recipient-claim] transaction failed: gift_id=%d recipient_participant_id=%d stage=lock_gift error=%v", giftID, recipientParticipantID, err)
+		return fmt.Errorf("lock random gift recipient gift %d: %w", giftID, err)
+	}
+	if reviewStatus != entity.GiftReviewStatusApproved {
+		log.Printf("WARN [FIX:random-recipient-claim] transaction rejected: gift_id=%d recipient_participant_id=%d reason=gift_not_approved", giftID, recipientParticipantID)
+		return fmt.Errorf("%w: gift_id=%d", repository.ErrRandomGiftRecipientGiftNotApproved, giftID)
+	}
+	if manualRecipientParticipantID.Valid {
+		log.Printf("WARN [FIX:random-recipient-claim] transaction rejected: gift_id=%d recipient_participant_id=%d reason=gift_already_assigned", giftID, recipientParticipantID)
+		return fmt.Errorf("%w: gift_id=%d", repository.ErrRandomGiftRecipientAlreadyAssigned, giftID)
+	}
+
+	var recipientEventID uint
+	err = tx.QueryRowContext(ctx, `
+		SELECT event_id
+		FROM participants
+		WHERE id = $1
+		FOR UPDATE
+	`, recipientParticipantID).Scan(&recipientEventID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("WARN [FIX:random-recipient-claim] transaction rejected: gift_id=%d recipient_participant_id=%d reason=recipient_not_found", giftID, recipientParticipantID)
+			return fmt.Errorf("%w: participant_id=%d", repository.ErrManualRecipientNotFound, recipientParticipantID)
+		}
+		log.Printf("ERROR [FIX:random-recipient-claim] transaction failed: gift_id=%d recipient_participant_id=%d stage=lock_recipient error=%v", giftID, recipientParticipantID, err)
+		return fmt.Errorf("lock random gift recipient participant %d: %w", recipientParticipantID, err)
+	}
+	if recipientEventID != eventID {
+		log.Printf("WARN [FIX:random-recipient-claim] transaction rejected: gift_id=%d recipient_participant_id=%d reason=recipient_event_mismatch", giftID, recipientParticipantID)
+		return fmt.Errorf("%w: gift_id=%d participant_id=%d", repository.ErrManualRecipientEventMismatch, giftID, recipientParticipantID)
+	}
+
+	var hasManualPrize bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM gifts
+			WHERE event_id = $1
+			  AND manual_distribution = TRUE
+			  AND manual_recipient_participant_id = $2
+			  AND id <> $3
+		)
+	`, eventID, recipientParticipantID, giftID).Scan(&hasManualPrize)
+	if err != nil {
+		log.Printf("ERROR [FIX:random-recipient-claim] transaction failed: gift_id=%d recipient_participant_id=%d stage=check_existing_manual_prize error=%v", giftID, recipientParticipantID, err)
+		return fmt.Errorf("check existing manual prizes for participant %d: %w", recipientParticipantID, err)
+	}
+	if hasManualPrize {
+		log.Printf("WARN [FIX:random-recipient-claim] transaction rejected: gift_id=%d recipient_participant_id=%d reason=recipient_received_manual_prize", giftID, recipientParticipantID)
+		return fmt.Errorf("%w: recipient_participant_id=%d", repository.ErrRandomGiftRecipientAlreadyAssigned, recipientParticipantID)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE gifts
+		SET manual_distribution = TRUE,
+			manual_recipient_participant_id = $1
+		WHERE id = $2
+		  AND review_status = 'approved'
+		  AND manual_recipient_participant_id IS NULL
+	`, recipientParticipantID, giftID)
+	if err != nil {
+		log.Printf("ERROR [FIX:random-recipient-claim] transaction failed: gift_id=%d recipient_participant_id=%d stage=assign_recipient error=%v", giftID, recipientParticipantID, err)
+		return fmt.Errorf("assign random gift recipient for gift %d: %w", giftID, err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("ERROR [FIX:random-recipient-claim] transaction failed: gift_id=%d recipient_participant_id=%d stage=assignment_result error=%v", giftID, recipientParticipantID, err)
+		return fmt.Errorf("read random gift recipient assignment result: %w", err)
+	}
+	if rowsAffected != 1 {
+		log.Printf("WARN [FIX:random-recipient-claim] transaction rejected: gift_id=%d recipient_participant_id=%d reason=gift_state_changed rows_affected=%d", giftID, recipientParticipantID, rowsAffected)
+		return fmt.Errorf("%w: gift_id=%d", repository.ErrRandomGiftRecipientAlreadyAssigned, giftID)
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("ERROR [FIX:random-recipient-claim] transaction commit failed: gift_id=%d recipient_participant_id=%d error=%v", giftID, recipientParticipantID, err)
+		return fmt.Errorf("commit random gift recipient transaction: %w", err)
+	}
+	committed = true
+
+	log.Printf("INFO [FIX:random-recipient-claim] transaction completed: gift_id=%d event_id=%d recipient_participant_id=%d", giftID, eventID, recipientParticipantID)
+	return nil
 }
 
 func (r *giftRepository) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {

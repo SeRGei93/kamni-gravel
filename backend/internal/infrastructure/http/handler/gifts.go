@@ -31,8 +31,13 @@ type GiftsHandler struct {
 	getManualGiftsHandler *query.GetManualGiftsHandler
 	addGiftHandler        *command.AddGiftHandler
 	updateGiftHandler     *command.UpdateGiftHandler
+	assignRandomRecipient randomGiftRecipientAssigner
 	publicGiftNotifier    GiftPublicationNotifier
 	giftsCache            miniappGiftsCacheInvalidator
+}
+
+type randomGiftRecipientAssigner interface {
+	Handle(ctx context.Context, cmd command.AssignRandomAdminGiftRecipientCommand) (*command.AssignRandomAdminGiftRecipientResult, error)
 }
 
 // GiftPublicationNotifier отправляет опубликованный приз в Telegram-чат.
@@ -55,6 +60,7 @@ func NewGiftsHandler(
 	getManualGiftsHandler *query.GetManualGiftsHandler,
 	addGiftHandler *command.AddGiftHandler,
 	updateGiftHandler *command.UpdateGiftHandler,
+	assignRandomRecipient randomGiftRecipientAssigner,
 	giftsCache miniappGiftsCacheInvalidator,
 	publicGiftNotifier ...GiftPublicationNotifier,
 ) *GiftsHandler {
@@ -70,9 +76,61 @@ func NewGiftsHandler(
 		getManualGiftsHandler: getManualGiftsHandler,
 		addGiftHandler:        addGiftHandler,
 		updateGiftHandler:     updateGiftHandler,
+		assignRandomRecipient: assignRandomRecipient,
 		publicGiftNotifier:    notifier,
 		giftsCache:            giftsCache,
 	}
+}
+
+// AssignRandomRecipient handles POST /api/gifts/{id}/random-recipient.
+func (h *GiftsHandler) AssignRandomRecipient(w http.ResponseWriter, r *http.Request) {
+	if h.assignRandomRecipient == nil {
+		log.Printf("ERROR admin random gift recipient assignment unavailable")
+		response.InternalServerError(w, "Random gift assignment is unavailable")
+		return
+	}
+
+	giftID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 32)
+	if err != nil || giftID == 0 {
+		log.Printf("WARN admin random gift recipient assignment rejected: reason=invalid_gift_id")
+		response.BadRequest(w, "Invalid gift ID")
+		return
+	}
+
+	result, err := h.assignRandomRecipient.Handle(r.Context(), command.AssignRandomAdminGiftRecipientCommand{GiftID: uint(giftID)})
+	if err != nil {
+		switch {
+		case errors.Is(err, command.ErrGiftNotFound), errors.Is(err, command.ErrManualGiftRecipientNotFound):
+			log.Printf("WARN admin random gift recipient assignment rejected: gift_id=%d reason=not_found", giftID)
+			response.NotFound(w, "Gift or participant not found")
+		case errors.Is(err, command.ErrAdminRandomGiftNotApproved),
+			errors.Is(err, command.ErrAdminRandomGiftAlreadyAssigned),
+			errors.Is(err, command.ErrManualGiftNoUnawardedParticipants),
+			errors.Is(err, command.ErrManualGiftRecipientEvent),
+			errors.Is(err, command.ErrManualGiftRecipientIneligible):
+			log.Printf("WARN admin random gift recipient assignment rejected: gift_id=%d reason=conflict error=%v", giftID, err)
+			response.Conflict(w, err.Error())
+		default:
+			log.Printf("ERROR admin random gift recipient assignment failed: gift_id=%d error=%v", giftID, err)
+			response.InternalServerError(w, "Failed to assign random gift recipient")
+		}
+		return
+	}
+	if result == nil {
+		log.Printf("ERROR admin random gift recipient assignment failed: gift_id=%d reason=empty_result", giftID)
+		response.InternalServerError(w, "Failed to assign random gift recipient")
+		return
+	}
+
+	if result.BecameManual {
+		h.invalidateMiniappGiftsCache(result.EventID)
+	}
+	adminID := uint(0)
+	if claims, ok := middleware.GetUserFromContext(r.Context()); ok {
+		adminID = claims.UserID
+	}
+	log.Printf("INFO admin random gift recipient assignment completed: admin_id=%d gift_id=%d event_id=%d recipient_participant_id=%d converted_to_manual=%t", adminID, result.GiftID, result.EventID, result.RecipientParticipantID, result.BecameManual)
+	response.NoContent(w)
 }
 
 // GetManualByEvent returns protected recipient summaries for manual gifts.

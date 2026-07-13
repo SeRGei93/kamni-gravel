@@ -88,6 +88,20 @@ export function isGiftDistributed(gift: Gift, assignedGiftIds: Set<number>): boo
   return status === 'manual_assigned' || status === 'automatic_assigned';
 }
 
+// canAssignRandomRecipient keeps the row action in sync with the server-side
+// contract: only approved gifts that have no automatic or manual recipient
+// can be distributed randomly.
+export function canAssignRandomRecipient(
+  gift: Gift,
+  assignedGiftIds: Set<number>
+): boolean {
+  if (gift.review_status !== 'approved') {
+    return false;
+  }
+  const status = getManualGiftStatus(gift, assignedGiftIds).status;
+  return status === 'automatic_unassigned' || status === 'manual_unassigned';
+}
+
 export function formatManualRecipientSearchLabel(name: string, username?: string): string {
   const normalizedUsername = username?.replace(/^@+/, '').trim();
   return normalizedUsername ? `${name} (@${normalizedUsername})` : name;

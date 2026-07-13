@@ -388,6 +388,28 @@ export default function GiftsPage() {
     }
   };
 
+  const handleAssignRandomRecipient = async (gift: Gift) => {
+    try {
+      setError(null);
+      await giftsApi.assignRandomRecipient(gift.id);
+      await loadGifts();
+      console.info('Random gift recipient assigned:', {
+        operation: 'assign_random_gift_recipient',
+        gift_id: gift.id,
+        event_id: activeEventId,
+      });
+    } catch (err) {
+      setError('Не удалось случайно распределить приз. Обновите список и повторите.');
+      console.error('Failed to assign random gift recipient:', {
+        operation: 'assign_random_gift_recipient',
+        gift_id: gift.id,
+        event_id: activeEventId,
+        error: err,
+      });
+      throw err;
+    }
+  };
+
   const resetManualGiftForm = () => {
     setManualGiftUserId('');
     setManualGiftDescription('');
@@ -626,6 +648,7 @@ export default function GiftsPage() {
         isLoading={isLoading}
         onApprove={handleApprove}
         onEnableManualAssignment={handleEnableManualAssignment}
+        onAssignRandomRecipient={handleAssignRandomRecipient}
         editQueryString={listQueryString}
       />
 

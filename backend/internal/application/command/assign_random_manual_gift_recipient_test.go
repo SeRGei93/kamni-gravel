@@ -15,12 +15,8 @@ func TestAssignRandomManualGiftRecipientHandlerSelectsOnlyUnawardedParticipant(t
 		&manualRecipientGiftRepoFake{gift: manualRecipientGift(nil)},
 		&manualRecipientParticipantRepoFake{participant: &entity.Participant{ID: eligibleRecipientID, EventID: 77, Result: &entity.Result{}}},
 	)
-	optionsReader := &randomManualGiftRecipientOptionsReaderFake{options: []*query.MiniappParticipantOption{
-		{ID: 10, HasPrize: true},
-		{ID: 20, HasPrize: true},
-		{ID: eligibleRecipientID, HasPrize: false},
-	}}
-	handler := newAssignRandomManualGiftRecipientHandler(optionsReader, setRecipientHandler, func(max int) (int, error) {
+	participantIDsReader := &randomManualGiftRecipientIDsReaderFake{participantIDs: []uint{eligibleRecipientID}}
+	handler := newAssignRandomManualGiftRecipientHandler(participantIDsReader, setRecipientHandler, func(max int) (int, error) {
 		if max != 1 {
 			t.Fatalf("random candidate count = %d, want 1", max)
 		}
@@ -42,7 +38,7 @@ func TestAssignRandomManualGiftRecipientHandlerSelectsOnlyUnawardedParticipant(t
 
 func TestAssignRandomManualGiftRecipientHandlerRejectsWhenEveryoneHasPrize(t *testing.T) {
 	handler := newAssignRandomManualGiftRecipientHandler(
-		&randomManualGiftRecipientOptionsReaderFake{options: []*query.MiniappParticipantOption{{ID: 10, HasPrize: true}}},
+		&randomManualGiftRecipientIDsReaderFake{},
 		NewSetManualGiftRecipientHandler(&manualRecipientGiftRepoFake{gift: manualRecipientGift(nil)}, &manualRecipientParticipantRepoFake{}),
 		func(int) (int, error) { return 0, nil },
 	)
@@ -57,11 +53,11 @@ func TestAssignRandomManualGiftRecipientHandlerRejectsWhenEveryoneHasPrize(t *te
 	}
 }
 
-type randomManualGiftRecipientOptionsReaderFake struct {
-	options []*query.MiniappParticipantOption
-	err     error
+type randomManualGiftRecipientIDsReaderFake struct {
+	participantIDs []uint
+	err            error
 }
 
-func (r *randomManualGiftRecipientOptionsReaderFake) Handle(context.Context, query.GetMiniappParticipantsQuery) ([]*query.MiniappParticipantOption, error) {
-	return r.options, r.err
+func (r *randomManualGiftRecipientIDsReaderFake) Handle(context.Context, query.GetEligibleUnawardedParticipantIDsQuery) ([]uint, error) {
+	return r.participantIDs, r.err
 }

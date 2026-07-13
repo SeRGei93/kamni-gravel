@@ -77,6 +77,12 @@ export const giftsApi = {
     return put<Gift>(`${GIFTS_PREFIX}/${id}`, data);
   },
 
+  // The server chooses an eligible participant without a prize. The request
+  // deliberately has no body so the client cannot influence the recipient.
+  async assignRandomRecipient(id: number): Promise<void> {
+    await post<void>(`${GIFTS_PREFIX}/${id}/random-recipient`);
+  },
+
   async delete(id: number): Promise<void> {
     return del<void>(`${GIFTS_PREFIX}/${id}`);
   },

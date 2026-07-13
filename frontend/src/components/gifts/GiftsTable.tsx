@@ -9,7 +9,7 @@ import Button from '../ui/button/Button';
 import { CheckLineIcon, PencilIcon } from '@/icons';
 import { getCriteriaColor } from '@/utils/criteria';
 import { formatGiftPlaceRule } from '@/utils/giftPlaceRule';
-import { getManualGiftStatus } from '@/utils/manualGiftAssignment';
+import { canAssignRandomRecipient, getManualGiftStatus } from '@/utils/manualGiftAssignment';
 import type { Gift } from '@/types';
 import { useGiftPhotoUrls } from './useGiftPhotoUrls';
 
@@ -19,6 +19,7 @@ interface GiftsTableProps {
   isLoading?: boolean;
   onApprove?: (gift: Gift) => Promise<void>;
   onEnableManualAssignment?: (gift: Gift) => Promise<void>;
+  onAssignRandomRecipient?: (gift: Gift) => Promise<void>;
   editQueryString?: string;
 }
 
@@ -28,10 +29,13 @@ export default function GiftsTable({
   isLoading,
   onApprove,
   onEnableManualAssignment,
+  onAssignRandomRecipient,
   editQueryString,
 }: GiftsTableProps) {
   const [approvingId, setApprovingId] = useState<number | null>(null);
   const [enablingManualAssignmentId, setEnablingManualAssignmentId] =
+    useState<number | null>(null);
+  const [assigningRandomRecipientId, setAssigningRandomRecipientId] =
     useState<number | null>(null);
 
   const handleApprove = async (gift: Gift) => {
@@ -57,6 +61,19 @@ export default function GiftsTable({
       await onEnableManualAssignment(gift);
     } finally {
       setEnablingManualAssignmentId(null);
+    }
+  };
+
+  const handleAssignRandomRecipient = async (gift: Gift) => {
+    if (!onAssignRandomRecipient) {
+      return;
+    }
+
+    setAssigningRandomRecipientId(gift.id);
+    try {
+      await onAssignRandomRecipient(gift);
+    } finally {
+      setAssigningRandomRecipientId(null);
     }
   };
 
@@ -167,9 +184,14 @@ export default function GiftsTable({
                   ? photoUrls[firstPhoto.id]?.url || null
                   : null;
                 const isPendingReview = gift.review_status === 'pending_review';
+                const currentAssignedGiftIds = assignedGiftIds ?? new Set<number>();
                 const distributionStatus = getManualGiftStatus(
                   gift,
-                  assignedGiftIds ?? new Set<number>()
+                  currentAssignedGiftIds
+                );
+                const canAssignRandom = canAssignRandomRecipient(
+                  gift,
+                  currentAssignedGiftIds
                 );
 
                 return (
@@ -311,6 +333,20 @@ export default function GiftsTable({
                               Вручную
                             </Button>
                           )}
+                        {canAssignRandom && onAssignRandomRecipient && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => handleAssignRandomRecipient(gift)}
+                            disabled={assigningRandomRecipientId === gift.id}
+                            title="Назначить случайного участника без приза"
+                            className="text-brand-600 dark:text-brand-400"
+                          >
+                            {assigningRandomRecipientId === gift.id
+                              ? 'Распределяем...'
+                              : 'Случайно'}
+                          </Button>
+                        )}
                         <Link
                           href={`/gifts/${gift.id}${
                             editQueryString ? `?${editQueryString}` : ''
