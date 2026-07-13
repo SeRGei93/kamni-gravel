@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useMiniappSession } from "@/components/miniapp/MiniappSessionContext";
 
 // Постоянная нижняя навигация Mini App. Рендерится в layout группы (miniapp),
@@ -36,9 +37,13 @@ const myGiftsNavigationItem: MiniappNavigationItem = {
 const navigationItemClass =
   "flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-[1.5rem] px-1.5 py-1.5 text-[10px] font-semibold leading-3 transition active:scale-[0.96]";
 
+const scrollDirectionThreshold = 12;
+
 export default function MiniappTabs() {
   const pathname = usePathname() ?? "";
   const { session } = useMiniappSession();
+  const [isCompact, setIsCompact] = useState(false);
+  const previousScrollY = useRef(0);
   const hasMyGifts = session?.has_my_gifts ?? false;
   const myResultParticipantID = session?.my_result_participant_id ?? null;
   const myResultNavigationItem: MiniappNavigationItem | null = myResultParticipantID
@@ -59,10 +64,36 @@ export default function MiniappTabs() {
     ? `/miniapp/leaderboard/${myResultParticipantID}`
     : null;
 
+  useEffect(() => {
+    previousScrollY.current = window.scrollY;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const scrollDelta = currentScrollY - previousScrollY.current;
+
+      if (currentScrollY <= 0) {
+        setIsCompact(false);
+        previousScrollY.current = currentScrollY;
+        return;
+      }
+      if (Math.abs(scrollDelta) < scrollDirectionThreshold) {
+        return;
+      }
+
+      setIsCompact(scrollDelta > 0);
+      previousScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
     <nav
       aria-label="Навигация Mini App"
-      className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-30 px-4"
+      className={`fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-30 transition-[padding] duration-300 ease-out motion-reduce:transition-none ${
+        isCompact ? "px-10" : "px-5"
+      }`}
     >
       <div className="tg-liquid-glass-nav mx-auto flex w-full max-w-md items-stretch rounded-[1.75rem] p-1">
         {navigationItems.map((item) => {

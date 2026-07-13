@@ -791,7 +791,7 @@ span.flatpickr-weekday,
 
 @supports (background: color-mix(in srgb, black, transparent)) {
   .tg-liquid-glass-nav {
-    background: color-mix(in srgb, var(--tg-secondary-bg-color) 72%, transparent);
+    background: color-mix(in srgb, var(--tg-secondary-bg-color) 62%, transparent);
     -webkit-backdrop-filter: blur(24px) saturate(140%);
     backdrop-filter: blur(24px) saturate(140%);
   }

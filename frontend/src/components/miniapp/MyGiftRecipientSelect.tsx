@@ -184,7 +184,7 @@ export default function MyGiftRecipientSelect({
             type="button"
             onClick={openPicker}
             disabled={isSaving}
-            className="tg-divider tg-title min-h-12 flex-1 rounded-lg border bg-transparent px-3 py-2 text-left text-base disabled:cursor-not-allowed disabled:opacity-60"
+            className="tg-divider tg-title min-h-12 flex-1 rounded-lg border bg-transparent px-3 py-2 text-left text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Выберите получателя
           </button>
