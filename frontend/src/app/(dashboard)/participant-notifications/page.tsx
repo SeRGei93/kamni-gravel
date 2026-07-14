@@ -5,6 +5,7 @@ import Button from '@/components/ui/button/Button';
 import Checkbox from '@/components/form/input/Checkbox';
 import TextArea from '@/components/form/input/TextArea';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
+import { matchesSearchQuery } from '@/utils/search';
 import {
   ParticipantNotificationFilter,
   ParticipantNotificationJob,
@@ -54,6 +55,7 @@ export default function ParticipantNotificationsPage() {
   const [filter, setFilter] = useState<ParticipantNotificationFilter>('all');
   const [eventName, setEventName] = useState('');
   const [recipients, setRecipients] = useState<ParticipantNotificationRecipient[]>([]);
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [text, setText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -124,8 +126,13 @@ export default function ParticipantNotificationsPage() {
   }, [activeJobID, isSending]);
 
   const characterCount = useMemo(() => Array.from(text).length, [text]);
+  const visibleRecipients = useMemo(
+    () => recipients.filter((recipient) => matchesSearchQuery(search, [recipient.label, recipient.username])),
+    [recipients, search],
+  );
   const selectedCount = selected.size;
-  const allSelected = recipients.length > 0 && selectedCount === recipients.length;
+  const allVisibleRecipientsSelected = visibleRecipients.length > 0
+    && visibleRecipients.every((recipient) => selected.has(recipient.user_id));
   const canSend = !isSending && selectedCount > 0 && text.trim().length > 0 && characterCount <= TELEGRAM_MESSAGE_LIMIT;
 
   const changeFilter = (nextFilter: ParticipantNotificationFilter) => {
@@ -145,7 +152,17 @@ export default function ParticipantNotificationsPage() {
   };
 
   const toggleAll = (checked: boolean) => {
-    setSelected(checked ? new Set(recipients.map((recipient) => recipient.user_id)) : new Set());
+    setSelected((previous) => {
+      const next = new Set(previous);
+      for (const recipient of visibleRecipients) {
+        if (checked) {
+          next.add(recipient.user_id);
+        } else {
+          next.delete(recipient.user_id);
+        }
+      }
+      return next;
+    });
   };
 
   const handleSend = async () => {
@@ -270,46 +287,67 @@ export default function ParticipantNotificationsPage() {
             <p className="text-sm text-gray-500 dark:text-gray-400">Загрузка…</p>
           ) : recipients.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400">Участников по этому фильтру нет.</p>
+          ) : visibleRecipients.length === 0 ? (
+            <>
+              <RecipientSearch value={search} onChange={setSearch} />
+              <p className="text-sm text-gray-500 dark:text-gray-400">Участники по вашему запросу не найдены.</p>
+            </>
           ) : (
-            <div className="max-h-[34rem] overflow-auto rounded-lg border border-gray-100 dark:border-gray-800">
-              <Table>
-                <TableHeader className="sticky top-0 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900">
-                  <TableRow>
-                    <TableCell isHeader className="w-12 px-4 py-3">
-                      <Checkbox checked={allSelected} onChange={toggleAll} disabled={isSending} />
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Участник
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Статус
-                    </TableCell>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recipients.map((recipient) => (
-                    <TableRow key={recipient.user_id} className="border-b border-gray-100 last:border-b-0 dark:border-gray-800">
-                      <TableCell className="px-4 py-3">
-                        <Checkbox
-                          checked={selected.has(recipient.user_id)}
-                          onChange={(checked) => toggleRecipient(recipient.user_id, checked)}
-                          disabled={isSending}
-                        />
+            <>
+              <RecipientSearch value={search} onChange={setSearch} />
+              <div className="max-h-[34rem] overflow-auto rounded-lg border border-gray-100 dark:border-gray-800">
+                <Table>
+                  <TableHeader className="sticky top-0 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    <TableRow>
+                      <TableCell isHeader className="w-12 px-4 py-3">
+                        <Checkbox checked={allVisibleRecipientsSelected} onChange={toggleAll} disabled={isSending} />
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300">
-                        {recipient.label}
+                      <TableCell isHeader className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+                        Участник
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                        {recipientDetails(recipient)}
+                      <TableCell isHeader className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+                        Статус
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleRecipients.map((recipient) => (
+                      <TableRow key={recipient.user_id} className="border-b border-gray-100 last:border-b-0 dark:border-gray-800">
+                        <TableCell className="px-4 py-3">
+                          <Checkbox
+                            checked={selected.has(recipient.user_id)}
+                            onChange={(checked) => toggleRecipient(recipient.user_id, checked)}
+                            disabled={isSending}
+                          />
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {recipient.label}
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                          {recipientDetails(recipient)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </section>
       </div>
     </div>
+  );
+}
+
+function RecipientSearch({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <input
+      type="search"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder="Поиск по имени или @username"
+      aria-label="Поиск получателей"
+      className="mb-4 h-10 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 outline-hidden focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
+    />
   );
 }
