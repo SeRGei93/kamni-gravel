@@ -1,5 +1,9 @@
 type SearchValue = string | number | null | undefined;
 
+export function hasSearchQuery(query: string): boolean {
+  return query.trim().length > 0;
+}
+
 function normalizeSearchValue(value: SearchValue): string {
   return String(value ?? '')
     .trim()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { miniappApi } from "@/api/miniapp";
 import GiftCatalogTable from "@/components/miniapp/GiftCatalogTable";
 import GiftEmptyState from "@/components/miniapp/GiftEmptyState";
@@ -8,6 +8,7 @@ import GiftFilters from "@/components/miniapp/GiftFilters";
 import { useMiniappCatalog } from "@/components/miniapp/MiniappCatalogContext";
 import { useMiniappSession } from "@/components/miniapp/MiniappSessionContext";
 import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
+import { useIsomorphicLayoutEffect } from "@/hooks/useIsomorphicLayoutEffect";
 import type { GenderFilter, Gift } from "@/types";
 import {
   expandTelegramWebApp,
@@ -15,6 +16,11 @@ import {
   readyTelegramWebApp,
 } from "@/utils/telegramWebApp";
 import { getGiftFirstFixedPlace } from "@/utils/giftPlaceRule";
+import {
+  filterMiniappGiftsBySearch,
+  shouldShowGiftPlaceGaps,
+} from "@/utils/miniappGiftSearch";
+import { hasSearchQuery } from "@/utils/search";
 
 const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["all", "male", "female"];
 
@@ -24,6 +30,9 @@ export default function MiniappGiftsPage() {
     setGender,
     bikeType,
     setBikeType,
+    searchQuery,
+    setSearchQuery,
+    scrollYRef,
     getCatalogSnapshot,
     setCatalogSnapshot,
   } = useMiniappCatalog();
@@ -123,6 +132,21 @@ export default function MiniappGiftsPage() {
     };
   }, [bikeType, gender, session, catalogKey, getCatalogSnapshot, setCatalogSnapshot]);
 
+  const filteredGifts = useMemo(
+    () => filterMiniappGiftsBySearch(gifts, searchQuery),
+    [gifts, searchQuery]
+  );
+  const isSearchActive = hasSearchQuery(searchQuery);
+
+  // При возврате из карточки список берётся из provider-кеша до новой загрузки,
+  // поэтому страницу можно сразу вернуть на сохранённую позицию без мигания.
+  useIsomorphicLayoutEffect(() => {
+    window.scrollTo(0, scrollYRef.current);
+    return () => {
+      scrollYRef.current = window.scrollY;
+    };
+  }, [scrollYRef]);
+
   if (isSessionLoading) {
     return <MiniappShellState title="Каталог призов" text="Загружаем активное событие" />;
   }
@@ -153,9 +177,12 @@ export default function MiniappGiftsPage() {
           <GiftFilters
             gender={gender}
             bikeType={bikeType}
+            searchQuery={searchQuery}
             isLoading={isCatalogLoading}
             onGenderChange={setGender}
             onBikeTypeChange={setBikeType}
+            onSearchChange={setSearchQuery}
+            onSearchClear={() => setSearchQuery("")}
           />
           {isCatalogLoading && (
             <div className="tg-muted flex items-center justify-center gap-2 text-[11px] font-medium">
@@ -169,15 +196,18 @@ export default function MiniappGiftsPage() {
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
         {isCatalogLoading && gifts.length === 0 ? (
           <MiniappCatalogLoading />
-        ) : gifts.length > 0 ? (
+        ) : filteredGifts.length > 0 ? (
           <GiftCatalogTable
-            gifts={gifts}
+            gifts={filteredGifts}
             isLoading={isCatalogLoading}
             participantCount={participantCount}
-            showPlaceGaps
+            showPlaceGaps={shouldShowGiftPlaceGaps(searchQuery)}
           />
         ) : (
-          <GiftEmptyState />
+          <GiftEmptyState
+            isSearchActive={isSearchActive}
+            onSearchClear={() => setSearchQuery("")}
+          />
         )}
       </section>
     </main>

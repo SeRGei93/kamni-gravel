@@ -34,6 +34,8 @@ interface MiniappLeaderboardContextValue {
   setGender: (value: LeaderboardGenderFilter) => void;
   bikeType: BikeTypeFilter;
   setBikeType: (value: BikeTypeFilter) => void;
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
   entries: MiniappLeaderboardEntry[] | null;
   setEntries: (value: MiniappLeaderboardEntry[]) => void;
   getEntry: (id: number) => MiniappLeaderboardEntry | undefined;
@@ -74,6 +76,7 @@ export function MiniappLeaderboardProvider({ children }: { children: ReactNode }
   const [bikeType, setBikeTypeState] = useState<BikeTypeFilter>(() =>
     readStoredFilter(BIKE_TYPE_STORAGE_KEY, DEFAULT_BIKE_TYPE)
   );
+  const [searchQuery, setSearchQuery] = useState("");
   const [entries, setEntriesState] = useState<MiniappLeaderboardEntry[] | null>(null);
   const scrollYRef = useRef(0);
 
@@ -102,12 +105,23 @@ export function MiniappLeaderboardProvider({ children }: { children: ReactNode }
       setGender,
       bikeType,
       setBikeType,
+      searchQuery,
+      setSearchQuery,
       entries,
       setEntries,
       getEntry,
       scrollYRef,
     }),
-    [gender, setGender, bikeType, setBikeType, entries, setEntries, getEntry]
+    [
+      gender,
+      setGender,
+      bikeType,
+      setBikeType,
+      searchQuery,
+      entries,
+      setEntries,
+      getEntry,
+    ]
   );
 
   return (

@@ -1,5 +1,12 @@
 import { MiniappApiError } from '@/api/miniapp';
-import type { ManualGift } from '@/types';
+import type { ManualGift, ManualGiftRecipient, MiniappParticipantOption } from '@/types';
+
+export class MiniappMyGiftsRefreshError extends Error {
+  constructor() {
+    super('Recipient was assigned, but the My Prizes list could not be refreshed');
+    this.name = 'MiniappMyGiftsRefreshError';
+  }
+}
 
 export function miniappGiftReviewLabel(gift: ManualGift): string {
   return gift.review_status === 'approved' ? 'Проверен' : 'На проверке';
@@ -16,6 +23,9 @@ export function miniappGiftRecipientLabel(gift: ManualGift): string {
 }
 
 export function miniappGiftMutationErrorMessage(error: unknown): string {
+  if (error instanceof MiniappMyGiftsRefreshError) {
+    return 'Получатель назначен, но список не удалось обновить. Обновите страницу.';
+  }
   if (!(error instanceof MiniappApiError)) {
     return 'Не удалось сохранить получателя. Проверьте соединение и повторите попытку.';
   }
@@ -30,6 +40,41 @@ export function miniappGiftMutationErrorMessage(error: unknown): string {
     return 'Проверьте выбранного получателя и повторите попытку.';
   }
   return 'Не удалось сохранить получателя. Повторите попытку.';
+}
+
+export function updateManualGiftRecipient(
+  gifts: ManualGift[],
+  participants: MiniappParticipantOption[],
+  giftID: number,
+  recipientID: number | null
+): ManualGift[] {
+  const giftIndex = gifts.findIndex((gift) => gift.id === giftID);
+  if (giftIndex < 0) {
+    return gifts;
+  }
+
+  const participant = recipientID === null
+    ? null
+    : participants.find((option) => option.id === recipientID);
+  if (recipientID !== null && !participant) {
+    return gifts;
+  }
+
+  const recipient: ManualGiftRecipient | undefined = participant
+    ? {
+        id: participant.id,
+        display_name: participant.display_name,
+        username: participant.username,
+        status: participant.status,
+      }
+    : undefined;
+  const updatedGift = { ...gifts[giftIndex], recipient };
+
+  return [
+    ...gifts.slice(0, giftIndex),
+    updatedGift,
+    ...gifts.slice(giftIndex + 1),
+  ];
 }
 
 export function isRecipientSelectionChanged(

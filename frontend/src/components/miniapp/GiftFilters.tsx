@@ -2,15 +2,19 @@
 
 import type { BikeTypeFilter, GenderFilter } from "@/types";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
+import MiniappSearchInput from "@/components/miniapp/MiniappSearchInput";
 
 export type MiniappGenderFilter = "all_genders" | GenderFilter;
 
 interface GiftFiltersProps {
   gender: MiniappGenderFilter;
   bikeType: BikeTypeFilter;
+  searchQuery: string;
   isLoading?: boolean;
   onGenderChange: (value: MiniappGenderFilter) => void;
   onBikeTypeChange: (value: BikeTypeFilter) => void;
+  onSearchChange: (value: string) => void;
+  onSearchClear: () => void;
 }
 
 const genderOptions: Array<{ value: MiniappGenderFilter; label: string }> = [
@@ -28,15 +32,25 @@ const inactiveFilterClass = "tg-filter-inactive";
 export default function GiftFilters({
   gender,
   bikeType,
+  searchQuery,
   isLoading,
   onGenderChange,
   onBikeTypeChange,
+  onSearchChange,
+  onSearchClear,
 }: GiftFiltersProps) {
   return (
     <div
       aria-busy={isLoading}
       className="flex w-full flex-col gap-2"
     >
+      <MiniappSearchInput
+        value={searchQuery}
+        onChange={onSearchChange}
+        onClear={onSearchClear}
+        placeholder="Описание, имя или @username"
+        ariaLabel="Поиск приза"
+      />
       <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1">
         {genderOptions.map((option) => {
           const value = option.value;

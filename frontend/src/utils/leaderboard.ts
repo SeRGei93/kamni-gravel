@@ -1,5 +1,6 @@
 import type { LeaderboardGenderFilter } from "@/components/miniapp/MiniappLeaderboardContext";
 import type { BikeTypeFilter, MiniappLeaderboardEntry } from "@/types";
+import { matchesSearchQuery } from "@/utils/search";
 
 // Запись лидерборда с отображаемым местом. place === null означает, что участник
 // не в зачёте текущего представления (не финишировал / сошёл / дисквалифицирован).
@@ -72,4 +73,13 @@ export function rankAndFilterLeaderboard(
     ...ranked.map((entry, index) => ({ entry, place: index + 1 })),
     ...others.map((entry) => ({ entry, place: null })),
   ];
+}
+
+// Поиск применяется после расчёта мест, чтобы найденный участник сохранял
+// место в текущем срезе по полу и типу велосипеда.
+export function filterRankedLeaderboardBySearch(
+  entries: RankedLeaderboardEntry[],
+  searchQuery: string
+): RankedLeaderboardEntry[] {
+  return entries.filter(({ entry }) => matchesSearchQuery(searchQuery, [entry.name]));
 }

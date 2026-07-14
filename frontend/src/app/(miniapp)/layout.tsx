@@ -2,6 +2,7 @@ import React from "react";
 import Script from "next/script";
 import { MiniappCatalogProvider } from "@/components/miniapp/MiniappCatalogContext";
 import { MiniappLeaderboardProvider } from "@/components/miniapp/MiniappLeaderboardContext";
+import { MiniappMyGiftsProvider } from "@/components/miniapp/MiniappMyGiftsContext";
 import { MiniappSessionProvider } from "@/components/miniapp/MiniappSessionContext";
 import MiniappTabs from "@/components/miniapp/MiniappTabs";
 import MiniappTheme from "@/components/miniapp/MiniappTheme";
@@ -23,8 +24,10 @@ export default function MiniappLayout({
         <MiniappSessionProvider>
           <MiniappCatalogProvider>
             <MiniappLeaderboardProvider>
-              {children}
-              <MiniappTabs />
+              <MiniappMyGiftsProvider>
+                {children}
+                <MiniappTabs />
+              </MiniappMyGiftsProvider>
             </MiniappLeaderboardProvider>
           </MiniappCatalogProvider>
         </MiniappSessionProvider>

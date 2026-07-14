@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 import type { MiniappGenderFilter } from "@/components/miniapp/GiftFilters";
@@ -36,6 +37,10 @@ interface MiniappCatalogContextValue {
   setGender: (value: MiniappGenderFilter) => void;
   bikeType: BikeTypeFilter;
   setBikeType: (value: BikeTypeFilter) => void;
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  // Позиция прокрутки каталога, чтобы восстановить её при возврате с карточки.
+  scrollYRef: MutableRefObject<number>;
   getCatalogSnapshot: (key: string) => CatalogSnapshot | undefined;
   setCatalogSnapshot: (key: string, snapshot: CatalogSnapshot) => void;
 }
@@ -72,6 +77,8 @@ export function MiniappCatalogProvider({ children }: { children: ReactNode }) {
   const [bikeType, setBikeTypeState] = useState<BikeTypeFilter>(() =>
     readStoredFilter(BIKE_TYPE_STORAGE_KEY, DEFAULT_BIKE_TYPE)
   );
+  const [searchQuery, setSearchQuery] = useState("");
+  const scrollYRef = useRef(0);
   // Кеш списков призов по ключу фильтра держим в ref: его изменение не должно
   // вызывать ререндер провайдера, читаем синхронно при маунте страницы.
   const catalogCacheRef = useRef<Map<string, CatalogSnapshot>>(new Map());
@@ -101,10 +108,21 @@ export function MiniappCatalogProvider({ children }: { children: ReactNode }) {
       setGender,
       bikeType,
       setBikeType,
+      searchQuery,
+      setSearchQuery,
+      scrollYRef,
       getCatalogSnapshot,
       setCatalogSnapshot,
     }),
-    [gender, setGender, bikeType, setBikeType, getCatalogSnapshot, setCatalogSnapshot]
+    [
+      gender,
+      setGender,
+      bikeType,
+      setBikeType,
+      searchQuery,
+      getCatalogSnapshot,
+      setCatalogSnapshot,
+    ]
   );
 
   return (

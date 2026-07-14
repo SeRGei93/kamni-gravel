@@ -1,14 +1,18 @@
 "use client";
 
 import type { LeaderboardGenderFilter } from "@/components/miniapp/MiniappLeaderboardContext";
+import MiniappSearchInput from "@/components/miniapp/MiniappSearchInput";
 import type { BikeTypeFilter } from "@/types";
 import { BIKE_TYPE_OPTIONS } from "@/constants";
 
 interface LeaderboardFiltersProps {
   gender: LeaderboardGenderFilter;
   bikeType: BikeTypeFilter;
+  searchQuery: string;
   onGenderChange: (value: LeaderboardGenderFilter) => void;
   onBikeTypeChange: (value: BikeTypeFilter) => void;
+  onSearchChange: (value: string) => void;
+  onSearchClear: () => void;
 }
 
 const genderOptions: Array<{ value: LeaderboardGenderFilter; label: string }> = [
@@ -25,11 +29,21 @@ const inactiveFilterClass = "tg-filter-inactive";
 export default function LeaderboardFilters({
   gender,
   bikeType,
+  searchQuery,
   onGenderChange,
   onBikeTypeChange,
+  onSearchChange,
+  onSearchClear,
 }: LeaderboardFiltersProps) {
   return (
     <div className="flex w-full flex-col gap-2">
+      <MiniappSearchInput
+        value={searchQuery}
+        onChange={onSearchChange}
+        onClear={onSearchClear}
+        placeholder="Поиск по имени"
+        ariaLabel="Поиск участника в лидерборде"
+      />
       <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1">
         {genderOptions.map((option) => {
           const isActive = gender === option.value;

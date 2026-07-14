@@ -9,7 +9,11 @@ import { useMiniappLeaderboard } from "@/components/miniapp/MiniappLeaderboardCo
 import { useMiniappSession } from "@/components/miniapp/MiniappSessionContext";
 import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
 import { useIsomorphicLayoutEffect } from "@/hooks/useIsomorphicLayoutEffect";
-import { rankAndFilterLeaderboard } from "@/utils/leaderboard";
+import {
+  filterRankedLeaderboardBySearch,
+  rankAndFilterLeaderboard,
+} from "@/utils/leaderboard";
+import { hasSearchQuery } from "@/utils/search";
 import {
   expandTelegramWebApp,
   isTelegramWebAppAvailable,
@@ -22,6 +26,8 @@ export default function MiniappLeaderboardPage() {
     setGender,
     bikeType,
     setBikeType,
+    searchQuery,
+    setSearchQuery,
     entries,
     setEntries,
     scrollYRef,
@@ -80,10 +86,15 @@ export default function MiniappLeaderboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, setEntries]);
 
-  const rows = useMemo(
+  const rankedRows = useMemo(
     () => rankAndFilterLeaderboard(entries ?? [], gender, bikeType),
     [entries, gender, bikeType]
   );
+  const rows = useMemo(
+    () => filterRankedLeaderboardBySearch(rankedRows, searchQuery),
+    [rankedRows, searchQuery]
+  );
+  const isSearchActive = hasSearchQuery(searchQuery);
 
   // Восстанавливаем позицию прокрутки при возврате с карточки и сохраняем её при
   // уходе. Данные списка уже в кеше контекста, поэтому таблица отрисована
@@ -125,8 +136,11 @@ export default function MiniappLeaderboardPage() {
           <LeaderboardFilters
             gender={gender}
             bikeType={bikeType}
+            searchQuery={searchQuery}
             onGenderChange={setGender}
             onBikeTypeChange={setBikeType}
+            onSearchChange={setSearchQuery}
+            onSearchClear={() => setSearchQuery("")}
           />
           {isListLoading && (
             <div className="tg-muted flex items-center justify-center gap-2 text-[11px] font-medium">
@@ -143,7 +157,10 @@ export default function MiniappLeaderboardPage() {
         ) : rows.length > 0 ? (
           <LeaderboardTable rows={rows} isLoading={isListLoading} />
         ) : (
-          <LeaderboardEmptyState />
+          <LeaderboardEmptyState
+            isSearchActive={isSearchActive}
+            onSearchClear={() => setSearchQuery("")}
+          />
         )}
       </section>
     </main>

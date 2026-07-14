@@ -3,19 +3,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { miniappApi, MiniappApiError } from "@/api/miniapp";
 import MyGiftCard from "@/components/miniapp/MyGiftCard";
+import { useMiniappMyGifts } from "@/components/miniapp/MiniappMyGiftsContext";
 import MiniappSpinner from "@/components/miniapp/MiniappSpinner";
 import { useMiniappSession } from "@/components/miniapp/MiniappSessionContext";
+import { useIsomorphicLayoutEffect } from "@/hooks/useIsomorphicLayoutEffect";
 import type { ManualGift, MiniappParticipantOption } from "@/types";
+import {
+  MiniappMyGiftsRefreshError,
+  updateManualGiftRecipient,
+} from "@/utils/miniappMyGifts";
 
 export default function MiniappMyGiftsPage() {
   const { session, isLoading: isSessionLoading, error: sessionError } = useMiniappSession();
-  const [gifts, setGifts] = useState<ManualGift[]>([]);
-  const [participants, setParticipants] = useState<MiniappParticipantOption[]>([]);
+  const { snapshot, setSnapshot, updateSnapshot, scrollYRef } = useMiniappMyGifts();
   const [isLoading, setIsLoading] = useState(false);
   const [savingGiftID, setSavingGiftID] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<boolean> => {
     try {
       setIsLoading(true);
       setError(null);
@@ -23,54 +28,90 @@ export default function MiniappMyGiftsPage() {
         miniappApi.getMyGifts(),
         miniappApi.getParticipants(),
       ]);
-      setGifts(giftResponse.gifts);
-      setParticipants(participantResponse.participants);
+      setSnapshot({
+        gifts: giftResponse.gifts,
+        participants: participantResponse.participants,
+      });
       console.debug("[miniapp] my gifts loaded", {
         giftCount: giftResponse.gifts.length,
         participantCount: participantResponse.total,
       });
+      return true;
     } catch (loadError) {
       console.warn("[miniapp] my gifts load failed", {
         message: loadError instanceof Error ? loadError.message : "Unknown error",
       });
+      if (snapshot) {
+        return false;
+      }
       if (loadError instanceof MiniappApiError && loadError.status === 404) {
         setError("Нет активного события");
       } else {
         setError("Не удалось загрузить мои призы");
       }
+      return false;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setSnapshot, snapshot]);
 
   useEffect(() => {
-    if (session) {
+    if (session && snapshot === null) {
       void load();
     }
-  }, [load, session]);
+  }, [load, session, snapshot]);
 
   const saveRecipient = useCallback(async (giftID: number, participantID: number | null) => {
     try {
       setSavingGiftID(giftID);
       await miniappApi.updateMyGiftRecipient(giftID, participantID);
       console.info("[miniapp] manual recipient updated", { giftId: giftID, participantId: participantID });
+      updateSnapshot((current) => ({
+        ...current,
+        gifts: updateManualGiftRecipient(current.gifts, current.participants, giftID, participantID),
+      }));
       // The server remains the source of truth after every mutation.
-      await load();
+      const refreshed = await load();
+      if (!refreshed) {
+        console.warn("[FIX:my-gifts-recipient-cache] recipient cache updated without server refresh", {
+          gift_id: giftID,
+          mutation: participantID === null ? "clear" : "select",
+        });
+      }
     } finally {
       setSavingGiftID(null);
     }
-  }, [load]);
+  }, [load, updateSnapshot]);
 
   const assignRandomRecipient = useCallback(async (giftID: number) => {
     try {
       setSavingGiftID(giftID);
       await miniappApi.assignRandomMyGiftRecipient(giftID);
       console.info("[miniapp] random manual recipient assigned", { giftId: giftID });
-      await load();
+      const refreshed = await load();
+      if (!refreshed) {
+        console.warn("[FIX:my-gifts-recipient-cache] random recipient assigned without server refresh", {
+          gift_id: giftID,
+          mutation: "random",
+        });
+        throw new MiniappMyGiftsRefreshError();
+      }
     } finally {
       setSavingGiftID(null);
     }
   }, [load]);
+
+  const gifts: ManualGift[] = snapshot?.gifts ?? [];
+  const participants: MiniappParticipantOption[] = snapshot?.participants ?? [];
+
+  // Кеш provider-а сохраняется между вкладками, поэтому при возврате через
+  // нижнее меню прокрутка восстанавливается сразу и без нового запроса.
+  useIsomorphicLayoutEffect(() => {
+    window.scrollTo(0, scrollYRef.current);
+    return () => {
+      scrollYRef.current = window.scrollY;
+    };
+  }, [scrollYRef]);
 
   if (isSessionLoading) {
     return <MyGiftsState title="Призы от меня" text="Загружаем активное событие" loading />;
@@ -119,7 +160,7 @@ function MyGiftsState({
   title: string;
   text: string;
   loading?: boolean;
-  onRetry?: () => Promise<void>;
+  onRetry?: () => Promise<unknown>;
 }) {
   return (
     <main className="tg-screen flex min-h-screen items-center justify-center px-5 py-8">
