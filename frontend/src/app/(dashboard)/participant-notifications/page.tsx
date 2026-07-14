@@ -343,6 +343,7 @@ function RecipientSearch({ value, onChange }: { value: string; onChange: (value:
   return (
     <input
       type="search"
+      autoComplete="off"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder="Поиск по имени или @username"

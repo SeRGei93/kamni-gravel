@@ -4,6 +4,7 @@ interface InputProps {
   type?: "text" | "number" | "email" | "password" | "date" | "time" | string;
   id?: string;
   name?: string;
+  autoComplete?: React.InputHTMLAttributes<HTMLInputElement>["autoComplete"];
   placeholder?: string;
   defaultValue?: string | number;
   value?: string | number;
@@ -23,6 +24,7 @@ const Input: FC<InputProps> = ({
   type = "text",
   id,
   name,
+  autoComplete,
   placeholder,
   defaultValue,
   value,
@@ -56,6 +58,7 @@ const Input: FC<InputProps> = ({
     type,
     id,
     name,
+    autoComplete,
     placeholder,
     onChange,
     min,

@@ -278,6 +278,7 @@ export default function ParticipantsPage() {
           </span>
           <input
             type="text"
+            autoComplete="off"
             placeholder="Поиск по имени или username..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}

@@ -594,6 +594,7 @@ export default function GiftsPage() {
             <Label>Поиск</Label>
             <Input
               type="search"
+              autoComplete="off"
               placeholder="Описание, имя или @username"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
