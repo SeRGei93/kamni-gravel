@@ -44,13 +44,6 @@ export default function GiftFilters({
       aria-busy={isLoading}
       className="flex w-full flex-col gap-2"
     >
-      <MiniappSearchInput
-        value={searchQuery}
-        onChange={onSearchChange}
-        onClear={onSearchClear}
-        placeholder="Описание, имя или @username"
-        ariaLabel="Поиск приза"
-      />
       <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1">
         {genderOptions.map((option) => {
           const value = option.value;
@@ -92,6 +85,14 @@ export default function GiftFilters({
           );
         })}
       </div>
+
+      <MiniappSearchInput
+        value={searchQuery}
+        onChange={onSearchChange}
+        onClear={onSearchClear}
+        placeholder="Описание, имя или @username"
+        ariaLabel="Поиск приза"
+      />
     </div>
   );
 }

@@ -37,13 +37,6 @@ export default function LeaderboardFilters({
 }: LeaderboardFiltersProps) {
   return (
     <div className="flex w-full flex-col gap-2">
-      <MiniappSearchInput
-        value={searchQuery}
-        onChange={onSearchChange}
-        onClear={onSearchClear}
-        placeholder="Поиск по имени"
-        ariaLabel="Поиск участника в лидерборде"
-      />
       <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1">
         {genderOptions.map((option) => {
           const isActive = gender === option.value;
@@ -82,6 +75,14 @@ export default function LeaderboardFilters({
           );
         })}
       </div>
+
+      <MiniappSearchInput
+        value={searchQuery}
+        onChange={onSearchChange}
+        onClear={onSearchClear}
+        placeholder="Поиск по имени"
+        ariaLabel="Поиск участника в лидерборде"
+      />
     </div>
   );
 }

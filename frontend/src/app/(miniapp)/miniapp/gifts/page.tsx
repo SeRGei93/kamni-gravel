@@ -23,6 +23,7 @@ import {
 import { hasSearchQuery } from "@/utils/search";
 
 const ALL_GENDER_CATALOG_FILTERS: GenderFilter[] = ["all", "male", "female"];
+const EMPTY_GIFTS: Gift[] = [];
 
 export default function MiniappGiftsPage() {
   const {
@@ -47,6 +48,9 @@ export default function MiniappGiftsPage() {
   );
   const [participantCount, setParticipantCount] = useState<number | undefined>(
     () => getCatalogSnapshot(catalogKey)?.participantCount
+  );
+  const [loadedCatalogKey, setLoadedCatalogKey] = useState<string | null>(
+    () => (getCatalogSnapshot(catalogKey) ? catalogKey : null)
   );
   // Если сессия уже в контексте (возврат с карточки) — не показываем загрузку.
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
@@ -73,6 +77,7 @@ export default function MiniappGiftsPage() {
       if (cached) {
         setGifts(cached.gifts);
         setParticipantCount(cached.participantCount);
+        setLoadedCatalogKey(catalogKey);
       }
 
       setIsCatalogLoading(true);
@@ -102,6 +107,7 @@ export default function MiniappGiftsPage() {
           const nextParticipantCount = catalogResponses[0]?.participant_count;
           setGifts(mergedGifts);
           setParticipantCount(nextParticipantCount);
+          setLoadedCatalogKey(catalogKey);
           setError(null);
           setCatalogSnapshot(catalogKey, {
             gifts: mergedGifts,
@@ -132,9 +138,13 @@ export default function MiniappGiftsPage() {
     };
   }, [bikeType, gender, session, catalogKey, getCatalogSnapshot, setCatalogSnapshot]);
 
+  // Во время загрузки нового фильтра не показываем предыдущий снимок: поиск
+  // должен работать только в пределах выбранной категории пола и велосипеда.
+  const currentGifts = loadedCatalogKey === catalogKey ? gifts : EMPTY_GIFTS;
+  const isCurrentCatalogLoading = isCatalogLoading || loadedCatalogKey !== catalogKey;
   const filteredGifts = useMemo(
-    () => filterMiniappGiftsBySearch(gifts, searchQuery),
-    [gifts, searchQuery]
+    () => filterMiniappGiftsBySearch(currentGifts, searchQuery),
+    [currentGifts, searchQuery]
   );
   const isSearchActive = hasSearchQuery(searchQuery);
 
@@ -194,7 +204,7 @@ export default function MiniappGiftsPage() {
       </section>
 
       <section className="mx-auto flex w-full max-w-md flex-col gap-3 px-3 py-3">
-        {isCatalogLoading && gifts.length === 0 ? (
+        {isCurrentCatalogLoading && currentGifts.length === 0 ? (
           <MiniappCatalogLoading />
         ) : filteredGifts.length > 0 ? (
           <GiftCatalogTable

@@ -35,7 +35,7 @@ export default function MiniappSearchInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         aria-label={ariaLabel}
-        className="tg-divider tg-title h-10 w-full rounded-lg border bg-transparent py-2 pl-3 pr-10 text-sm outline-none focus:border-[var(--tg-button-color)] [&::-webkit-search-cancel-button]:appearance-none"
+        className="tg-divider tg-title h-10 w-full rounded-lg border bg-transparent py-2 pl-3 pr-10 text-base outline-none focus:border-[var(--tg-button-color)] [&::-webkit-search-cancel-button]:appearance-none"
       />
       {value && (
         <button
