@@ -40,4 +40,22 @@ describe('giftsApi', () => {
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST' });
     expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
   });
+
+  it('posts the requested number of copies to the protected copy endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ created_count: 3 }), { status: 201 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await giftsApi.copy(77, 3);
+
+    expect(result).toEqual({ created_count: 3 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/gifts/77/copies',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ copies_count: 3 }),
+      }),
+    );
+  });
 });

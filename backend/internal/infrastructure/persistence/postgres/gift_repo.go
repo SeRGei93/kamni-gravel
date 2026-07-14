@@ -40,6 +40,113 @@ func (r *giftRepository) Create(ctx context.Context, gift *entity.Gift) error {
 	return insertGift(ctx, r.db, gift)
 }
 
+// Copy creates independent copies of a gift and all data that defines how it
+// is awarded. A manual recipient is intentionally not copied: each new prize
+// needs its own recipient selection.
+func (r *giftRepository) Copy(ctx context.Context, sourceGiftID uint, copiesCount int) (repository.GiftCopyResult, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("ERROR gift copy transaction failed: source_gift_id=%d copies_count=%d stage=begin error=%v", sourceGiftID, copiesCount, err)
+		return repository.GiftCopyResult{}, fmt.Errorf("begin gift copy transaction: %w", err)
+	}
+	log.Printf("INFO gift copy transaction started: source_gift_id=%d copies_count=%d", sourceGiftID, copiesCount)
+
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && rollbackErr != sql.ErrTxDone {
+			log.Printf("ERROR gift copy transaction rollback failed: source_gift_id=%d error=%v", sourceGiftID, rollbackErr)
+		}
+	}()
+
+	var (
+		eventID            uint
+		reviewStatusValue  string
+		hasPlaceConstraint bool
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			g.event_id,
+			g.review_status,
+			g.place IS NOT NULL OR EXISTS (
+				SELECT 1
+				FROM gift_place_rules AS r
+				WHERE r.gift_id = g.id
+			) AS has_place_constraint
+		FROM gifts AS g
+		WHERE g.id = $1
+		FOR UPDATE
+	`, sourceGiftID).Scan(&eventID, &reviewStatusValue, &hasPlaceConstraint); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("WARN gift copy transaction rejected: source_gift_id=%d reason=gift_not_found", sourceGiftID)
+			return repository.GiftCopyResult{}, fmt.Errorf("%w: %d", repository.ErrGiftNotFound, sourceGiftID)
+		}
+		log.Printf("ERROR gift copy transaction failed: source_gift_id=%d copies_count=%d stage=lock_source error=%v", sourceGiftID, copiesCount, err)
+		return repository.GiftCopyResult{}, fmt.Errorf("lock source gift %d: %w", sourceGiftID, err)
+	}
+	if hasPlaceConstraint {
+		log.Printf("WARN gift copy transaction rejected: source_gift_id=%d event_id=%d reason=place_constraint", sourceGiftID, eventID)
+		return repository.GiftCopyResult{}, repository.ErrGiftCopyHasPlaceConstraint
+	}
+	reviewStatus, err := entity.NewGiftReviewStatus(reviewStatusValue)
+	if err != nil {
+		log.Printf("ERROR gift copy transaction failed: source_gift_id=%d event_id=%d stage=validate_review_status error=%v", sourceGiftID, eventID, err)
+		return repository.GiftCopyResult{}, fmt.Errorf("validate source gift %d review status: %w", sourceGiftID, err)
+	}
+
+	for copyNumber := 1; copyNumber <= copiesCount; copyNumber++ {
+		var copyID uint
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO gifts (
+				user_id, event_id, description, gender_filter, bike_type_filter,
+				review_status, place, manual_distribution,
+				manual_recipient_participant_id, created_at
+			)
+			SELECT
+				user_id, event_id, description, gender_filter, bike_type_filter,
+				review_status, NULL, manual_distribution,
+				NULL, NOW()
+			FROM gifts
+			WHERE id = $1
+			RETURNING id
+		`, sourceGiftID).Scan(&copyID); err != nil {
+			log.Printf("ERROR gift copy transaction failed: source_gift_id=%d copy_number=%d stage=insert_gift error=%v", sourceGiftID, copyNumber, err)
+			return repository.GiftCopyResult{}, fmt.Errorf("create copy %d for gift %d: %w", copyNumber, sourceGiftID, err)
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO entity_criteria (entity_type, entity_id, criteria_id)
+			SELECT 'gift', $2, criteria_id
+			FROM entity_criteria
+			WHERE entity_type = 'gift' AND entity_id = $1
+		`, sourceGiftID, copyID); err != nil {
+			log.Printf("ERROR gift copy transaction failed: source_gift_id=%d copy_number=%d stage=copy_criteria error=%v", sourceGiftID, copyNumber, err)
+			return repository.GiftCopyResult{}, fmt.Errorf("copy criteria for gift %d copy %d: %w", sourceGiftID, copyID, err)
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO gift_attachments (gift_id, telegram_file_id, file_type)
+			SELECT $2, telegram_file_id, file_type
+			FROM gift_attachments
+			WHERE gift_id = $1
+		`, sourceGiftID, copyID); err != nil {
+			log.Printf("ERROR gift copy transaction failed: source_gift_id=%d copy_number=%d stage=copy_attachments error=%v", sourceGiftID, copyNumber, err)
+			return repository.GiftCopyResult{}, fmt.Errorf("copy attachments for gift %d copy %d: %w", sourceGiftID, copyID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("ERROR gift copy transaction failed: source_gift_id=%d copies_count=%d stage=commit error=%v", sourceGiftID, copiesCount, err)
+		return repository.GiftCopyResult{}, fmt.Errorf("commit gift copy transaction for source gift %d: %w", sourceGiftID, err)
+	}
+	committed = true
+
+	log.Printf("INFO gift copy transaction completed: source_gift_id=%d event_id=%d review_status=%s copies_count=%d", sourceGiftID, eventID, reviewStatus, copiesCount)
+	return repository.GiftCopyResult{EventID: eventID, ReviewStatus: reviewStatus}, nil
+}
+
 func (r *giftRepository) CreateWithAttachments(ctx context.Context, gift *entity.Gift, attachments []*entity.GiftAttachment) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

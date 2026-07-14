@@ -11,7 +11,8 @@ import { Modal } from '@/components/ui/modal';
 import { useModal } from '@/hooks/useModal';
 import CriteriaForm from '@/components/criteria/CriteriaForm';
 import RecipientAutocomplete from '@/components/gifts/RecipientAutocomplete';
-import { PlusIcon, TrashBinIcon } from '@/icons';
+import { CopyIcon, PlusIcon, TrashBinIcon } from '@/icons';
+import { ApiError } from '@/api/client';
 import { addSelectedCriterionId, getCriteriaColor } from '@/utils/criteria';
 import type {
   BikeTypeFilter,
@@ -49,6 +50,7 @@ interface GiftEditFormProps {
   onSubmit: (data: UpdateGiftRequest) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
+  onCopy: (copiesCount: number) => Promise<void>;
   onCreateCriteria?: (data: CreateCriteriaRequest) => Promise<Criteria>;
 }
 
@@ -60,6 +62,7 @@ export default function GiftEditForm({
   onSubmit,
   onCancel,
   onDelete,
+  onCopy,
   onCreateCriteria,
 }: GiftEditFormProps) {
   const [description, setDescription] = useState(gift.description);
@@ -92,6 +95,7 @@ export default function GiftEditForm({
     useState<number | null>(manualGift?.recipient?.id ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const {
     isOpen: isCriteriaModalOpen,
@@ -100,6 +104,16 @@ export default function GiftEditForm({
   } = useModal();
   const [isCreatingCriteria, setIsCreatingCriteria] = useState(false);
   const [criteriaError, setCriteriaError] = useState<string | null>(null);
+  const {
+    isOpen: isCopyModalOpen,
+    openModal: openCopyModal,
+    closeModal: closeCopyModal,
+  } = useModal();
+  const [copiesCountInput, setCopiesCountInput] = useState('1');
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  const hasPlaceConstraint = gift.place != null || gift.place_rule != null;
+  const isActionInProgress = isSubmitting || isDeleting || isCopying;
 
   const handleOpenCriteriaModal = () => {
     setCriteriaError(null);
@@ -230,6 +244,51 @@ export default function GiftEditForm({
       });
       setError('Ошибка удаления приза');
       setIsDeleting(false);
+    }
+  };
+
+  const handleOpenCopyModal = () => {
+    if (hasPlaceConstraint) {
+      setError('Копии можно создать только для приза без привязки к местам');
+      return;
+    }
+
+    setError(null);
+    setCopyError(null);
+    setCopiesCountInput('1');
+    openCopyModal();
+  };
+
+  const handleCloseCopyModal = () => {
+    if (!isCopying) {
+      closeCopyModal();
+    }
+  };
+
+  const handleCopy = async () => {
+    const copiesCount = Number(copiesCountInput);
+    if (
+      !Number.isInteger(copiesCount) ||
+      copiesCount < 1 ||
+      copiesCount > 100
+    ) {
+      setCopyError('Введите целое число копий от 1 до 100');
+      return;
+    }
+
+    try {
+      setIsCopying(true);
+      setCopyError(null);
+      await onCopy(copiesCount);
+      closeCopyModal();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setCopyError('Копии можно создать только для приза без привязки к местам');
+      } else {
+        setCopyError('Не удалось создать копии приза. Проверьте соединение и повторите попытку.');
+      }
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -412,29 +471,38 @@ export default function GiftEditForm({
       </div>
 
       <div className="flex flex-col-reverse gap-3 border-t border-gray-100 pt-5 dark:border-white/[0.05] sm:flex-row sm:items-center sm:justify-between">
-        {onDelete ? (
+        <div className="flex flex-wrap gap-3">
           <Button
             type="button"
             variant="outline"
-            startIcon={<TrashBinIcon />}
-            onClick={handleDelete}
-            disabled={isSubmitting || isDeleting}
+            startIcon={<CopyIcon />}
+            onClick={handleOpenCopyModal}
+            disabled={isActionInProgress}
           >
-            {isDeleting ? 'Удаление...' : 'Удалить приз'}
+            Сделать копию
           </Button>
-        ) : (
-          <span />
-        )}
+          {onDelete && (
+            <Button
+              type="button"
+              variant="outline"
+              startIcon={<TrashBinIcon />}
+              onClick={handleDelete}
+              disabled={isActionInProgress}
+            >
+              {isDeleting ? 'Удаление...' : 'Удалить приз'}
+            </Button>
+          )}
+        </div>
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <Button
             type="button"
             variant="outline"
             onClick={onCancel}
-            disabled={isSubmitting || isDeleting}
+            disabled={isActionInProgress}
           >
             Отмена
           </Button>
-          <Button type="submit" disabled={isSubmitting || isDeleting}>
+          <Button type="submit" disabled={isActionInProgress}>
             {isSubmitting ? 'Сохранение...' : 'Сохранить'}
           </Button>
         </div>
@@ -473,6 +541,55 @@ export default function GiftEditForm({
         </div>
       </Modal>
     )}
+
+    <Modal
+      isOpen={isCopyModalOpen}
+      onClose={handleCloseCopyModal}
+      className="max-w-lg m-4"
+    >
+      <div className="relative w-full rounded-3xl bg-white p-6 dark:bg-gray-900">
+        <h4 className="mb-2 text-xl font-semibold text-gray-800 dark:text-white/90">
+          Сделать копию приза
+        </h4>
+        <p className="mb-5 text-sm text-gray-500 dark:text-gray-400">
+          Будут скопированы только сохранённые данные приза. Несохранённые изменения формы в копии не попадут.
+        </p>
+
+        <div>
+          <Label>Количество новых копий</Label>
+          <InputField
+            type="number"
+            min="1"
+            max="100"
+            step={1}
+            value={copiesCountInput}
+            onChange={(event) => setCopiesCountInput(event.target.value)}
+            disabled={isCopying}
+            error={Boolean(copyError)}
+            hint={copyError || 'От 1 до 100 новых призов'}
+          />
+        </div>
+
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCloseCopyModal}
+            disabled={isCopying}
+          >
+            Отмена
+          </Button>
+          <Button
+            type="button"
+            startIcon={<CopyIcon />}
+            onClick={handleCopy}
+            disabled={isCopying}
+          >
+            {isCopying ? 'Создание копий...' : 'Создать копии'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
     </>
   );
 }

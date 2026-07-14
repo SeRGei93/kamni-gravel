@@ -18,6 +18,10 @@ export interface GiftListFilters {
   q?: string;
 }
 
+export interface CopyGiftResponse {
+  created_count: number;
+}
+
 function appendGiftListFilters(search: URLSearchParams, filters: GiftListFilters): void {
   if (filters.review_status) search.set('review_status', filters.review_status);
   if (filters.owner_user_id) search.set('owner_user_id', String(filters.owner_user_id));
@@ -75,6 +79,12 @@ export const giftsApi = {
 
   async update(id: number, data: UpdateGiftRequest): Promise<Gift> {
     return put<Gift>(`${GIFTS_PREFIX}/${id}`, data);
+  },
+
+  async copy(id: number, copiesCount: number): Promise<CopyGiftResponse> {
+    return post<CopyGiftResponse>(`${GIFTS_PREFIX}/${id}/copies`, {
+      copies_count: copiesCount,
+    });
   },
 
   // The server chooses an eligible participant without a prize. The request

@@ -923,6 +923,51 @@ paths:
             Приз не проверен, уже распределён, не осталось участников без
             приза или состояние изменилось одновременно с запросом.
 
+  /gifts/{id}/copies:
+    post:
+      tags: [Gifts]
+      summary: Создать копии приза
+      description: >-
+        Защищённое административное действие. Создаёт указанное количество
+        новых призов из уже сохранённого состояния исходного приза; несохранённые
+        изменения формы не используются. Копии сохраняют автора, событие,
+        описание, фильтры, статус проверки, критерии, вложения и режим ручного
+        распределения, но всегда получают нового пустого ручного получателя.
+        Призы с legacy place или place_rule копировать нельзя.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: ID исходного приза
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopyGiftRequest'
+      responses:
+        '201':
+          description: Копии созданы
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopyGiftResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Копии можно создать только для приза без привязки к местам
+        '500':
+          description: Непредвиденная ошибка при копировании приза
+
   /gifts/{id}:
     get:
       tags: [Gifts]
@@ -2396,6 +2441,26 @@ components:
           type: string
           enum: [all, gravel, mtb, road, single_speed, tandem]
           default: all
+
+    CopyGiftRequest:
+      type: object
+      additionalProperties: false
+      required: [copies_count]
+      properties:
+        copies_count:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Количество новых призов, которые нужно создать.
+
+    CopyGiftResponse:
+      type: object
+      required: [created_count]
+      properties:
+        created_count:
+          type: integer
+          minimum: 1
+          description: Число созданных новых призов.
 
     GiftPlaceRule:
       type: object

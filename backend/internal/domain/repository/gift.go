@@ -19,6 +19,8 @@ var (
 	ErrRandomGiftRecipientAlreadyAssigned = errors.New("gift recipient is already assigned")
 	// ErrRandomGiftRecipientGiftNotApproved means a random recipient may only be assigned to an approved gift.
 	ErrRandomGiftRecipientGiftNotApproved = errors.New("gift is not approved")
+	// ErrGiftCopyHasPlaceConstraint means a gift tied to a finishing place cannot be copied.
+	ErrGiftCopyHasPlaceConstraint = errors.New("gift copy is not allowed for a place-constrained gift")
 )
 
 // GiftRepository определяет интерфейс для работы с подарками
@@ -111,4 +113,18 @@ type ManualGiftRecipientCountRepository interface {
 // assignment does not need this transactional claim operation.
 type RandomManualGiftRecipientRepository interface {
 	AssignRandomManualRecipient(ctx context.Context, giftID uint, recipientParticipantID uint) error
+}
+
+// GiftCopyRepository atomically creates copies of an unrestricted gift together
+// with its criteria and attachments. It deliberately stays separate from
+// GiftRepository so callers that do not copy gifts keep a narrow dependency.
+type GiftCopyRepository interface {
+	Copy(ctx context.Context, sourceGiftID uint, copiesCount int) (GiftCopyResult, error)
+}
+
+// GiftCopyResult describes the source event and review status of successfully
+// created copies.
+type GiftCopyResult struct {
+	EventID      uint
+	ReviewStatus entity.GiftReviewStatus
 }

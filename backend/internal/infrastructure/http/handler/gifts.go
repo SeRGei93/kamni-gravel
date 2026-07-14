@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -31,6 +32,7 @@ type GiftsHandler struct {
 	getManualGiftsHandler *query.GetManualGiftsHandler
 	addGiftHandler        *command.AddGiftHandler
 	updateGiftHandler     *command.UpdateGiftHandler
+	copyGiftHandler       giftCopier
 	assignRandomRecipient randomGiftRecipientAssigner
 	publicGiftNotifier    GiftPublicationNotifier
 	giftsCache            miniappGiftsCacheInvalidator
@@ -38,6 +40,10 @@ type GiftsHandler struct {
 
 type randomGiftRecipientAssigner interface {
 	Handle(ctx context.Context, cmd command.AssignRandomAdminGiftRecipientCommand) (*command.AssignRandomAdminGiftRecipientResult, error)
+}
+
+type giftCopier interface {
+	Handle(ctx context.Context, cmd command.CopyGiftCommand) (*command.CopyGiftResult, error)
 }
 
 // GiftPublicationNotifier отправляет опубликованный приз в Telegram-чат.
@@ -60,6 +66,7 @@ func NewGiftsHandler(
 	getManualGiftsHandler *query.GetManualGiftsHandler,
 	addGiftHandler *command.AddGiftHandler,
 	updateGiftHandler *command.UpdateGiftHandler,
+	copyGiftHandler giftCopier,
 	assignRandomRecipient randomGiftRecipientAssigner,
 	giftsCache miniappGiftsCacheInvalidator,
 	publicGiftNotifier ...GiftPublicationNotifier,
@@ -76,10 +83,98 @@ func NewGiftsHandler(
 		getManualGiftsHandler: getManualGiftsHandler,
 		addGiftHandler:        addGiftHandler,
 		updateGiftHandler:     updateGiftHandler,
+		copyGiftHandler:       copyGiftHandler,
 		assignRandomRecipient: assignRandomRecipient,
 		publicGiftNotifier:    notifier,
 		giftsCache:            giftsCache,
 	}
+}
+
+type copyGiftRequest struct {
+	CopiesCount int `json:"copies_count"`
+}
+
+type copyGiftResponse struct {
+	CreatedCount int `json:"created_count"`
+}
+
+const giftCopyPlaceConstraintMessage = "Копии можно создать только для приза без привязки к местам"
+
+// Copy handles POST /api/gifts/{id}/copies.
+func (h *GiftsHandler) Copy(w http.ResponseWriter, r *http.Request) {
+	if h.copyGiftHandler == nil {
+		log.Printf("ERROR gift copy unavailable")
+		response.InternalServerError(w, "Gift copying is unavailable")
+		return
+	}
+
+	adminID := uint(0)
+	if claims, ok := middleware.GetUserFromContext(r.Context()); ok {
+		adminID = claims.UserID
+	}
+	giftID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 32)
+	if err != nil || giftID == 0 {
+		log.Printf("WARN gift copy rejected: admin_id=%d reason=invalid_gift_id", adminID)
+		response.BadRequest(w, "Invalid gift ID")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	req, err := decodeCopyGiftRequest(r)
+	if err != nil {
+		log.Printf("WARN gift copy rejected: admin_id=%d source_gift_id=%d reason=invalid_request_body", adminID, giftID)
+		response.BadRequest(w, "Invalid request body")
+		return
+	}
+
+	result, err := h.copyGiftHandler.Handle(r.Context(), command.CopyGiftCommand{
+		GiftID:      uint(giftID),
+		CopiesCount: req.CopiesCount,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, command.ErrGiftNotFound):
+			log.Printf("WARN gift copy rejected: admin_id=%d source_gift_id=%d copies_count=%d reason=gift_not_found", adminID, giftID, req.CopiesCount)
+			response.NotFound(w, "Gift not found")
+		case errors.Is(err, command.ErrInvalidGiftCopySourceID), errors.Is(err, command.ErrInvalidGiftCopiesCount):
+			log.Printf("WARN gift copy rejected: admin_id=%d source_gift_id=%d copies_count=%d reason=invalid_request", adminID, giftID, req.CopiesCount)
+			response.BadRequest(w, err.Error())
+		case errors.Is(err, command.ErrGiftCopyHasPlaceConstraint):
+			log.Printf("WARN gift copy rejected: admin_id=%d source_gift_id=%d copies_count=%d reason=place_constraint", adminID, giftID, req.CopiesCount)
+			response.Conflict(w, giftCopyPlaceConstraintMessage)
+		default:
+			log.Printf("ERROR gift copy failed: admin_id=%d source_gift_id=%d copies_count=%d error=%v", adminID, giftID, req.CopiesCount, err)
+			response.InternalServerError(w, "Failed to copy gift")
+		}
+		return
+	}
+	if result == nil {
+		log.Printf("ERROR gift copy failed: admin_id=%d source_gift_id=%d reason=empty_result", adminID, giftID)
+		response.InternalServerError(w, "Failed to copy gift")
+		return
+	}
+
+	if result.ReviewStatus == entity.GiftReviewStatusApproved {
+		h.invalidateMiniappGiftsCache(result.EventID)
+	}
+	log.Printf("INFO gift copy served: admin_id=%d source_gift_id=%d event_id=%d review_status=%s created_count=%d", adminID, giftID, result.EventID, result.ReviewStatus, result.CreatedCount)
+	response.Created(w, copyGiftResponse{CreatedCount: result.CreatedCount})
+}
+
+func decodeCopyGiftRequest(r *http.Request) (copyGiftRequest, error) {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	var req *copyGiftRequest
+	if err := decoder.Decode(&req); err != nil || req == nil {
+		return copyGiftRequest{}, errors.New("invalid copy gift request")
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return copyGiftRequest{}, errors.New("copy gift request must contain exactly one JSON object")
+	}
+	return *req, nil
 }
 
 // AssignRandomRecipient handles POST /api/gifts/{id}/random-recipient.

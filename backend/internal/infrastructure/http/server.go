@@ -205,6 +205,12 @@ func NewServer(
 		userBlacklistRepo,
 	)
 	updateGiftHandler := command.NewUpdateGiftHandler(giftRepo, participantRepo)
+	var copyGiftHandler *command.CopyGiftHandler
+	if copyRepo, ok := giftRepo.(repository.GiftCopyRepository); ok {
+		copyGiftHandler = command.NewCopyGiftHandler(copyRepo)
+	} else {
+		log.Printf("WARN Gift copy handler disabled: repository does not support copying")
+	}
 
 	// Создаём command handlers для blacklist пользователей
 	addUserBlacklistHandler := command.NewAddUserBlacklistHandler(userBlacklistRepo)
@@ -308,6 +314,7 @@ func NewServer(
 		getManualGiftsHandler,
 		addGiftHandler,
 		updateGiftHandler,
+		copyGiftHandler,
 		assignRandomAdminGiftRecipientHandler,
 		miniappGiftsCache,
 		giftPublicationNotifiers...,
@@ -615,6 +622,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Post("/events/{eventId}/gifts", s.giftsHandler.Create)
 			r.Get("/events/{eventId}/manual-gifts", s.giftsHandler.GetManualByEvent)
 			r.Post("/gifts/{id}/random-recipient", s.giftsHandler.AssignRandomRecipient)
+			r.Post("/gifts/{id}/copies", s.giftsHandler.Copy)
 			r.Put("/gifts/{id}", s.giftsHandler.Update)
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)
 

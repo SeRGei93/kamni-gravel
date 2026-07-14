@@ -99,6 +99,30 @@ export default function GiftEditPage() {
     router.push(returnHref);
   }, [giftId, returnHref, router]);
 
+  const handleCopy = useCallback(
+    async (copiesCount: number) => {
+      try {
+        const result = await giftsApi.copy(giftId, copiesCount);
+        console.info('Gift copies created:', {
+          gift_id: giftId,
+          operation: 'copy_gift',
+          copies_count: copiesCount,
+          created_count: result.created_count,
+        });
+        router.push(returnHref);
+      } catch (err) {
+        console.error('Failed to copy gift:', {
+          gift_id: giftId,
+          operation: 'copy_gift',
+          copies_count: copiesCount,
+          error: err,
+        });
+        throw err;
+      }
+    },
+    [giftId, returnHref, router]
+  );
+
   const handleCreateCriteria = useCallback(
     async (data: CreateCriteriaRequest): Promise<Criteria> => {
       try {
@@ -186,6 +210,7 @@ export default function GiftEditPage() {
               onSubmit={handleSubmit}
               onCancel={() => router.push(returnHref)}
               onDelete={handleDelete}
+              onCopy={handleCopy}
               onCreateCriteria={handleCreateCriteria}
             />
           </div>
