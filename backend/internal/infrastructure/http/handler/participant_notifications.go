@@ -39,12 +39,12 @@ func NewParticipantNotificationsHandler(
 }
 
 type participantNotificationRecipientResponse struct {
-	UserID             int64  `json:"user_id"`
-	Label              string `json:"label"`
-	Username           string `json:"username,omitempty"`
-	Status             string `json:"status"`
-	HasGift            bool   `json:"has_gift"`
-	HasUnassignedGifts bool   `json:"has_unassigned_gifts"`
+	UserID                int64  `json:"user_id"`
+	Label                 string `json:"label"`
+	Username              string `json:"username,omitempty"`
+	Status                string `json:"status"`
+	HasGift               bool   `json:"has_gift"`
+	HasPendingManualGifts bool   `json:"has_pending_manual_gifts"`
 }
 
 type participantNotificationRecipientsResponse struct {
@@ -97,12 +97,12 @@ func (h *ParticipantNotificationsHandler) Recipients(w http.ResponseWriter, r *h
 	items := make([]participantNotificationRecipientResponse, 0, len(recipients))
 	for _, recipient := range recipients {
 		items = append(items, participantNotificationRecipientResponse{
-			UserID:             recipient.UserID,
-			Label:              recipient.Label,
-			Username:           recipient.Username,
-			Status:             recipient.Status,
-			HasGift:            recipient.HasGift,
-			HasUnassignedGifts: recipient.HasUnassignedGifts,
+			UserID:                recipient.UserID,
+			Label:                 recipient.Label,
+			Username:              recipient.Username,
+			Status:                recipient.Status,
+			HasGift:               recipient.HasGift,
+			HasPendingManualGifts: recipient.HasPendingManualGifts,
 		})
 	}
 

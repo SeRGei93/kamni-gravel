@@ -21,34 +21,27 @@ func TestGetNotificationRecipientsFilters(t *testing.T) {
 	gifts := []*entity.Gift{
 		{ID: 1, UserID: 2},
 		{ID: 2, UserID: 3},
-		{ID: 3, UserID: 4},
-	}
-	distribution := &notificationDistributionFake{
-		output: &PrizeDistributionOutput{
-			UnassignedSlots: []*UnassignedPrizeSlot{{GiftID: 3}},
-		},
+		{ID: 3, UserID: 4, ManualDistribution: true},
+		{ID: 4, UserID: 5, ManualDistribution: true, ManualRecipientParticipantID: participantID(5)},
 	}
 	handler := NewGetNotificationRecipientsHandler(
 		&purgeParticipantRepoFake{participants: participants},
 		&purgeGiftRepoFake{gifts: gifts},
-		distribution,
 	)
 
 	tests := []struct {
-		name     string
-		filter   NotificationRecipientFilter
-		wantIDs  []int64
-		wantCall int
+		name    string
+		filter  NotificationRecipientFilter
+		wantIDs []int64
 	}{
 		{name: "all", filter: NotificationRecipientFilterAll, wantIDs: []int64{1, 2, 3, 4, 5, 6, 7}},
 		{name: "finished without gift", filter: NotificationRecipientFilterFinishedWithoutGift, wantIDs: []int64{1}},
 		{name: "gift without finish", filter: NotificationRecipientFilterGiftWithoutFinish, wantIDs: []int64{3}},
-		{name: "unassigned gifts", filter: NotificationRecipientFilterUnassignedGifts, wantIDs: []int64{4}, wantCall: 1},
+		{name: "pending manual gift owner", filter: NotificationRecipientFilterPendingManualGiftOwners, wantIDs: []int64{4}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			distribution.calls = 0
 			recipients, err := handler.Handle(context.Background(), 77, test.filter)
 			if err != nil {
 				t.Fatalf("Handle() error = %v", err)
@@ -58,9 +51,6 @@ func TestGetNotificationRecipientsFilters(t *testing.T) {
 				gotIDs = append(gotIDs, recipient.UserID)
 			}
 			assertNotificationRecipientIDs(t, gotIDs, test.wantIDs)
-			if distribution.calls != test.wantCall {
-				t.Fatalf("distribution calls = %d, want %d", distribution.calls, test.wantCall)
-			}
 		})
 	}
 }
@@ -91,13 +81,6 @@ func assertNotificationRecipientIDs(t *testing.T, got, want []int64) {
 	}
 }
 
-type notificationDistributionFake struct {
-	output *PrizeDistributionOutput
-	err    error
-	calls  int
-}
-
-func (f *notificationDistributionFake) HandleDetailed(ctx context.Context, query GetPrizeDistributionQuery) (*PrizeDistributionOutput, error) {
-	f.calls++
-	return f.output, f.err
+func participantID(id uint) *uint {
+	return &id
 }

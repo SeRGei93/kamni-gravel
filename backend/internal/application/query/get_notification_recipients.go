@@ -14,10 +14,10 @@ import (
 type NotificationRecipientFilter string
 
 const (
-	NotificationRecipientFilterAll                 NotificationRecipientFilter = "all"
-	NotificationRecipientFilterFinishedWithoutGift NotificationRecipientFilter = "finished_without_gift"
-	NotificationRecipientFilterGiftWithoutFinish   NotificationRecipientFilter = "gift_without_finish"
-	NotificationRecipientFilterUnassignedGifts     NotificationRecipientFilter = "unassigned_gifts"
+	NotificationRecipientFilterAll                     NotificationRecipientFilter = "all"
+	NotificationRecipientFilterFinishedWithoutGift     NotificationRecipientFilter = "finished_without_gift"
+	NotificationRecipientFilterGiftWithoutFinish       NotificationRecipientFilter = "gift_without_finish"
+	NotificationRecipientFilterPendingManualGiftOwners NotificationRecipientFilter = "pending_manual_gift_owners"
 )
 
 // NewNotificationRecipientFilter валидирует значение фильтра из HTTP-запроса.
@@ -31,7 +31,7 @@ func NewNotificationRecipientFilter(value string) (NotificationRecipientFilter, 
 	case NotificationRecipientFilterAll,
 		NotificationRecipientFilterFinishedWithoutGift,
 		NotificationRecipientFilterGiftWithoutFinish,
-		NotificationRecipientFilterUnassignedGifts:
+		NotificationRecipientFilterPendingManualGiftOwners:
 		return filter, nil
 	default:
 		return "", fmt.Errorf("invalid notification recipient filter: %s", value)
@@ -40,39 +40,30 @@ func NewNotificationRecipientFilter(value string) (NotificationRecipientFilter, 
 
 // NotificationRecipient — участник, которому можно отправить личное сообщение.
 type NotificationRecipient struct {
-	UserID             int64
-	Label              string
-	Username           string
-	Status             string
-	HasGift            bool
-	HasUnassignedGifts bool
-}
-
-// PrizeDistributionReader предоставляет диагностическую информацию о
-// нераспределённых слотах призов. Интерфейс позволяет тестировать выборку без БД.
-type PrizeDistributionReader interface {
-	HandleDetailed(ctx context.Context, query GetPrizeDistributionQuery) (*PrizeDistributionOutput, error)
+	UserID                int64
+	Label                 string
+	Username              string
+	Status                string
+	HasGift               bool
+	HasPendingManualGifts bool
 }
 
 // GetNotificationRecipientsHandler подбирает участников активного события для
-// админской рассылки. Фильтр «unassigned_gifts» относится к автоматически
-// распределяемым одобренным призам, у которых движок не нашёл получателя.
+// админской рассылки. Фильтр «pending_manual_gift_owners» выбирает владельцев
+// призов с ручным распределением, для которых ещё не выбран получатель.
 type GetNotificationRecipientsHandler struct {
-	participantRepo   repository.ParticipantRepository
-	giftRepo          repository.GiftRepository
-	prizeDistribution PrizeDistributionReader
+	participantRepo repository.ParticipantRepository
+	giftRepo        repository.GiftRepository
 }
 
 // NewGetNotificationRecipientsHandler создаёт handler выборки получателей.
 func NewGetNotificationRecipientsHandler(
 	participantRepo repository.ParticipantRepository,
 	giftRepo repository.GiftRepository,
-	prizeDistribution PrizeDistributionReader,
 ) *GetNotificationRecipientsHandler {
 	return &GetNotificationRecipientsHandler{
-		participantRepo:   participantRepo,
-		giftRepo:          giftRepo,
-		prizeDistribution: prizeDistribution,
+		participantRepo: participantRepo,
+		giftRepo:        giftRepo,
 	}
 }
 
@@ -93,16 +84,9 @@ func (h *GetNotificationRecipientsHandler) Handle(
 	}
 	giftOwners := notificationGiftOwners(gifts)
 
-	unassignedGiftOwners := map[int64]struct{}{}
-	if filter == NotificationRecipientFilterUnassignedGifts {
-		if h.prizeDistribution == nil {
-			return nil, fmt.Errorf("prize distribution reader is not configured")
-		}
-		output, err := h.prizeDistribution.HandleDetailed(ctx, GetPrizeDistributionQuery{EventID: eventID})
-		if err != nil {
-			return nil, fmt.Errorf("get prize distribution: %w", err)
-		}
-		unassignedGiftOwners = notificationUnassignedGiftOwners(output, gifts)
+	pendingManualGiftOwners := map[int64]struct{}{}
+	if filter == NotificationRecipientFilterPendingManualGiftOwners {
+		pendingManualGiftOwners = notificationPendingManualGiftOwners(gifts)
 	}
 
 	recipients := make([]NotificationRecipient, 0, len(participants))
@@ -116,19 +100,19 @@ func (h *GetNotificationRecipientsHandler) Handle(
 		}
 
 		_, hasGift := giftOwners[participant.UserID]
-		_, hasUnassignedGifts := unassignedGiftOwners[participant.UserID]
-		if !matchesNotificationRecipientFilter(participant, filter, hasGift, hasUnassignedGifts) {
+		_, hasPendingManualGifts := pendingManualGiftOwners[participant.UserID]
+		if !matchesNotificationRecipientFilter(participant, filter, hasGift, hasPendingManualGifts) {
 			continue
 		}
 
 		seen[participant.UserID] = struct{}{}
 		recipients = append(recipients, NotificationRecipient{
-			UserID:             participant.UserID,
-			Label:              notificationRecipientLabel(participant.User, participant.UserID),
-			Username:           notificationRecipientUsername(participant.User),
-			Status:             notificationRecipientStatus(participant),
-			HasGift:            hasGift,
-			HasUnassignedGifts: hasUnassignedGifts,
+			UserID:                participant.UserID,
+			Label:                 notificationRecipientLabel(participant.User, participant.UserID),
+			Username:              notificationRecipientUsername(participant.User),
+			Status:                notificationRecipientStatus(participant),
+			HasGift:               hasGift,
+			HasPendingManualGifts: hasPendingManualGifts,
 		})
 	}
 
@@ -154,25 +138,13 @@ func notificationGiftOwners(gifts []*entity.Gift) map[int64]struct{} {
 	return owners
 }
 
-func notificationUnassignedGiftOwners(output *PrizeDistributionOutput, gifts []*entity.Gift) map[int64]struct{} {
-	ownersByGiftID := make(map[uint]int64, len(gifts))
-	for _, gift := range gifts {
-		if gift != nil && gift.ID > 0 && gift.UserID > 0 {
-			ownersByGiftID[gift.ID] = gift.UserID
-		}
-	}
-
+func notificationPendingManualGiftOwners(gifts []*entity.Gift) map[int64]struct{} {
 	owners := make(map[int64]struct{})
-	if output == nil {
-		return owners
-	}
-	for _, slot := range output.UnassignedSlots {
-		if slot == nil {
+	for _, gift := range gifts {
+		if gift == nil || gift.UserID <= 0 || !gift.ManualDistribution || gift.ManualRecipientParticipantID != nil {
 			continue
 		}
-		if userID, ok := ownersByGiftID[slot.GiftID]; ok {
-			owners[userID] = struct{}{}
-		}
+		owners[gift.UserID] = struct{}{}
 	}
 	return owners
 }
@@ -181,7 +153,7 @@ func matchesNotificationRecipientFilter(
 	participant *entity.Participant,
 	filter NotificationRecipientFilter,
 	hasGift bool,
-	hasUnassignedGifts bool,
+	hasPendingManualGifts bool,
 ) bool {
 	switch filter {
 	case NotificationRecipientFilterAll:
@@ -190,8 +162,8 @@ func matchesNotificationRecipientFilter(
 		return participant.IsRanked() && participant.IsFinished() && !hasGift
 	case NotificationRecipientFilterGiftWithoutFinish:
 		return hasGift && !participant.IsFinished()
-	case NotificationRecipientFilterUnassignedGifts:
-		return hasUnassignedGifts
+	case NotificationRecipientFilterPendingManualGiftOwners:
+		return hasPendingManualGifts
 	default:
 		return false
 	}

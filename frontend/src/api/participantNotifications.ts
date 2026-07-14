@@ -6,7 +6,7 @@ export type ParticipantNotificationFilter =
   | 'all'
   | 'finished_without_gift'
   | 'gift_without_finish'
-  | 'unassigned_gifts';
+  | 'pending_manual_gift_owners';
 
 export interface ParticipantNotificationRecipient {
   user_id: number;
@@ -14,7 +14,7 @@ export interface ParticipantNotificationRecipient {
   username?: string;
   status: string;
   has_gift: boolean;
-  has_unassigned_gifts: boolean;
+  has_pending_manual_gifts: boolean;
 }
 
 export interface ParticipantNotificationRecipientsResponse {

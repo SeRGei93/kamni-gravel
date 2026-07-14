@@ -411,7 +411,7 @@ func NewServer(
 	)
 	participantNotificationsHandler := handler.NewParticipantNotificationsHandler(
 		eventRepo,
-		query.NewGetNotificationRecipientsHandler(participantRepo, giftRepo, getPrizeDistributionHandlerTemp),
+		query.NewGetNotificationRecipientsHandler(participantRepo, giftRepo),
 		participantNotificationJobs,
 	)
 

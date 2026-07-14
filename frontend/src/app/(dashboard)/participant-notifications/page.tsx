@@ -21,7 +21,7 @@ const FILTER_OPTIONS: FilterOption[] = [
   { value: 'all', label: 'Все' },
   { value: 'finished_without_gift', label: 'Проехал, но не добавил приз' },
   { value: 'gift_without_finish', label: 'Добавил приз, но не проехал' },
-  { value: 'unassigned_gifts', label: 'Не получилось распределить его призы' },
+  { value: 'pending_manual_gift_owners', label: 'Не распределил призы' },
 ];
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -29,8 +29,8 @@ const TELEGRAM_MESSAGE_LIMIT = 4096;
 function recipientDetails(recipient: ParticipantNotificationRecipient): string {
   const details = [recipient.status];
   details.push(recipient.has_gift ? 'приз добавлен' : 'приз не добавлен');
-  if (recipient.has_unassigned_gifts) {
-    details.push('есть нераспределённый приз');
+  if (recipient.has_pending_manual_gifts) {
+    details.push('есть приз с ручным распределением без получателя');
   }
   return details.join(' · ');
 }
