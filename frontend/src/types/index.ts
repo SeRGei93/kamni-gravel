@@ -159,6 +159,7 @@ export interface Event {
   active: boolean;
   stop_results: boolean;
   stop_gifts: boolean;
+  show_gift_recipients: boolean;
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;
@@ -305,6 +306,7 @@ export interface MiniappEvent {
   id: number;
   name: string;
   description: string;
+  show_gift_recipients: boolean;
 }
 
 export interface MiniappSessionResponse {
@@ -429,6 +431,7 @@ export interface CreateEventRequest {
   active: boolean;
   stop_results?: boolean;
   stop_gifts?: boolean;
+  show_gift_recipients?: boolean;
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;
@@ -442,6 +445,7 @@ export interface UpdateEventRequest {
   active?: boolean;
   stop_results?: boolean;
   stop_gifts?: boolean;
+  show_gift_recipients?: boolean;
   start_date?: string;
   end_date?: string;
   gpx_file_path?: string;

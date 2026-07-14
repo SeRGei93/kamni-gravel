@@ -143,9 +143,10 @@ type MiniappTelegramUserDTO struct {
 }
 
 type MiniappEventDTO struct {
-	ID          uint   `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID                 uint   `json:"id"`
+	Name               string `json:"name"`
+	Description        string `json:"description"`
+	ShowGiftRecipients bool   `json:"show_gift_recipients"`
 }
 
 // Session обрабатывает GET /api/miniapp/session.
@@ -670,9 +671,10 @@ func miniappTelegramUserDTO(user *middleware.TelegramWebAppUser) MiniappTelegram
 
 func miniappEventDTO(event *entity.Event) MiniappEventDTO {
 	return MiniappEventDTO{
-		ID:          event.ID,
-		Name:        event.Name,
-		Description: event.Description,
+		ID:                 event.ID,
+		Name:               event.Name,
+		Description:        event.Description,
+		ShowGiftRecipients: event.ShowGiftRecipients,
 	}
 }
 

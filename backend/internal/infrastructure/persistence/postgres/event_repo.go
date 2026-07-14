@@ -21,8 +21,8 @@ func NewEventRepository(db *sql.DB) repository.EventRepository {
 
 func (r *eventRepository) Create(ctx context.Context, event *entity.Event) error {
 	query := `
-		INSERT INTO events (name, description, participation_conditions, active, stop_results, stop_gifts, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO events (name, description, participation_conditions, active, stop_results, stop_gifts, show_gift_recipients, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id
 	`
 
@@ -44,6 +44,7 @@ func (r *eventRepository) Create(ctx context.Context, event *entity.Event) error
 		event.Active,
 		event.StopResults,
 		event.StopGifts,
+		event.ShowGiftRecipients,
 		event.StartDate,
 		event.EndDate,
 		event.GPXFilePath,
@@ -58,8 +59,8 @@ func (r *eventRepository) Create(ctx context.Context, event *entity.Event) error
 func (r *eventRepository) Update(ctx context.Context, event *entity.Event) error {
 	query := `
 		UPDATE events
-		SET name = $1, description = $2, participation_conditions = $3, active = $4, stop_results = $5, stop_gifts = $6, start_date = $7, end_date = $8, gpx_file_path = $9, telegram_texts = $10, updated_at = $11
-		WHERE id = $12
+		SET name = $1, description = $2, participation_conditions = $3, active = $4, stop_results = $5, stop_gifts = $6, show_gift_recipients = $7, start_date = $8, end_date = $9, gpx_file_path = $10, telegram_texts = $11, updated_at = $12
+		WHERE id = $13
 	`
 
 	telegramTextsJSON, err := eventTelegramTextsJSON(event.TelegramTexts)
@@ -76,6 +77,7 @@ func (r *eventRepository) Update(ctx context.Context, event *entity.Event) error
 		event.Active,
 		event.StopResults,
 		event.StopGifts,
+		event.ShowGiftRecipients,
 		event.StartDate,
 		event.EndDate,
 		event.GPXFilePath,
@@ -89,7 +91,7 @@ func (r *eventRepository) Update(ctx context.Context, event *entity.Event) error
 
 func (r *eventRepository) FindByID(ctx context.Context, id uint) (*entity.Event, error) {
 	query := `
-		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, show_gift_recipients, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		WHERE id = $1
 	`
@@ -104,7 +106,7 @@ func (r *eventRepository) FindByID(ctx context.Context, id uint) (*entity.Event,
 
 func (r *eventRepository) FindByName(ctx context.Context, name string) (*entity.Event, error) {
 	query := `
-		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, show_gift_recipients, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		WHERE name = $1
 	`
@@ -119,7 +121,7 @@ func (r *eventRepository) FindByName(ctx context.Context, name string) (*entity.
 
 func (r *eventRepository) FindActive(ctx context.Context) (*entity.Event, error) {
 	query := `
-		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, show_gift_recipients, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		WHERE active = true
 		ORDER BY created_at DESC
@@ -136,7 +138,7 @@ func (r *eventRepository) FindActive(ctx context.Context) (*entity.Event, error)
 
 func (r *eventRepository) GetAll(ctx context.Context) ([]*entity.Event, error) {
 	query := `
-		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
+		SELECT id, name, description, participation_conditions, active, stop_results, stop_gifts, show_gift_recipients, start_date, end_date, gpx_file_path, telegram_texts, created_at, updated_at
 		FROM events
 		ORDER BY created_at DESC
 	`
@@ -182,6 +184,7 @@ func scanEvent(row eventScanner) (*entity.Event, error) {
 		&event.Active,
 		&event.StopResults,
 		&event.StopGifts,
+		&event.ShowGiftRecipients,
 		&event.StartDate,
 		&event.EndDate,
 		&gpxFilePath,

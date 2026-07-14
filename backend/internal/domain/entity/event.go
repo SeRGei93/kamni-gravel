@@ -16,6 +16,7 @@ type Event struct {
 	Active                  bool
 	StopResults             bool
 	StopGifts               bool
+	ShowGiftRecipients      bool
 	StartDate               *time.Time
 	EndDate                 *time.Time
 	GPXFilePath             string

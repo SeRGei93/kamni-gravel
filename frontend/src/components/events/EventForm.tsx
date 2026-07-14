@@ -60,6 +60,9 @@ export default function EventForm({
   const [active, setActive] = useState(event?.active ?? true);
   const [stopResults, setStopResults] = useState(event?.stop_results ?? false);
   const [stopGifts, setStopGifts] = useState(event?.stop_gifts ?? false);
+  const [showGiftRecipients, setShowGiftRecipients] = useState(
+    event?.show_gift_recipients ?? false
+  );
   const [startDate, setStartDate] = useState<string>(
     toMinskDateTimeInput(event?.start_date)
   );
@@ -78,6 +81,7 @@ export default function EventForm({
       active,
       stop_results: stopResults,
       stop_gifts: stopGifts,
+      show_gift_recipients: showGiftRecipients,
       start_date: fromMinskDateTimeInput(startDate),
       end_date: fromMinskDateTimeInput(endDate),
     };
@@ -186,6 +190,16 @@ export default function EventForm({
           defaultChecked={stopGifts}
           onChange={setStopGifts}
         />
+        <div className="space-y-1">
+          <Switch
+            label="Показывать получателей призов"
+            defaultChecked={showGiftRecipients}
+            onChange={setShowGiftRecipients}
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            В Mini App, во вкладке «Призы от меня», будет видно, кому назначен каждый приз.
+          </p>
+        </div>
         <div className="text-xs text-gray-500 dark:text-gray-400">
           Бот перестанет принимать результаты/призы и скроет кнопки. Дата
           окончания закрывает только регистрацию — приём призов и результатов

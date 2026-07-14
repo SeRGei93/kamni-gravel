@@ -19,6 +19,7 @@ type UpdateEventCommand struct {
 	Active                  *bool
 	StopResults             *bool
 	StopGifts               *bool
+	ShowGiftRecipients      *bool
 	StartDate               *time.Time
 	EndDate                 *time.Time
 	GPXFilePath             *string
@@ -87,6 +88,10 @@ func (h *UpdateEventHandler) Handle(ctx context.Context, cmd UpdateEventCommand)
 
 	if cmd.StopGifts != nil {
 		event.StopGifts = *cmd.StopGifts
+	}
+
+	if cmd.ShowGiftRecipients != nil {
+		event.ShowGiftRecipients = *cmd.ShowGiftRecipients
 	}
 
 	if cmd.StartDate != nil {

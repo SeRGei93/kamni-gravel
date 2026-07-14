@@ -15,6 +15,7 @@ type EventDTO struct {
 	Active                  bool                      `json:"active"`
 	StopResults             bool                      `json:"stop_results"`
 	StopGifts               bool                      `json:"stop_gifts"`
+	ShowGiftRecipients      bool                      `json:"show_gift_recipients"`
 	StartDate               *time.Time                `json:"start_date,omitempty"`
 	EndDate                 *time.Time                `json:"end_date,omitempty"`
 	GPXFilePath             string                    `json:"gpx_file_path,omitempty"`
@@ -33,6 +34,7 @@ func FromEvent(e *entity.Event) *EventDTO {
 		Active:                  e.Active,
 		StopResults:             e.StopResults,
 		StopGifts:               e.StopGifts,
+		ShowGiftRecipients:      e.ShowGiftRecipients,
 		StartDate:               e.StartDate,
 		EndDate:                 e.EndDate,
 		GPXFilePath:             e.GPXFilePath,

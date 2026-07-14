@@ -141,6 +141,7 @@ export default function MiniappMyGiftsPage() {
               gift={gift}
               participants={participants}
               savingGiftID={savingGiftID}
+              showGiftRecipients={session.event.show_gift_recipients}
               onSaveRecipient={saveRecipient}
               onAssignRandomRecipient={assignRandomRecipient}
             />

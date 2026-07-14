@@ -15,6 +15,7 @@ interface MyGiftRecipientSelectProps {
   gift: ManualGift;
   participants: MiniappParticipantOption[];
   isSaving: boolean;
+  showGiftRecipients: boolean;
   onSave: (giftID: number, participantID: number | null) => Promise<void>;
   onAssignRandom: (giftID: number) => Promise<void>;
 }
@@ -35,6 +36,7 @@ export default function MyGiftRecipientSelect({
   gift,
   participants,
   isSaving,
+  showGiftRecipients,
   onSave,
   onAssignRandom,
 }: MyGiftRecipientSelectProps) {
@@ -85,10 +87,6 @@ export default function MyGiftRecipientSelect({
     setIsPickerOpen(false);
     setHighlightedIndex(-1);
     void saveRecipient(participant.id, true);
-  };
-
-  const clearRecipient = () => {
-    void saveRecipient(null, false);
   };
 
   const assignRandomRecipient = async () => {
@@ -156,10 +154,12 @@ export default function MyGiftRecipientSelect({
     <>
       {gift.recipient ? (
         <div className="mt-3">
-          <p className="tg-muted text-sm leading-5">
-            Получатель: <span className="tg-title font-semibold">{recipientLabel(gift.recipient)}</span>
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
+          {showGiftRecipients && (
+            <p className="tg-muted text-sm leading-5">
+              Получатель: <span className="tg-title font-semibold">{recipientLabel(gift.recipient)}</span>
+            </p>
+          )}
+          <div className={`${showGiftRecipients ? "mt-2" : "mt-0"} flex flex-wrap gap-2`}>
             <button
               type="button"
               onClick={openPicker}
@@ -167,14 +167,6 @@ export default function MyGiftRecipientSelect({
               className="tg-link-button inline-flex min-h-9 items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
             >
               Изменить
-            </button>
-            <button
-              type="button"
-              onClick={clearRecipient}
-              disabled={isSaving}
-              className="tg-link-button inline-flex min-h-9 items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Отменить
             </button>
           </div>
         </div>

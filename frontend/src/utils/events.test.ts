@@ -11,6 +11,7 @@ function makeEvent(overrides: Partial<Event>): Event {
     active: false,
     stop_results: false,
     stop_gifts: false,
+    show_gift_recipients: false,
     telegram_texts: {} as Event['telegram_texts'],
     created_at: '2026-06-15T00:00:00Z',
     updated_at: '2026-06-15T00:00:00Z',

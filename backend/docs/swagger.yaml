@@ -386,6 +386,9 @@ paths:
                 stop_gifts:
                   type: boolean
                   default: false
+                show_gift_recipients:
+                  type: boolean
+                  default: false
                 telegram_texts:
                   $ref: '#/components/schemas/EventTelegramTexts'
       responses:
@@ -443,6 +446,8 @@ paths:
                 stop_results:
                   type: boolean
                 stop_gifts:
+                  type: boolean
+                show_gift_recipients:
                   type: boolean
                 telegram_texts:
                   $ref: '#/components/schemas/EventTelegramTexts'
@@ -1865,6 +1870,9 @@ components:
         stop_gifts:
           type: boolean
           description: Приём призов остановлен вручную
+        show_gift_recipients:
+          type: boolean
+          description: Показывать получателей призов в Mini App на вкладке «Призы от меня»
         start_date:
           type: string
           format: date-time
@@ -1925,6 +1933,9 @@ components:
           type: string
         description:
           type: string
+        show_gift_recipients:
+          type: boolean
+          description: Показывать получателей призов в Mini App на вкладке «Призы от меня»
 
     MiniappLeaderboardResponse:
       type: object

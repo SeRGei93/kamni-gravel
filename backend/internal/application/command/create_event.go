@@ -23,6 +23,7 @@ type CreateEventCommand struct {
 	Active                  bool
 	StopResults             bool
 	StopGifts               bool
+	ShowGiftRecipients      bool
 	StartDate               *time.Time
 	EndDate                 *time.Time
 	GPXFilePath             string
@@ -83,6 +84,7 @@ func (h *CreateEventHandler) Handle(ctx context.Context, cmd CreateEventCommand)
 		Active:                  cmd.Active,
 		StopResults:             cmd.StopResults,
 		StopGifts:               cmd.StopGifts,
+		ShowGiftRecipients:      cmd.ShowGiftRecipients,
 		StartDate:               cmd.StartDate,
 		EndDate:                 cmd.EndDate,
 		GPXFilePath:             cmd.GPXFilePath,

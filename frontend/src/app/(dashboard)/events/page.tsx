@@ -46,6 +46,7 @@ export default function EventsPage() {
         description: data.description || '',
         participation_conditions: data.participation_conditions || '',
         active: data.active ?? true,
+        show_gift_recipients: data.show_gift_recipients,
         start_date: data.start_date,
         end_date: data.end_date,
       };
