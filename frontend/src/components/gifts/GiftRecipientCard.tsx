@@ -1,14 +1,21 @@
 import Badge from '@/components/ui/badge/Badge';
 import type { ManualGift } from '@/types';
+import type { AutomaticGiftRecipient } from '@/utils/giftRecipient';
 
 interface GiftRecipientCardProps {
   manualGift?: ManualGift;
+  automaticRecipient?: AutomaticGiftRecipient;
 }
 
 export default function GiftRecipientCard({
   manualGift,
+  automaticRecipient,
 }: GiftRecipientCardProps) {
-  const recipient = manualGift?.recipient;
+  const manualRecipient = manualGift?.recipient;
+  const isManualDistribution = manualGift?.manual_distribution ?? false;
+  const isAssigned = isManualDistribution
+    ? Boolean(manualRecipient)
+    : Boolean(automaticRecipient);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-white/[0.05] dark:bg-white/[0.03]">
@@ -16,30 +23,35 @@ export default function GiftRecipientCard({
         <h2 className="text-base font-semibold text-gray-800 dark:text-white/90">
           Получатель
         </h2>
-        {manualGift?.manual_distribution && (
-          <Badge color={recipient ? 'success' : 'warning'} size="sm">
-            {recipient ? 'Назначен' : 'Не назначен'}
-          </Badge>
-        )}
+        <Badge color={isAssigned ? 'success' : 'warning'} size="sm">
+          {isAssigned ? 'Назначен' : 'Не назначен'}
+        </Badge>
       </div>
 
-      {manualGift?.manual_distribution ? (
-        recipient ? (
+      {isManualDistribution ? (
+        manualRecipient ? (
           <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
             <p className="font-medium text-gray-800 dark:text-white/90">
-              {recipient.display_name}
+              {manualRecipient.display_name}
             </p>
-            {recipient.username && <p>@{recipient.username}</p>}
-            <p>ID участника: {recipient.id}</p>
+            {manualRecipient.username && <p>@{manualRecipient.username}</p>}
+            <p>ID участника: {manualRecipient.id}</p>
           </div>
         ) : (
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Получатель ещё не выбран.
           </p>
         )
+      ) : automaticRecipient ? (
+        <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+          <p className="font-medium text-gray-800 dark:text-white/90">
+            {automaticRecipient.participantName}
+          </p>
+          <p>ID участника: {automaticRecipient.participantID}</p>
+        </div>
       ) : (
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Приз распределяется автоматически по результатам заезда.
+          Получатель ещё не определён по результатам заезда.
         </p>
       )}
     </div>

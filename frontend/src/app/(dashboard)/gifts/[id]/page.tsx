@@ -6,11 +6,16 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { criteriaApi } from '@/api/criteria';
 import { giftsApi } from '@/api/gifts';
 import { participantsApi } from '@/api/participants';
+import { prizeDistributionApi } from '@/api/prizeDistribution';
 import GiftEditForm from '@/components/gifts/GiftEditForm';
 import GiftPhotoPreviewGrid from '@/components/gifts/GiftPhotoPreviewGrid';
 import GiftRecipientCard from '@/components/gifts/GiftRecipientCard';
 import Badge from '@/components/ui/badge/Badge';
 import { mergeCriterion } from '@/utils/criteria';
+import {
+  getAutomaticGiftRecipient,
+  type AutomaticGiftRecipient,
+} from '@/utils/giftRecipient';
 import type {
   CreateCriteriaRequest,
   Criteria,
@@ -45,6 +50,9 @@ export default function GiftEditPage() {
   const [gift, setGift] = useState<Gift | null>(null);
   const [criteria, setCriteria] = useState<Criteria[]>([]);
   const [manualGift, setManualGift] = useState<ManualGift | undefined>();
+  const [automaticRecipient, setAutomaticRecipient] = useState<
+    AutomaticGiftRecipient | undefined
+  >();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,9 +71,10 @@ export default function GiftEditPage() {
         giftsApi.getById(giftId),
         criteriaApi.getAll(),
       ]);
-      const [participantResponse, manualGiftResponse] = await Promise.all([
+      const [participantResponse, manualGiftResponse, distributionResponse] = await Promise.all([
         participantsApi.getByEvent(giftResponse.event_id),
         giftsApi.getManualByEvent(giftResponse.event_id),
+        prizeDistributionApi.getPrizeDistribution(giftResponse.event_id),
       ]);
       setGift(giftResponse);
       setCriteria(criteriaResponse.criteria);
@@ -73,8 +82,12 @@ export default function GiftEditPage() {
       setManualGift(
         manualGiftResponse.gifts.find((candidate) => candidate.id === giftResponse.id)
       );
+      setAutomaticRecipient(
+        getAutomaticGiftRecipient(distributionResponse.distribution, giftResponse.id)
+      );
     } catch (err) {
       setGift(null);
+      setAutomaticRecipient(undefined);
       setError('Приз не найден или недоступен');
       console.error('Failed to load gift edit page:', {
         gift_id: giftId,
@@ -232,7 +245,10 @@ export default function GiftEditPage() {
               </div>
             </div>
 
-            <GiftRecipientCard manualGift={manualGift} />
+            <GiftRecipientCard
+              manualGift={manualGift}
+              automaticRecipient={automaticRecipient}
+            />
           </aside>
         </div>
       )}
