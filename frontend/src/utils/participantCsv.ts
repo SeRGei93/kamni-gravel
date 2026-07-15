@@ -1,12 +1,8 @@
 import type { Participant } from '@/types';
-import type {
-  ParticipantColumn,
-  ParticipantExportValue,
-} from '@/components/participants/participantColumns';
+import type { ParticipantColumn } from '@/components/participants/participantColumns';
+import { buildCsv, downloadCsvFile } from './csv';
 
-const CSV_BOM = '\uFEFF';
-const CSV_DELIMITER = ';';
-const FORMULA_PREFIX = /^[=+\-@]/;
+export { escapeSpreadsheetFormula } from './csv';
 
 export interface ParticipantCsvExportInput {
   eventId: number;
@@ -14,44 +10,11 @@ export interface ParticipantCsvExportInput {
   participants: Participant[];
 }
 
-/**
- * Keeps untrusted strings as text when the CSV is opened in Excel.
- */
-export function escapeSpreadsheetFormula(
-  value: ParticipantExportValue,
-): ParticipantExportValue {
-  if (typeof value === 'string' && FORMULA_PREFIX.test(value)) {
-    return `'${value}`;
-  }
-  return value;
-}
-
-function encodeCsvValue(value: ParticipantExportValue): string {
-  if (value === null) {
-    return '';
-  }
-
-  const text = String(escapeSpreadsheetFormula(value));
-  if (/[;"\r\n]/.test(text)) {
-    return `"${text.replaceAll('"', '""')}"`;
-  }
-  return text;
-}
-
 export function buildParticipantCsv(
   columns: ParticipantColumn[],
   participants: Participant[],
 ): string {
-  const rows: ParticipantExportValue[][] = [
-    columns.map((column) => column.label),
-    ...participants.map((participant) =>
-      columns.map((column) => column.exportValue(participant)),
-    ),
-  ];
-
-  return `${CSV_BOM}${rows
-    .map((row) => row.map(encodeCsvValue).join(CSV_DELIMITER))
-    .join('\r\n')}\r\n`;
+  return buildCsv(columns, participants);
 }
 
 export function participantCsvFileName(eventId: number): string {
@@ -78,18 +41,7 @@ export function downloadParticipantCsv({
   columns,
   participants,
 }: ParticipantCsvExportInput): void {
-  const csv = buildParticipantCsv(columns, participants);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-
-  link.href = url;
-  link.download = participantCsvFileName(eventId);
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  downloadCsvFile(buildParticipantCsv(columns, participants), participantCsvFileName(eventId));
 
   console.debug('[participants] export CSV prepared', {
     event_id: eventId,

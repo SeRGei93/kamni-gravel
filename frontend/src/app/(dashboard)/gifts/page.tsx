@@ -1,13 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { giftsApi } from '@/api/gifts';
 import { eventsApi } from '@/api/events';
 import { participantsApi } from '@/api/participants';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
 import { extractActiveEvent } from '@/utils/events';
-import type { BikeTypeFilter, Gift, GenderFilter, GiftReviewStatus, Participant } from '@/types';
+import type {
+  BikeTypeFilter,
+  Gift,
+  GenderFilter,
+  GiftReviewStatus,
+  Participant,
+  PrizeDistributionListResponse,
+} from '@/types';
 import GiftsTable from '@/components/gifts/GiftsTable';
 import PaginationControls from '@/components/tables/PaginationControls';
 import { usePaginationParams } from '@/hooks/usePaginationParams';
@@ -18,21 +25,32 @@ import Label from '@/components/form/Label';
 import TextArea from '@/components/form/input/TextArea';
 import GiftOwnerFilter from '@/components/gifts/GiftOwnerFilter';
 import { BIKE_TYPE_OPTIONS, GENDER_OPTIONS, GIFT_REVIEW_STATUS_FILTER_OPTIONS } from '@/constants';
-import { CheckLineIcon, CloseLineIcon, PlusIcon } from '@/icons';
+import { CheckLineIcon, CloseLineIcon, DownloadIcon, PlusIcon } from '@/icons';
 import { getManualGiftErrorMessage } from '@/utils/manualGiftErrors';
 import {
-  attachManualGiftAssignments,
   buildManualGiftUpdate,
-  isGiftDistributed,
+  type GiftDistributionFilter,
 } from '@/utils/manualGiftAssignment';
+import {
+  buildFilteredGiftList,
+  isCurrentGiftListRequest,
+  paginateGifts,
+  shouldSettleGiftListRequest,
+} from '@/utils/giftList';
+import {
+  downloadGiftCsv,
+  isCurrentGiftExportRequest,
+  shouldSettleGiftExportRequest,
+} from '@/utils/giftCsv';
 
 type GiftReviewStatusFilter = 'all' | GiftReviewStatus;
-type GiftDistributionFilter = 'all' | 'assigned' | 'unassigned';
 
 const GIFT_DISTRIBUTION_FILTER_OPTIONS = [
   { value: 'all', label: 'Все' },
   { value: 'assigned', label: 'Распределён' },
   { value: 'unassigned', label: 'Не распределён' },
+  { value: 'manual', label: 'Ручное распределение' },
+  { value: 'manual_unassigned', label: 'Ручное распределение — получатель не назначен' },
 ];
 
 function parseReviewStatusFilter(value: string | null): GiftReviewStatusFilter {
@@ -40,7 +58,12 @@ function parseReviewStatusFilter(value: string | null): GiftReviewStatusFilter {
 }
 
 function parseDistributionFilter(value: string | null): GiftDistributionFilter {
-  return value === 'assigned' || value === 'unassigned' ? value : 'all';
+  return value === 'assigned' ||
+    value === 'unassigned' ||
+    value === 'manual' ||
+    value === 'manual_unassigned'
+    ? value
+    : 'all';
 }
 
 function parseOwnerUserID(value: string | null): number | undefined {
@@ -50,10 +73,21 @@ function parseOwnerUserID(value: string | null): number | undefined {
     : undefined;
 }
 
-function pageGifts(gifts: Gift[], page: number, pageSize: number | 'all'): Gift[] {
-  if (pageSize === 'all') return gifts;
-  const offset = (page - 1) * pageSize;
-  return gifts.slice(offset, offset + pageSize);
+function collectAssignedGiftIds(
+  distribution: PrizeDistributionListResponse
+): Set<number> {
+  const assignedGiftIds = new Set<number>();
+
+  distribution.distribution.forEach((participantDistribution) => {
+    participantDistribution.matched_gift_assignments?.forEach((assignment) => {
+      assignedGiftIds.add(assignment.gift_id);
+    });
+    participantDistribution.matched_gifts?.forEach((gift) => {
+      assignedGiftIds.add(gift.id);
+    });
+  });
+
+  return assignedGiftIds;
 }
 
 export default function GiftsPage() {
@@ -79,6 +113,8 @@ export default function GiftsPage() {
   const [assignedGiftIds, setAssignedGiftIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [isCreatingGift, setIsCreatingGift] = useState(false);
   const [isSavingGift, setIsSavingGift] = useState(false);
   const [manualGiftUserId, setManualGiftUserId] = useState('');
@@ -88,6 +124,10 @@ export default function GiftsPage() {
   const [manualGiftBikeTypeFilter, setManualGiftBikeTypeFilter] =
     useState<BikeTypeFilter>('all');
   const [searchInput, setSearchInput] = useState(searchQueryParam);
+  const giftListRequestVersionRef = useRef(0);
+  const exportRequestVersionRef = useRef(0);
+  const exportingRequestVersionRef = useRef<number | null>(null);
+  const isMountedRef = useRef(false);
   const ownerUserIDFilter = parseOwnerUserID(ownerUserIDParam);
   const distributionFilter = parseDistributionFilter(distributionParam);
 
@@ -185,7 +225,13 @@ export default function GiftsPage() {
 
   // Загрузка активного события
   useEffect(() => {
-    loadActiveEvent();
+    isMountedRef.current = true;
+    void loadActiveEvent();
+
+    return () => {
+      isMountedRef.current = false;
+      giftListRequestVersionRef.current += 1;
+    };
   }, [loadActiveEvent]);
 
   const loadGiftOwners = useCallback(async () => {
@@ -235,6 +281,9 @@ export default function GiftsPage() {
   const loadGifts = useCallback(async () => {
     if (!activeEventId) return;
 
+    const requestVersion = ++giftListRequestVersionRef.current;
+    const eventId = activeEventId;
+
     try {
       setIsLoading(true);
       setError(null);
@@ -247,42 +296,48 @@ export default function GiftsPage() {
       };
       const shouldFilterDistribution = distributionFilter !== 'all';
 
+      console.debug('[gifts] list load started', {
+        event_id: eventId,
+        request_version: requestVersion,
+        page,
+        page_size: pageSize,
+        distribution: distributionFilter,
+        review_status: reviewStatusFilter,
+        owner_user_id: ownerUserIDFilter,
+        has_search_query: Boolean(searchQueryParam),
+      });
+
       // Для фильтра распределения нужен полный отфильтрованный набор: статус
       // автоматического приза вычисляет серверный движок, а ручного — сохранённый
       // получатель. После этого применяем обычную пагинацию на клиенте.
       const [response, manualGiftResponse] = await Promise.all([
         shouldFilterDistribution
-          ? giftsApi.getByEvent(activeEventId, filters)
+          ? giftsApi.getByEvent(eventId, filters)
           : giftsApi.listByEvent({
-              eventId: activeEventId,
+              eventId,
               ...filters,
               page,
               page_size: pageSize,
             }),
-        giftsApi.getManualByEvent(activeEventId),
+        giftsApi.getManualByEvent(eventId),
       ]);
-      console.debug('[gifts] loaded', {
-        page,
-        pageSize,
-        total: response.total,
-        statusCounts: response.status_counts,
-      });
-      setStatusCounts(response.status_counts ?? {});
+
+      if (!isCurrentGiftListRequest(requestVersion, giftListRequestVersionRef.current)) {
+        console.debug('[gifts] list response invalidated', {
+          event_id: eventId,
+          request_version: requestVersion,
+          reason: 'newer_list_request',
+        });
+        return;
+      }
 
       let assignedIds = new Set<number>();
       try {
-        const distribution = await prizeDistributionApi.getPrizeDistribution(activeEventId);
-        distribution.distribution.forEach((dist) => {
-          if (dist.matched_gift_assignments && dist.matched_gift_assignments.length > 0) {
-            dist.matched_gift_assignments.forEach((assignment) => assignedIds.add(assignment.gift_id));
-          }
-          if (dist.matched_gifts && dist.matched_gifts.length > 0) {
-            dist.matched_gifts.forEach((gift) => assignedIds.add(gift.id));
-          }
-        });
+        const distribution = await prizeDistributionApi.getPrizeDistribution(eventId);
+        assignedIds = collectAssignedGiftIds(distribution);
       } catch (distributionError) {
         console.error('Failed to load prize distribution:', {
-          event_id: activeEventId,
+          event_id: eventId,
           operation: 'load_prize_distribution',
           error: distributionError,
         });
@@ -291,35 +346,71 @@ export default function GiftsPage() {
         }
       }
 
-      setAssignedGiftIds(assignedIds);
-      const giftsWithManualAssignments = attachManualGiftAssignments(
-        response.gifts,
-        manualGiftResponse.gifts,
-      );
-      if (shouldFilterDistribution) {
-        const filteredGifts = giftsWithManualAssignments.filter((gift) => {
-          const distributed = isGiftDistributed(gift, assignedIds);
-          return distributionFilter === 'assigned' ? distributed : !distributed;
+      if (!isCurrentGiftListRequest(requestVersion, giftListRequestVersionRef.current)) {
+        console.debug('[gifts] list response invalidated', {
+          event_id: eventId,
+          request_version: requestVersion,
+          reason: 'newer_distribution_request',
         });
-        setGifts(pageGifts(filteredGifts, page, pageSize));
+        return;
+      }
+
+      const filteredGifts = buildFilteredGiftList({
+        gifts: response.gifts,
+        manualGifts: manualGiftResponse.gifts,
+        distributionFilter,
+        assignedGiftIds: assignedIds,
+      });
+
+      setAssignedGiftIds(assignedIds);
+      if (shouldFilterDistribution) {
+        setGifts(paginateGifts(filteredGifts, page, pageSize));
         setTotal(filteredGifts.length);
       } else {
-        setGifts(giftsWithManualAssignments);
+        setGifts(filteredGifts);
         setTotal(response.total);
       }
+
+      setStatusCounts(response.status_counts ?? {});
+      console.debug('[gifts] list load completed', {
+        event_id: eventId,
+        request_version: requestVersion,
+        distribution: distributionFilter,
+        base_count: response.gifts.length,
+        filtered_count: filteredGifts.length,
+        total: shouldFilterDistribution ? filteredGifts.length : response.total,
+      });
     } catch (err) {
+      if (!isCurrentGiftListRequest(requestVersion, giftListRequestVersionRef.current)) {
+        console.debug('[gifts] list response invalidated', {
+          event_id: eventId,
+          request_version: requestVersion,
+          reason: 'newer_list_request_after_error',
+        });
+        return;
+      }
+
       setError('Ошибка загрузки призов');
-      console.error('Failed to load gifts:', {
-        event_id: activeEventId,
+      console.error('[gifts] list load failed', {
+        event_id: eventId,
+        request_version: requestVersion,
         review_status: reviewStatusFilter,
         owner_user_id: ownerUserIDFilter,
         distribution: distributionFilter,
-        q: searchQueryParam,
+        has_search_query: Boolean(searchQueryParam),
         operation: 'load_gifts',
         error: err,
       });
     } finally {
-      setIsLoading(false);
+      if (
+        shouldSettleGiftListRequest(
+          requestVersion,
+          giftListRequestVersionRef.current,
+          isMountedRef.current
+        )
+      ) {
+        setIsLoading(false);
+      }
     }
   }, [
     activeEventId,
@@ -334,14 +425,165 @@ export default function GiftsPage() {
   // Загрузка призов при изменении фильтров/страницы
   useEffect(() => {
     if (activeEventId) {
-      loadGifts();
+      void loadGifts();
     } else {
       setGifts([]);
       setTotal(0);
       setStatusCounts({});
       setGiftOwners([]);
+      setAssignedGiftIds(new Set());
     }
+
+    return () => {
+      giftListRequestVersionRef.current += 1;
+    };
   }, [activeEventId, loadGifts]);
+
+  // Экспорт строится по полному набору, поэтому результат устаревает при
+  // изменении любого URL-фильтра или активного события, но не при пагинации.
+  useEffect(() => {
+    return () => {
+      exportRequestVersionRef.current += 1;
+
+      if (exportingRequestVersionRef.current !== null) {
+        exportingRequestVersionRef.current = null;
+        queueMicrotask(() => {
+          if (isMountedRef.current) {
+            setIsExporting(false);
+          }
+        });
+      }
+    };
+  }, [
+    activeEventId,
+    distributionFilter,
+    ownerUserIDFilter,
+    reviewStatusFilter,
+    searchQueryParam,
+  ]);
+
+  const handleExport = useCallback(async () => {
+    if (!activeEventId) return;
+
+    const requestVersion = ++exportRequestVersionRef.current;
+    exportingRequestVersionRef.current = requestVersion;
+    const eventId = activeEventId;
+    const filters = {
+      review_status:
+        reviewStatusFilter === 'all' ? undefined : reviewStatusFilter,
+      owner_user_id: ownerUserIDFilter,
+      q: searchQueryParam || undefined,
+    };
+    const filterKeys = Object.entries({
+      ...filters,
+      distribution:
+        distributionFilter === 'all' ? undefined : distributionFilter,
+    })
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => key);
+
+    setIsExporting(true);
+    setExportError(null);
+    console.debug('[gifts] export started', {
+      event_id: eventId,
+      request_version: requestVersion,
+      filter_keys: filterKeys,
+    });
+
+    try {
+      const [giftResponse, manualGiftResponse, distribution] = await Promise.all([
+        giftsApi.getByEvent(eventId, filters),
+        giftsApi.getManualByEvent(eventId),
+        prizeDistributionApi.getPrizeDistribution(eventId),
+      ]);
+
+      if (
+        !isMountedRef.current ||
+        !isCurrentGiftExportRequest(
+          requestVersion,
+          exportRequestVersionRef.current
+        )
+      ) {
+        console.debug('[gifts] export invalidated', {
+          event_id: eventId,
+          request_version: requestVersion,
+          reason: 'list_state_changed',
+        });
+        return;
+      }
+
+      const assignedGiftIds = collectAssignedGiftIds(distribution);
+      const exportGifts = buildFilteredGiftList({
+        gifts: giftResponse.gifts,
+        manualGifts: manualGiftResponse.gifts,
+        distributionFilter,
+        assignedGiftIds,
+      });
+
+      downloadGiftCsv({
+        eventId,
+        gifts: exportGifts,
+        assignedGiftIds,
+      });
+      console.debug('[gifts] export completed', {
+        event_id: eventId,
+        request_version: requestVersion,
+        row_count: exportGifts.length,
+        filter_keys: filterKeys,
+      });
+    } catch (exportFailure) {
+      if (
+        !isMountedRef.current ||
+        !isCurrentGiftExportRequest(
+          requestVersion,
+          exportRequestVersionRef.current
+        )
+      ) {
+        console.debug('[gifts] export invalidated', {
+          event_id: eventId,
+          request_version: requestVersion,
+          reason: 'list_state_changed_after_error',
+        });
+        return;
+      }
+
+      setExportError('Не удалось выгрузить список призов');
+      console.error('[gifts] export failed', {
+        event_id: eventId,
+        request_version: requestVersion,
+        filter_keys: filterKeys,
+        error: exportFailure,
+      });
+    } finally {
+      if (
+        shouldSettleGiftExportRequest(
+          requestVersion,
+          exportRequestVersionRef.current,
+          isMountedRef.current
+        )
+      ) {
+        exportingRequestVersionRef.current = null;
+        setIsExporting(false);
+        console.debug('[gifts] export settled', {
+          event_id: eventId,
+          request_version: requestVersion,
+        });
+      } else if (exportingRequestVersionRef.current === requestVersion) {
+        exportingRequestVersionRef.current = null;
+        console.debug('[gifts] export settled', {
+          event_id: eventId,
+          request_version: requestVersion,
+          state_update: 'skipped_after_unmount_or_invalidation',
+        });
+      }
+    }
+  }, [
+    activeEventId,
+    distributionFilter,
+    ownerUserIDFilter,
+    reviewStatusFilter,
+    searchQueryParam,
+  ]);
 
   const handleApprove = async (gift: Gift) => {
     try {
@@ -482,20 +724,37 @@ export default function GiftsPage() {
           </p>
         </div>
         {!isCreatingGift && (
-          <Button
-            size="sm"
-            startIcon={<PlusIcon />}
-            onClick={() => setIsCreatingGift(true)}
-            disabled={!activeEventId}
-          >
-            Добавить приз вручную
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="outline"
+              startIcon={<DownloadIcon />}
+              onClick={() => void handleExport()}
+              disabled={!activeEventId || isExporting}
+            >
+              {isExporting ? 'Экспорт…' : 'Экспорт в CSV'}
+            </Button>
+            <Button
+              size="sm"
+              startIcon={<PlusIcon />}
+              onClick={() => setIsCreatingGift(true)}
+              disabled={!activeEventId}
+            >
+              Добавить приз вручную
+            </Button>
+          </div>
         )}
       </div>
 
       {error && (
         <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
           <p className="text-error-600 dark:text-error-400">{error}</p>
+        </div>
+      )}
+
+      {exportError && (
+        <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
+          <p className="text-error-600 dark:text-error-400">{exportError}</p>
         </div>
       )}
 

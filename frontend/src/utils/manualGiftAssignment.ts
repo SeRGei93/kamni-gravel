@@ -7,6 +7,13 @@ export type ManualGiftPresentationStatus =
   | 'automatic_assigned'
   | 'automatic_unassigned';
 
+export type GiftDistributionFilter =
+  | 'all'
+  | 'assigned'
+  | 'unassigned'
+  | 'manual'
+  | 'manual_unassigned';
+
 export interface ManualGiftStatusPresentation {
   status: ManualGiftPresentationStatus;
   label: string;
@@ -104,6 +111,37 @@ export function getManualGiftStatus(
 export function isGiftDistributed(gift: Gift, assignedGiftIds: Set<number>): boolean {
   const status = getManualGiftStatus(gift, assignedGiftIds).status;
   return status === 'manual_assigned' || status === 'automatic_assigned';
+}
+
+export function matchesGiftDistributionFilter(
+  gift: Gift,
+  filter: GiftDistributionFilter,
+  assignedGiftIds: Set<number>
+): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'assigned':
+      return isGiftDistributed(gift, assignedGiftIds);
+    case 'unassigned':
+      return !isGiftDistributed(gift, assignedGiftIds);
+    case 'manual':
+      return gift.manual_distribution === true;
+    case 'manual_unassigned':
+      // This is intentionally independent of review status: a manual gift
+      // awaiting review can still require a recipient assignment.
+      return gift.manual_distribution === true && !gift.manual_assignment?.recipient;
+  }
+}
+
+export function filterGiftsByDistribution(
+  gifts: Gift[],
+  filter: GiftDistributionFilter,
+  assignedGiftIds: Set<number>
+): Gift[] {
+  return gifts.filter((gift) =>
+    matchesGiftDistributionFilter(gift, filter, assignedGiftIds)
+  );
 }
 
 // canAssignRandomRecipient keeps the row action in sync with the server-side

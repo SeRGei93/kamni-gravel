@@ -3,6 +3,7 @@ import {
   attachManualGiftAssignments,
   buildManualGiftUpdate,
   canAssignRandomRecipient,
+  filterGiftsByDistribution,
   formatManualRecipientSearchLabel,
   getManualGiftsForRecipient,
   getManualGiftStatus,
@@ -127,6 +128,61 @@ describe('manual gift assignment helpers', () => {
     } }, new Set())).toMatchObject({ status: 'manual_assigned' });
     expect(getManualGiftStatus(automaticGift, new Set([1]))).toMatchObject({ status: 'automatic_assigned' });
     expect(getManualGiftStatus(automaticGift, new Set())).toMatchObject({ status: 'automatic_unassigned' });
+  });
+
+  it('filters manual gifts independently of their review presentation status', () => {
+    const manualAssigned: Gift = {
+      ...automaticGift,
+      id: 2,
+      manual_distribution: true,
+      manual_assignment: {
+        id: 2,
+        event_id: 7,
+        description: 'Assigned manual gift',
+        review_status: 'approved',
+        manual_distribution: true,
+        recipient: { id: 12, display_name: 'Alex', status: 'active' },
+        created_at: automaticGift.created_at,
+      },
+    };
+    const manualUnassigned: Gift = {
+      ...automaticGift,
+      id: 3,
+      manual_distribution: true,
+    };
+    const pendingManualUnassigned: Gift = {
+      ...manualUnassigned,
+      id: 4,
+      review_status: 'pending_review',
+    };
+    const pendingManualAssigned: Gift = {
+      ...manualAssigned,
+      id: 5,
+      review_status: 'pending_review',
+    };
+    const gifts = [
+      automaticGift,
+      manualAssigned,
+      manualUnassigned,
+      pendingManualUnassigned,
+      pendingManualAssigned,
+    ];
+
+    expect(
+      filterGiftsByDistribution(gifts, 'manual', new Set([automaticGift.id])).map(
+        (gift) => gift.id
+      )
+    ).toEqual([2, 3, 4, 5]);
+    expect(
+      filterGiftsByDistribution(gifts, 'manual_unassigned', new Set()).map(
+        (gift) => gift.id
+      )
+    ).toEqual([3, 4]);
+    expect(
+      filterGiftsByDistribution(gifts, 'assigned', new Set([automaticGift.id])).map(
+        (gift) => gift.id
+      )
+    ).toEqual([1, 2]);
   });
 
   it('formats a searchable recipient label without duplicating at-signs', () => {
