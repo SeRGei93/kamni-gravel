@@ -15,7 +15,6 @@ interface MyGiftRecipientSelectProps {
   gift: ManualGift;
   participants: MiniappParticipantOption[];
   isSaving: boolean;
-  showGiftRecipients: boolean;
   onSave: (giftID: number, participantID: number | null) => Promise<void>;
   onAssignRandom: (giftID: number) => Promise<void>;
 }
@@ -36,7 +35,6 @@ export default function MyGiftRecipientSelect({
   gift,
   participants,
   isSaving,
-  showGiftRecipients,
   onSave,
   onAssignRandom,
 }: MyGiftRecipientSelectProps) {
@@ -154,12 +152,10 @@ export default function MyGiftRecipientSelect({
     <>
       {gift.recipient ? (
         <div className="mt-3">
-          {showGiftRecipients && (
-            <p className="tg-muted text-sm leading-5">
-              Получатель: <span className="tg-title font-semibold">{recipientLabel(gift.recipient)}</span>
-            </p>
-          )}
-          <div className={`${showGiftRecipients ? "mt-2" : "mt-0"} flex flex-wrap gap-2`}>
+          <p className="tg-muted text-sm leading-5">
+            Получатель: <span className="tg-title font-semibold">{recipientLabel(gift.recipient)}</span>
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={openPicker}

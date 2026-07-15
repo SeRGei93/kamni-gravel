@@ -9,7 +9,6 @@ interface MyGiftCardProps {
   gift: ManualGift;
   participants: MiniappParticipantOption[];
   savingGiftID: number | null;
-  showGiftRecipients: boolean;
   onSaveRecipient: (giftID: number, participantID: number | null) => Promise<void>;
   onAssignRandomRecipient: (giftID: number) => Promise<void>;
 }
@@ -18,7 +17,6 @@ export default function MyGiftCard({
   gift,
   participants,
   savingGiftID,
-  showGiftRecipients,
   onSaveRecipient,
   onAssignRandomRecipient,
 }: MyGiftCardProps) {
@@ -40,7 +38,6 @@ export default function MyGiftCard({
               gift={gift}
               participants={participants}
               isSaving={savingGiftID === gift.id}
-              showGiftRecipients={showGiftRecipients}
               onSave={onSaveRecipient}
               onAssignRandom={onAssignRandomRecipient}
             />
