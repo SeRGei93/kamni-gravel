@@ -4,7 +4,9 @@ import {
   buildManualGiftUpdate,
   canAssignRandomRecipient,
   formatManualRecipientSearchLabel,
+  getManualGiftsForRecipient,
   getManualGiftStatus,
+  isCurrentManualGiftsRequest,
   isGiftDistributed,
 } from './manualGiftAssignment';
 import type { Gift, ManualGift } from '@/types';
@@ -47,6 +49,69 @@ describe('manual gift assignment helpers', () => {
 
     expect(result[0].manual_assignment).toBeUndefined();
     expect(result[1].manual_assignment?.recipient?.id).toBe(12);
+  });
+
+  it('returns only manually assigned gifts for the requested recipient in API order', () => {
+    const manualGifts: ManualGift[] = [
+      {
+        id: 10,
+        event_id: 7,
+        description: 'First assigned manual gift',
+        review_status: 'approved',
+        manual_distribution: true,
+        recipient: { id: 12, display_name: 'Participant 12', status: 'active' },
+        created_at: '2026-07-15T00:00:00Z',
+      },
+      {
+        id: 11,
+        event_id: 7,
+        description: 'Unassigned manual gift',
+        review_status: 'approved',
+        manual_distribution: true,
+        created_at: '2026-07-15T00:00:00Z',
+      },
+      {
+        id: 12,
+        event_id: 7,
+        description: 'Another participant manual gift',
+        review_status: 'approved',
+        manual_distribution: true,
+        recipient: { id: 24, display_name: 'Participant 24', status: 'active' },
+        created_at: '2026-07-15T00:00:00Z',
+      },
+      {
+        id: 13,
+        event_id: 7,
+        description: 'Unexpected automatic gift',
+        review_status: 'approved',
+        manual_distribution: false,
+        recipient: { id: 12, display_name: 'Participant 12', status: 'active' },
+        created_at: '2026-07-15T00:00:00Z',
+      },
+      {
+        id: 14,
+        event_id: 7,
+        description: 'Second assigned manual gift',
+        review_status: 'approved',
+        manual_distribution: true,
+        recipient: { id: 12, display_name: 'Participant 12', status: 'active' },
+        created_at: '2026-07-15T00:00:00Z',
+      },
+    ];
+
+    expect(getManualGiftsForRecipient(manualGifts, 12).map((gift) => gift.id)).toEqual([10, 14]);
+  });
+
+  it('ignores a manual-gifts response after a newer request starts', () => {
+    const firstRequestVersion = 1;
+    const latestRequestVersion = 2;
+
+    expect(
+      isCurrentManualGiftsRequest(firstRequestVersion, latestRequestVersion)
+    ).toBe(false);
+    expect(
+      isCurrentManualGiftsRequest(latestRequestVersion, latestRequestVersion)
+    ).toBe(true);
   });
 
   it('derives distinct pending, manual, and automatic statuses', () => {

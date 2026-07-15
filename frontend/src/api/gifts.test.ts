@@ -41,6 +41,20 @@ describe('giftsApi', () => {
     expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
   });
 
+  it('gets protected manual gifts for an event', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ gifts: [] }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await giftsApi.getManualByEvent(77);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8080/api/events/77/manual-gifts',
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'GET' });
+  });
+
   it('posts the requested number of copies to the protected copy endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ created_count: 3 }), { status: 201 }),

@@ -41,6 +41,24 @@ export function attachManualGiftAssignments(
   }));
 }
 
+export function getManualGiftsForRecipient(
+  manualGifts: ManualGift[],
+  participantId: number
+): ManualGift[] {
+  return manualGifts.filter(
+    (gift) =>
+      gift.manual_distribution &&
+      gift.recipient?.id === participantId
+  );
+}
+
+export function isCurrentManualGiftsRequest(
+  requestVersion: number,
+  latestRequestVersion: number
+): boolean {
+  return requestVersion === latestRequestVersion;
+}
+
 export function getManualGiftStatus(
   gift: Gift,
   assignedGiftIds: Set<number>

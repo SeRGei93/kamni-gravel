@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ApiError } from '@/api/client';
+import { giftsApi } from '@/api/gifts';
 import { participantsApi } from '@/api/participants';
 import { resultsApi } from '@/api/results';
 import { useParticipantLock } from '@/hooks/useParticipantLock';
@@ -10,6 +11,7 @@ import ParticipantLockBanner from '@/components/participants/ParticipantLockBann
 import type {
   ParticipantDetail,
   Gift,
+  ManualGift,
   Result,
   PrizeGiftAssignment,
   ParticipantStatus,
@@ -26,6 +28,10 @@ import Label from '@/components/form/Label';
 import ResultCriteriaManager from '@/components/participants/ResultCriteriaManager';
 import MatchedGiftModal from '@/components/participants/MatchedGiftModal';
 import { getCriteriaColor } from '@/utils/criteria';
+import {
+  getManualGiftsForRecipient,
+  isCurrentManualGiftsRequest,
+} from '@/utils/manualGiftAssignment';
 import { fromMinskDateTimeInput, toMinskDateTimeInput } from '@/utils/minskTime';
 import { secondsToTimeString } from '@/utils/time';
 import { formatSpeed, formatDistanceKm, metersToKm, kmToMeters } from '@/utils/format';
@@ -140,6 +146,9 @@ export default function ParticipantDetailPage() {
 
   const [participant, setParticipant] = useState<ParticipantDetail | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
+  const [manualGifts, setManualGifts] = useState<ManualGift[]>([]);
+  const [manualGiftsError, setManualGiftsError] = useState(false);
+  const manualGiftsRequestVersionRef = useRef(0);
   const [currentResult, setCurrentResult] = useState<Result | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   // Ошибка первичной загрузки — единственный случай, когда вместо страницы
@@ -203,15 +212,55 @@ export default function ParticipantDetailPage() {
   }, []);
 
   const loadParticipant = useCallback(async () => {
+    const manualGiftsRequestVersion = ++manualGiftsRequestVersionRef.current;
+
     try {
       setIsLoading(true);
       setError(null);
+      setManualGifts([]);
+      setManualGiftsError(false);
 
       // Загружаем данные параллельно
-      const [participantData, giftsData, resultsData] = await Promise.all([
-        participantsApi.getById(participantId),
-        participantsApi.getGifts(participantId),
-        resultsApi.getByParticipant(participantId),
+      const participantPromise = participantsApi.getById(participantId);
+      const giftsPromise = participantsApi.getGifts(participantId);
+      const resultsPromise = resultsApi.getByParticipant(participantId);
+      const participantData = await participantPromise;
+      void giftsApi.getManualByEvent(participantData.event_id).then(
+        (response) => {
+          if (
+            !isCurrentManualGiftsRequest(
+              manualGiftsRequestVersion,
+              manualGiftsRequestVersionRef.current
+            )
+          ) {
+            return;
+          }
+          setManualGifts(
+            getManualGiftsForRecipient(response.gifts, participantData.id)
+          );
+        },
+        (error: unknown) => {
+          if (
+            !isCurrentManualGiftsRequest(
+              manualGiftsRequestVersion,
+              manualGiftsRequestVersionRef.current
+            )
+          ) {
+            return;
+          }
+          setManualGifts([]);
+          setManualGiftsError(true);
+          console.error('[FIX] Failed to load manual gifts for participant:', {
+            operation: 'load_participant_manual_gifts',
+            participant_id: participantData.id,
+            event_id: participantData.event_id,
+            error,
+          });
+        }
+      );
+      const [giftsData, resultsData] = await Promise.all([
+        giftsPromise,
+        resultsPromise,
       ]);
 
       setParticipant(participantData);
@@ -228,6 +277,8 @@ export default function ParticipantDetailPage() {
       fillMetricFieldsFromResult(current);
       setNotes(participantData.notes || '');
     } catch (err) {
+      setManualGifts([]);
+      setManualGiftsError(false);
       setError('Ошибка загрузки данных участника');
       console.error('Failed to load participant:', err);
     } finally {
@@ -236,7 +287,10 @@ export default function ParticipantDetailPage() {
   }, [participantId, fillMetricFieldsFromResult]);
 
   useEffect(() => {
-    loadParticipant();
+    void loadParticipant();
+    return () => {
+      manualGiftsRequestVersionRef.current += 1;
+    };
   }, [loadParticipant]);
 
   // Точечное обновление только блока «Подобранные призы».
@@ -1348,6 +1402,55 @@ export default function ParticipantDetailPage() {
               </p>
             )}
           </div>
+
+          {manualGiftsError ? (
+            <div className="rounded-2xl border border-error-200 bg-error-50 p-5 dark:border-error-800 dark:bg-error-900/20 lg:p-6">
+              <h3 className="mb-2 text-lg font-semibold text-gray-800 dark:text-white">
+                Ручные призы
+              </h3>
+              <p className="text-sm text-error-600 dark:text-error-400">
+                Не удалось загрузить ручные призы
+              </p>
+            </div>
+          ) : manualGifts.length > 0 ? (
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">
+              <h3 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                Ручные призы
+              </h3>
+              <div className="space-y-3">
+                {manualGifts.map((gift) => (
+                  <button
+                    key={gift.id}
+                    type="button"
+                    onClick={() =>
+                      setOpenedGift({ giftId: gift.id, note: 'Назначен вручную' })
+                    }
+                    className="block w-full rounded-lg border border-gray-200 p-3 text-left transition hover:border-brand-300 hover:bg-gray-50 focus:outline-none focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:hover:border-brand-500/50 dark:hover:bg-white/[0.03]"
+                  >
+                    <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                      {gift.description}
+                    </p>
+                    {gift.criteria && gift.criteria.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {gift.criteria.map((criterion) => (
+                          <Badge
+                            key={criterion.id}
+                            color={getCriteriaColor(criterion.criteria_type)}
+                            size="sm"
+                          >
+                            {criterion.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Назначен вручную
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
