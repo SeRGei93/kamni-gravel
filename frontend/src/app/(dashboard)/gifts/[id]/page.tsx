@@ -8,6 +8,7 @@ import { giftsApi } from '@/api/gifts';
 import { participantsApi } from '@/api/participants';
 import GiftEditForm from '@/components/gifts/GiftEditForm';
 import GiftPhotoPreviewGrid from '@/components/gifts/GiftPhotoPreviewGrid';
+import GiftRecipientCard from '@/components/gifts/GiftRecipientCard';
 import Badge from '@/components/ui/badge/Badge';
 import { mergeCriterion } from '@/utils/criteria';
 import type {
@@ -230,6 +231,8 @@ export default function GiftEditPage() {
                 <p>ID пользователя: {gift.user_id}</p>
               </div>
             </div>
+
+            <GiftRecipientCard manualGift={manualGift} />
           </aside>
         </div>
       )}
