@@ -1,4 +1,21 @@
-import type { PrizeDistribution, UnassignedPrizeSlot } from '@/types';
+import type { Gift, PrizeDistribution, UnassignedPrizeSlot } from '@/types';
+
+export function giftDonorName(gift: Gift): string {
+  const fullName = [gift.first_name, gift.last_name]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(' ');
+  if (fullName) {
+    return fullName;
+  }
+
+  const username = gift.username?.trim();
+  if (username) {
+    return username;
+  }
+
+  return `Участник ${gift.user_id}`;
+}
 
 export function participantHasPrize(row: PrizeDistribution): boolean {
   return (

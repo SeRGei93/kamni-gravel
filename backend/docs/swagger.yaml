@@ -1109,8 +1109,50 @@ paths:
         Возвращает только автоматическое распределение: строки участников,
         legacy matched_gifts, slot-level matched_gift_assignments и невыданные
         слоты правил. Подарки с manual_distribution=true и их получатели полностью исключены.
+        Фильтры меняют только отображаемый срез и порядок строк; уже рассчитанные
+        автоматические назначения не пересчитываются. stats и unassigned_slots
+        всегда относятся ко всему событию, а не к выбранному срезу или странице.
       parameters:
         - $ref: '#/components/parameters/EventId'
+        - name: gender
+          in: query
+          description: Пол отображаемого среза. all или отсутствие параметра отключает фильтр.
+          schema:
+            type: string
+            enum: [all, male, female]
+            default: all
+        - name: bike_type
+          in: query
+          description: Зачёт (тип велосипеда) отображаемого среза. all или отсутствие параметра отключает фильтр.
+          schema:
+            type: string
+            enum: [all, gravel, mtb, road, single_speed, tandem]
+            default: all
+        - name: match_reason
+          in: query
+          description: Фильтр по причине уже рассчитанного автоматического назначения. all или отсутствие параметра отключает фильтр.
+          schema:
+            type: string
+            enum: [all, criteria, place, match, no_match]
+            default: all
+        - name: page
+          in: query
+          description: Номер страницы начиная с 1. Пагинация включается, если передан page или page_size.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          description: Размер страницы от 50 до 100; значение all отключает пагинацию.
+          schema:
+            oneOf:
+              - type: integer
+                minimum: 50
+                maximum: 100
+              - type: string
+                enum: [all]
+            default: 50
       responses:
         '200':
           description: Распределение подарков
@@ -2499,14 +2541,25 @@ components:
       properties:
         distribution:
           type: array
+          description: Отфильтрованные строки выбранного среза; при наличии page/page_size содержит только текущую страницу.
           items:
             $ref: '#/components/schemas/PrizeDistribution'
         unassigned_slots:
           type: array
+          description: Невыданные слоты автоматических правил по всему событию, не зависят от фильтров и пагинации.
           items:
             $ref: '#/components/schemas/UnassignedPrizeSlot'
         total:
           type: integer
+          description: Число строк после gender, bike_type и match_reason, до пагинации.
+        page:
+          type: integer
+          description: Номер текущей страницы; передаётся только при включённой пагинации.
+        page_size:
+          type: integer
+          description: Нормализованный размер страницы; передаётся только при включённой пагинации.
+        stats:
+          $ref: '#/components/schemas/PrizeDistributionStats'
 
     PrizeDistribution:
       type: object
@@ -2519,6 +2572,15 @@ components:
           type: string
         bike_type:
           type: string
+          enum: [gravel, mtb, road, single_speed, tandem]
+        status:
+          type: string
+          enum: [active, dnf, disqualified]
+          description: DNF и прочие незачётные строки выводятся после финишировавших и не получают display_place.
+        display_place:
+          type: integer
+          nullable: true
+          description: Место среди активных финишировавших выбранного gender/bike_type-среза; отсутствует у DNF и незачётных строк.
         place_absolute:
           type: integer
         place_by_gender:
@@ -2542,6 +2604,19 @@ components:
         match_reason:
           type: string
           enum: [criteria, place, match, no_match]
+
+    PrizeDistributionStats:
+      type: object
+      description: Агрегаты полного автоматического распределения по событию; фильтры списка на них не влияют.
+      properties:
+        total_participants:
+          type: integer
+        with_prizes:
+          type: integer
+        without_prizes:
+          type: integer
+        prize_slots:
+          type: integer
 
     PrizeGiftAssignment:
       type: object

@@ -3,7 +3,9 @@ package handler
 import (
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -42,14 +44,16 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 	// всё распределение (нужно для страницы призов: подсветка назначенных подарков).
 	page := ParsePageParams(r)
 	paginate := (r.URL.Query().Has("page") || r.URL.Query().Has("page_size")) && !page.All
-	matchReasonFilter := r.URL.Query().Get("match_reason")
+	genderFilter := normalizePrizeDistributionFilter(r.URL.Query().Get("gender"))
+	bikeTypeFilter := normalizePrizeDistributionFilter(r.URL.Query().Get("bike_type"))
+	matchReasonFilter := normalizePrizeDistributionFilter(r.URL.Query().Get("match_reason"))
 
 	// Вызываем query handler
 	distributionOutput, err := h.getPrizeDistributionHandler.HandleDetailed(r.Context(), query.GetPrizeDistributionQuery{
 		EventID: uint(eventID),
 	})
 	if err != nil {
-		log.Printf("Error getting prize distribution: %v", err)
+		log.Printf("ERROR prize distribution failed: event_id=%d stage=calculate error=%v", eventID, err)
 		response.InternalServerError(w, "Failed to get prize distribution")
 		return
 	}
@@ -109,21 +113,12 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 		distributionDTOs = append(distributionDTOs, dtoObj)
 	}
 
-	// Фильтр по типу совпадения (server-side, до пагинации).
-	if matchReasonFilter != "" {
-		filtered := make([]*dto.PrizeDistributionDTO, 0, len(distributionDTOs))
-		for _, d := range distributionDTOs {
-			if d.MatchReason == matchReasonFilter {
-				filtered = append(filtered, d)
-			}
-		}
-		distributionDTOs = filtered
-	}
-
-	total := len(distributionDTOs)
+	cohortRows := filterAndRankPrizeDistribution(distributionDTOs, genderFilter, bikeTypeFilter)
+	filteredRows := filterPrizeDistributionByMatchReason(cohortRows, matchReasonFilter)
+	total := len(filteredRows)
 
 	// Пагинация (срез страницы) поверх отфильтрованного набора.
-	pageItems := distributionDTOs
+	pageItems := filteredRows
 	if paginate {
 		start := page.Offset
 		if start > total {
@@ -133,7 +128,7 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 		if end > total {
 			end = total
 		}
-		pageItems = distributionDTOs[start:end]
+		pageItems = filteredRows[start:end]
 	}
 
 	unassignedSlots := make([]*dto.UnassignedPrizeSlotDTO, 0, len(distributionOutput.UnassignedSlots))
@@ -152,10 +147,86 @@ func (h *PrizeDistributionHandler) GetPrizeDistribution(w http.ResponseWriter, r
 		resp.PageSize = page.PageSize
 	}
 
-	log.Printf("DEBUG Prize distribution served: event_id=%d paginated=%t match_reason=%q total=%d page=%d page_size=%d returned=%d",
-		eventID, paginate, matchReasonFilter, total, page.Page, page.PageSize, len(pageItems))
+	log.Printf("DEBUG Prize distribution served: event_id=%d paginated=%t gender=%q bike_type=%q match_reason=%q source_rows=%d cohort_rows=%d filtered_rows=%d total=%d page=%d page_size=%d returned=%d",
+		eventID,
+		paginate,
+		genderFilter,
+		bikeTypeFilter,
+		matchReasonFilter,
+		len(distributionDTOs),
+		len(cohortRows),
+		len(filteredRows),
+		total,
+		page.Page,
+		page.PageSize,
+		len(pageItems),
+	)
 
 	response.Success(w, resp)
+}
+
+func normalizePrizeDistributionFilter(value string) string {
+	normalized := strings.TrimSpace(value)
+	if normalized == "all" {
+		return ""
+	}
+	return normalized
+}
+
+func filterAndRankPrizeDistribution(
+	rows []*dto.PrizeDistributionDTO,
+	genderFilter, bikeTypeFilter string,
+) []*dto.PrizeDistributionDTO {
+	cohort := make([]*dto.PrizeDistributionDTO, 0, len(rows))
+	for _, row := range rows {
+		if genderFilter != "" && row.Gender != genderFilter {
+			continue
+		}
+		if bikeTypeFilter != "" && row.BikeType != bikeTypeFilter {
+			continue
+		}
+		row.DisplayPlace = nil
+		cohort = append(cohort, row)
+	}
+
+	sort.SliceStable(cohort, func(i, j int) bool {
+		leftRanked := isRankedPrizeDistributionRow(cohort[i])
+		rightRanked := isRankedPrizeDistributionRow(cohort[j])
+		return leftRanked && !rightRanked
+	})
+
+	displayPlace := 0
+	for _, row := range cohort {
+		if !isRankedPrizeDistributionRow(row) {
+			continue
+		}
+		displayPlace++
+		place := displayPlace
+		row.DisplayPlace = &place
+	}
+
+	return cohort
+}
+
+func isRankedPrizeDistributionRow(row *dto.PrizeDistributionDTO) bool {
+	return row.Status == "active" && row.PlaceAbsolute > 0
+}
+
+func filterPrizeDistributionByMatchReason(
+	rows []*dto.PrizeDistributionDTO,
+	matchReasonFilter string,
+) []*dto.PrizeDistributionDTO {
+	if matchReasonFilter == "" {
+		return rows
+	}
+
+	filtered := make([]*dto.PrizeDistributionDTO, 0, len(rows))
+	for _, row := range rows {
+		if row.MatchReason == matchReasonFilter {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
 }
 
 // GetResultsWithPlaces обрабатывает GET /api/events/:id/results

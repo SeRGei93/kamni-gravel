@@ -4,6 +4,7 @@ import {
   countParticipantsWithPrizes,
   countPrizeAssignmentSlots,
   formatUnassignedPrizeSlot,
+  giftDonorName,
   participantHasPrize,
 } from './prizeDistribution';
 
@@ -88,5 +89,13 @@ describe('frontend prize distribution summaries', () => {
         reason: 'target_unavailable',
       })
     ).toBe('Приз 16, место -');
+  });
+
+  it('uses the most useful safe donor name for a prize', () => {
+    expect(giftDonorName({ ...gift, first_name: ' Анна ', last_name: 'Иванова' })).toBe(
+      'Анна Иванова'
+    );
+    expect(giftDonorName({ ...gift, username: 'velo_gift' })).toBe('velo_gift');
+    expect(giftDonorName(gift)).toBe('Участник 20');
   });
 });

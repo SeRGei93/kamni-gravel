@@ -603,6 +603,7 @@ export interface PrizeDistribution {
   gender: string;
   bike_type: string;
   status: ParticipantStatus;
+  display_place?: number | null;
   place_absolute: number;
   place_by_gender: number;
   place_by_gender_bike: number;
