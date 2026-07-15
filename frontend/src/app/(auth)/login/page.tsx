@@ -29,15 +29,6 @@ export default function LoginPage() {
     const formUsername = formData.get('username') as string || username;
     const formPassword = formData.get('password') as string || password;
 
-    console.log('Login attempt:', JSON.stringify({ 
-      username, 
-      password, 
-      formUsername,
-      formPassword,
-      usernameLength: username.length, 
-      passwordLength: password.length 
-    }));
-
     const finalUsername = formUsername || username;
     const finalPassword = formPassword || password;
 
