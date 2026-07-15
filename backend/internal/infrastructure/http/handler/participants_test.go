@@ -389,6 +389,24 @@ func TestParticipantsHandlerAllPageSizeReturnsAll(t *testing.T) {
 	}
 }
 
+func TestParticipantsHandlerAllPageSizeKeepsFiltersSearchAndSorting(t *testing.T) {
+	got := getParticipantsList(
+		t,
+		newParticipantsListTestHandler(),
+		"/api/events/77/participants?bike_type=gravel&gender=male&has_gift=false&q=a&sort=user_id&order=desc&page=3&page_size=all",
+	)
+
+	if got.Total != 2 || len(got.Participants) != 2 {
+		t.Fatalf("filtered all response = total:%d participants:%d, want total:2 participants:2", got.Total, len(got.Participants))
+	}
+	if got.Page != 0 || got.PageSize != 0 {
+		t.Fatalf("page fields should be omitted for all page size: page=%d page_size=%d", got.Page, got.PageSize)
+	}
+	if got.Participants[0].UserID != 333 || got.Participants[1].UserID != 111 {
+		t.Fatalf("filtered all response was not sorted by user_id desc: %+v", got.Participants)
+	}
+}
+
 func TestParticipantsHandlerHasGiftFilter(t *testing.T) {
 	got := getParticipantsList(t, newParticipantsListTestHandler(), "/api/events/77/participants?page=1&page_size=50&has_gift=true")
 	if got.Total != 1 || len(got.Participants) != 1 {

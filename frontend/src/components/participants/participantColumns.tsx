@@ -12,6 +12,8 @@ import { formatDistanceKm, formatSpeed } from '@/utils/format';
 // в таблице берётся отсюда. Значения не редактируются inline — правка остаётся
 // в форме результата (/participants/[id]).
 
+export type ParticipantExportValue = string | number | boolean | null;
+
 export interface ParticipantColumn {
   /** Стабильный ключ колонки (используется в localStorage). */
   key: string;
@@ -25,6 +27,8 @@ export interface ParticipantColumn {
   align?: 'start' | 'end' | 'center';
   /** Рендер содержимого ячейки для участника. */
   render: (participant: Participant) => React.ReactNode;
+  /** Скалярное значение ячейки для экспорта в CSV. */
+  exportValue: (participant: Participant) => ParticipantExportValue;
 }
 
 const GENDER_LABELS: Record<string, string> = {
@@ -66,6 +70,19 @@ function dateTimeOrDash(iso?: string | null): React.ReactNode {
   return <span className={cellText}>{new Date(iso).toLocaleString('ru-RU')}</span>;
 }
 
+function exportText(value?: string | number | null): string | number | null {
+  return value === undefined || value === null || value === '' ? null : value;
+}
+
+function exportDateTime(iso?: string | null): string | null {
+  return iso ? new Date(iso).toLocaleString('ru-RU') : null;
+}
+
+function exportParticipantName(participant: Participant): string | null {
+  const name = `${participant.first_name ?? ''} ${participant.last_name ?? ''}`.trim();
+  return name || null;
+}
+
 /**
  * Дельта к прошлому году (уже со знаком с бэкенда): положительная — быстрее
  * в этом году (зелёная), отрицательная — медленнее (красная).
@@ -91,6 +108,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     label: 'Telegram ID',
     defaultVisible: false,
     render: (p) => textOrDash(p.user_id),
+    exportValue: (p) => p.user_id,
   },
   {
     key: 'place',
@@ -101,6 +119,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
         {p.place && p.place > 0 ? p.place : '-'}
       </span>
     ),
+    exportValue: (p) => (p.place && p.place > 0 ? p.place : null),
   },
   {
     key: 'username',
@@ -115,6 +134,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
         {p.username || `@user${p.user_id}`}
       </Link>
     ),
+    exportValue: (p) => p.username || `@user${p.user_id}`,
   },
   {
     key: 'name',
@@ -123,6 +143,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     defaultVisible: true,
     render: (p) =>
       textOrDash(`${p.first_name ?? ''} ${p.last_name ?? ''}`.trim()),
+    exportValue: exportParticipantName,
   },
   {
     key: 'gender',
@@ -133,6 +154,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
         {GENDER_LABELS[p.gender] || p.gender}
       </Badge>
     ),
+    exportValue: (p) => GENDER_LABELS[p.gender] || p.gender,
   },
   {
     key: 'bike_type',
@@ -143,6 +165,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
         {BIKE_TYPE_LABELS[p.bike_type] || p.bike_type}
       </Badge>
     ),
+    exportValue: (p) => BIKE_TYPE_LABELS[p.bike_type] || p.bike_type,
   },
   {
     key: 'status',
@@ -159,36 +182,55 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
       ) : (
         <span className={cellMuted}>-</span>
       ),
+    exportValue: (p) =>
+      p.status && p.status !== 'active'
+        ? (PARTICIPANT_STATUS_LABELS[p.status] ?? p.status)
+        : null,
   },
   {
     key: 'elapsed_time',
     label: 'Общее время',
     defaultVisible: true,
     render: (p) => textOrDash(p.elapsed_time),
+    exportValue: (p) => exportText(p.elapsed_time),
   },
   {
     key: 'heart_rate_time_product',
     label: 'ЧСС × время',
     defaultVisible: true,
     render: (p) => textOrDash(formatHeartRateTimeProduct(p.heart_rate_time_product)),
+    exportValue: (p) =>
+      p.heart_rate_time_product === undefined ||
+      p.heart_rate_time_product === null ||
+      !Number.isFinite(p.heart_rate_time_product)
+        ? null
+        : Math.round(p.heart_rate_time_product),
   },
   {
     key: 'moving_time',
     label: 'Чистое время',
     defaultVisible: true,
     render: (p) => textOrDash(p.moving_time),
+    exportValue: (p) => exportText(p.moving_time),
   },
   {
     key: 'prev_elapsed_time',
     label: 'Время прошлого года',
     defaultVisible: true,
     render: (p) => textOrDash(p.prev_elapsed_time),
+    exportValue: (p) => exportText(p.prev_elapsed_time),
   },
   {
     key: 'prev_elapsed_delta',
     label: 'Δ к прошлому году',
     defaultVisible: true,
     render: (p) => prevDeltaCell(p.prev_elapsed_delta, p.prev_elapsed_delta_sec),
+    exportValue: (p) =>
+      p.prev_elapsed_delta &&
+      p.prev_elapsed_delta_sec !== undefined &&
+      p.prev_elapsed_delta_sec !== null
+        ? p.prev_elapsed_delta
+        : null,
   },
   {
     key: 'result_link',
@@ -207,6 +249,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
       ) : (
         <span className={cellMuted}>-</span>
       ),
+    exportValue: (p) => exportText(p.result_link),
   },
   {
     key: 'has_gift',
@@ -222,6 +265,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
           Нет
         </Badge>
       ),
+    exportValue: (p) => (p.has_gift ? 'Да' : 'Нет'),
   },
   {
     key: 'prizes_count',
@@ -235,6 +279,7 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
       ) : (
         <span className={cellMuted}>-</span>
       ),
+    exportValue: (p) => (p.prizes_count > 0 ? p.prizes_count : null),
   },
   // --- Off-by-default: места в разных зачётах ---
   {
@@ -242,18 +287,21 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     label: 'Абсолют',
     defaultVisible: false,
     render: (p) => textOrDash(p.place_absolute),
+    exportValue: (p) => exportText(p.place_absolute),
   },
   {
     key: 'place_by_gender',
     label: 'Место (пол)',
     defaultVisible: false,
     render: (p) => textOrDash(p.place_by_gender),
+    exportValue: (p) => exportText(p.place_by_gender),
   },
   {
     key: 'place_by_gender_bike',
     label: 'Место (пол+вел)',
     defaultVisible: false,
     render: (p) => textOrDash(p.place_by_gender_bike),
+    exportValue: (p) => exportText(p.place_by_gender_bike),
   },
   // --- Off-by-default: метрики заезда ---
   {
@@ -261,78 +309,91 @@ export const PARTICIPANT_COLUMNS: ParticipantColumn[] = [
     label: 'Старт',
     defaultVisible: false,
     render: (p) => dateTimeOrDash(p.started_at),
+    exportValue: (p) => exportDateTime(p.started_at),
   },
   {
     key: 'ride_finished_at',
     label: 'Финиш',
     defaultVisible: false,
     render: (p) => dateTimeOrDash(p.ride_finished_at),
+    exportValue: (p) => exportDateTime(p.ride_finished_at),
   },
   {
     key: 'distance_km',
     label: 'Дистанция',
     defaultVisible: false,
     render: (p) => textOrDash(formatDistanceKm(p.distance_meters)),
+    exportValue: (p) => exportText(formatDistanceKm(p.distance_meters)),
   },
   {
     key: 'peak_speed_kmh',
     label: 'Пиковая скорость',
     defaultVisible: false,
     render: (p) => textOrDash(formatSpeed(p.peak_speed_kmh)),
+    exportValue: (p) => exportText(formatSpeed(p.peak_speed_kmh)),
   },
   {
     key: 'avg_speed_kmh',
     label: 'Ср. скорость',
     defaultVisible: false,
     render: (p) => textOrDash(formatSpeed(p.avg_speed_kmh)),
+    exportValue: (p) => exportText(formatSpeed(p.avg_speed_kmh)),
   },
   {
     key: 'avg_moving_speed_kmh',
     label: 'Ср. скорость (движение)',
     defaultVisible: false,
     render: (p) => textOrDash(formatSpeed(p.avg_moving_speed_kmh)),
+    exportValue: (p) => exportText(formatSpeed(p.avg_moving_speed_kmh)),
   },
   {
     key: 'peak_avg_speed_delta_kmh',
     label: 'Пиковая − средняя',
     defaultVisible: false,
     render: (p) => textOrDash(formatSpeed(p.peak_avg_speed_delta_kmh)),
+    exportValue: (p) => exportText(formatSpeed(p.peak_avg_speed_delta_kmh)),
   },
   {
     key: 'idle_time',
     label: 'Простой',
     defaultVisible: false,
     render: (p) => textOrDash(p.idle_time),
+    exportValue: (p) => exportText(p.idle_time),
   },
   {
     key: 'calories',
     label: 'Калории',
     defaultVisible: false,
     render: (p) => textOrDash(p.calories),
+    exportValue: (p) => exportText(p.calories),
   },
   {
     key: 'avg_heart_rate',
     label: 'Ср. пульс',
     defaultVisible: false,
     render: (p) => textOrDash(p.avg_heart_rate),
+    exportValue: (p) => exportText(p.avg_heart_rate),
   },
   {
     key: 'max_heart_rate',
     label: 'Макс. пульс',
     defaultVisible: false,
     render: (p) => textOrDash(p.max_heart_rate),
+    exportValue: (p) => exportText(p.max_heart_rate),
   },
   {
     key: 'avg_cadence',
     label: 'Каденс',
     defaultVisible: false,
     render: (p) => textOrDash(p.avg_cadence),
+    exportValue: (p) => exportText(p.avg_cadence),
   },
   {
     key: 'ride_date',
     label: 'Дата заезда',
     defaultVisible: false,
     render: (p) => textOrDash(p.ride_date),
+    exportValue: (p) => exportText(p.ride_date),
   },
 ];
 

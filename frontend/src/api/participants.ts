@@ -16,6 +16,19 @@ const EVENTS_PREFIX = '/api/events';
 /** Направление сортировки списка участников. */
 export type SortOrder = 'asc' | 'desc';
 
+export interface ParticipantListParams {
+  bike_type?: string;
+  gender?: string;
+  is_finished?: boolean;
+  has_gift?: boolean;
+  criteria_id?: number;
+  q?: string;
+  sort?: string;
+  order?: SortOrder;
+  page: number;
+  page_size: PageSize;
+}
+
 export const participantsApi = {
   // getByEvent возвращает ВСЕХ участников события (без пагинации) — для номинаций и
   // глобального поиска. Не передавайте page/page_size.
@@ -42,18 +55,7 @@ export const participantsApi = {
   // listByEvent возвращает страницу участников (серверная пагинация + все фильтры/поиск).
   async listByEvent(
     eventId: number,
-    params: {
-      bike_type?: string;
-      gender?: string;
-      is_finished?: boolean;
-      has_gift?: boolean;
-      criteria_id?: number;
-      q?: string;
-      sort?: string;
-      order?: SortOrder;
-      page: number;
-      page_size: PageSize;
-    }
+    params: ParticipantListParams
   ): Promise<ParticipantListResponse> {
     const search = new URLSearchParams();
     if (params.bike_type) search.append('bike_type', params.bike_type);

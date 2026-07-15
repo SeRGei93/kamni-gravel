@@ -508,6 +508,11 @@ paths:
     get:
       tags: [Participants]
       summary: Список участников события
+      description: >-
+        Фильтры и поиск применяются к полному списку, затем выполняется
+        сортировка, и только после этого — пагинация. `page_size=all`
+        отключает пагинацию и возвращает весь отфильтрованный набор; это
+        используется административным CSV-экспортом.
       parameters:
         - $ref: '#/components/parameters/EventId'
         - name: bike_type
@@ -518,12 +523,27 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/Gender'
+        - name: is_finished
+          in: query
+          description: Оставить только финишировавших (`true`) или участников без результата (`false`).
+          schema:
+            type: boolean
+        - name: has_gift
+          in: query
+          description: Оставить только дарителей (`true`) или участников без подарка (`false`).
+          schema:
+            type: boolean
         - name: criteria_id
           in: query
           description: Вернуть только участников, у которых критерий привязан к актуальному результату.
           schema:
             type: integer
             minimum: 1
+        - name: q
+          in: query
+          description: Поиск без учёта регистра по username, имени, фамилии или Telegram ID.
+          schema:
+            type: string
         - name: sort
           in: query
           description: >-
@@ -566,6 +586,24 @@ paths:
             type: string
             enum: [asc, desc]
             default: asc
+        - name: page
+          in: query
+          description: Номер страницы начиная с 1. Пагинация включается, если передан page или page_size.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          description: Размер страницы от 50 до 100; значение all отключает пагинацию.
+          schema:
+            oneOf:
+              - type: integer
+                minimum: 50
+                maximum: 100
+              - type: string
+                enum: [all]
+            default: 50
       responses:
         '200':
           description: Список участников
@@ -580,6 +618,13 @@ paths:
                       $ref: '#/components/schemas/Participant'
                   total:
                     type: integer
+                    description: Число строк после фильтрации и до пагинации.
+                  page:
+                    type: integer
+                    description: Номер текущей страницы; передаётся только при включённой пагинации.
+                  page_size:
+                    type: integer
+                    description: Нормализованный размер страницы; передаётся только при включённой пагинации.
 
     post:
       tags: [Participants]

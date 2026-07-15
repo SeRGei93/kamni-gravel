@@ -1,12 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { participantsApi } from '@/api/participants';
 import { criteriaApi } from '@/api/criteria';
 import { eventsApi } from '@/api/events';
 import { extractActiveEvent } from '@/utils/events';
 import { type HasGiftFilter } from '@/utils/participants';
+import { buildParticipantListParams } from '@/utils/participantListParams';
+import {
+  downloadParticipantCsv,
+  isCurrentParticipantExportRequest,
+  shouldSettleParticipantExportRequest,
+} from '@/utils/participantCsv';
 import type { Criteria, Participant } from '@/types';
+import Button from '@/components/ui/button/Button';
+import { DownloadIcon } from '@/icons';
 import ParticipantsTable from '@/components/participants/ParticipantsTable';
 import ColumnSettings from '@/components/participants/ColumnSettings';
 import {
@@ -24,19 +32,6 @@ import { usePaginationParams } from '@/hooks/usePaginationParams';
 import { useSortParams } from '@/hooks/useSortParams';
 import { useFilterParams } from '@/hooks/useFilterParams';
 
-function hasGiftFilterToParam(value: HasGiftFilter): boolean | undefined {
-  if (value === 'yes') return true;
-  if (value === 'no') return false;
-  return undefined;
-}
-
-function criteriaIDFilterToParam(value: string): number | undefined {
-  const criteriaID = Number(value);
-  return Number.isSafeInteger(criteriaID) && criteriaID > 0
-    ? criteriaID
-    : undefined;
-}
-
 export default function ParticipantsPage() {
   const { page, pageSize, setPage, setPageSize } = usePaginationParams();
 
@@ -46,6 +41,11 @@ export default function ParticipantsPage() {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportRequestVersionRef = useRef(0);
+  const exportingRequestVersionRef = useRef<number | null>(null);
+  const isMountedRef = useRef(false);
 
   // Фильтры хранятся в URL — переживают перезагрузку и шарятся ссылкой.
   const { gender, bikeType, isFinished, hasGift, criteriaId, q, setFilters } = useFilterParams();
@@ -153,21 +153,28 @@ export default function ParticipantsPage() {
       setIsLoading(true);
       setError(null);
 
-      const response = await participantsApi.listByEvent(activeEventId, {
-        gender: gender || undefined,
-        bike_type: bikeType || undefined,
-        is_finished: isFinished === '' ? undefined : isFinished === 'true',
-        has_gift: hasGiftFilterToParam(hasGift),
-        criteria_id: criteriaIDFilterToParam(criteriaId),
-        q: q || undefined,
-        sort: sortKey ?? undefined,
-        order: sortKey ? sortOrder : undefined,
-        page,
-        page_size: pageSize,
-      });
-      console.debug('[participants] loaded', {
+      const requestParams = buildParticipantListParams({
+        gender,
+        bikeType,
+        isFinished,
+        hasGift,
+        criteriaId,
+        q,
+        sortKey,
+        sortOrder,
         page,
         pageSize,
+      });
+      const response = await participantsApi.listByEvent(
+        activeEventId,
+        requestParams,
+      );
+      console.debug('[participants] loaded', {
+        event_id: activeEventId,
+        page,
+        page_size: pageSize,
+        sort: requestParams.sort,
+        order: requestParams.order,
         total: response.total,
       });
       setParticipants(response.participants);
@@ -198,7 +205,11 @@ export default function ParticipantsPage() {
 
   // Загрузка активного события
   useEffect(() => {
+    isMountedRef.current = true;
     loadActiveEvent();
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [loadActiveEvent]);
 
   useEffect(() => {
@@ -235,6 +246,142 @@ export default function ParticipantsPage() {
     }
   }, [visibleColumns, sortKey, setSort]);
 
+  // Ответ экспорта больше не актуален, если пользователь сменил условия списка
+  // или ушёл со страницы до его завершения.
+  useEffect(() => {
+    return () => {
+      exportRequestVersionRef.current += 1;
+    };
+  }, [
+    activeEventId,
+    bikeType,
+    criteriaId,
+    gender,
+    hasGift,
+    isFinished,
+    q,
+    sortKey,
+    sortOrder,
+    visibleColumns,
+  ]);
+
+  const handleExport = useCallback(async () => {
+    if (!activeEventId) return;
+
+    const requestVersion = ++exportRequestVersionRef.current;
+    exportingRequestVersionRef.current = requestVersion;
+    const eventId = activeEventId;
+    const columns = visibleColumns;
+    const requestParams = buildParticipantListParams({
+      gender,
+      bikeType,
+      isFinished,
+      hasGift,
+      criteriaId,
+      q,
+      sortKey,
+      sortOrder,
+      page: 1,
+      pageSize: 'all',
+    });
+
+    setIsExporting(true);
+    setExportError(null);
+    console.debug('[participants] export started', {
+      event_id: eventId,
+      filter_keys: Object.entries(requestParams)
+        .filter(
+          ([key, value]) =>
+            !['page', 'page_size', 'sort', 'order'].includes(key) &&
+            value !== undefined,
+        )
+        .map(([key]) => key),
+      sort: requestParams.sort,
+      order: requestParams.order,
+      column_keys: columns.map((column) => column.key),
+    });
+
+    try {
+      const response = await participantsApi.listByEvent(eventId, requestParams);
+      if (
+        !isCurrentParticipantExportRequest(
+          requestVersion,
+          exportRequestVersionRef.current,
+        )
+      ) {
+        console.debug('[participants] export invalidated', {
+          event_id: eventId,
+          request_version: requestVersion,
+          reason: 'list_state_changed',
+        });
+        return;
+      }
+
+      downloadParticipantCsv({
+        eventId,
+        columns,
+        participants: response.participants,
+      });
+      console.debug('[participants] export completed', {
+        event_id: eventId,
+        row_count: response.participants.length,
+        column_keys: columns.map((column) => column.key),
+      });
+    } catch (exportFailure) {
+      if (
+        !isCurrentParticipantExportRequest(
+          requestVersion,
+          exportRequestVersionRef.current,
+        )
+      ) {
+        console.debug('[participants] export invalidated', {
+          event_id: eventId,
+          request_version: requestVersion,
+          reason: 'list_state_changed',
+        });
+        return;
+      }
+
+      setExportError('Не удалось выгрузить список участников');
+      console.error('[participants] export failed', {
+        event_id: eventId,
+        error: exportFailure,
+      });
+    } finally {
+      if (
+        shouldSettleParticipantExportRequest(
+          requestVersion,
+          exportingRequestVersionRef.current,
+          isMountedRef.current,
+        )
+      ) {
+        exportingRequestVersionRef.current = null;
+        setIsExporting(false);
+        console.debug('[FIX:participants-export] export settled', {
+          event_id: eventId,
+          request_version: requestVersion,
+        });
+      } else if (exportingRequestVersionRef.current === requestVersion) {
+        exportingRequestVersionRef.current = null;
+        console.debug('[FIX:participants-export] state reset skipped after unmount', {
+          event_id: eventId,
+          request_version: requestVersion,
+        });
+      }
+    }
+  }, [
+    activeEventId,
+    bikeType,
+    criteriaId,
+    gender,
+    hasGift,
+    isFinished,
+    q,
+    sortKey,
+    sortOrder,
+    visibleColumns,
+  ]);
+
   return (
     <div className="min-w-0 space-y-6">
       <div>
@@ -249,6 +396,12 @@ export default function ParticipantsPage() {
       {error && (
         <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
           <p className="text-error-600 dark:text-error-400">{error}</p>
+        </div>
+      )}
+
+      {exportError && (
+        <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
+          <p className="text-error-600 dark:text-error-400">{exportError}</p>
         </div>
       )}
 
@@ -298,6 +451,15 @@ export default function ParticipantsPage() {
             criteria={criteria}
             onApply={handleApplyFilters}
           />
+          <Button
+            size="sm"
+            variant="outline"
+            startIcon={<DownloadIcon />}
+            onClick={() => void handleExport()}
+            disabled={!activeEventId || isExporting}
+          >
+            {isExporting ? 'Экспорт…' : 'Экспорт в CSV'}
+          </Button>
         </div>
       </div>
 
