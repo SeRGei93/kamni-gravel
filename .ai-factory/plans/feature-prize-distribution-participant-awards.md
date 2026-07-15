@@ -55,7 +55,7 @@
   - Логирование: утилиты форматирования должны быть чистыми и не логировать; диагностические ошибки API остаются в вызывающей странице с контекстом операции и активных фильтров.
   - Зависимости: задача 1.
 
-- [ ] **Задача 4. Обобщить настройки видимости колонок и создать реестр для распределения.**
+- [x] **Задача 4. Обобщить настройки видимости колонок и создать реестр для распределения.**
   - Файлы: `frontend/src/components/participants/ColumnSettings.tsx`, создать `frontend/src/components/prize-distribution/prizeDistributionColumns.tsx`, создать `frontend/src/components/prize-distribution/PrizeDistributionTable.tsx`, создать `frontend/src/components/prize-distribution/prizeDistributionColumns.test.tsx`.
   - Сделать `ColumnSettings` независимым от `ParticipantColumn`: принимать минимальный структурный контракт `key`, `label`, `alwaysVisible`, не меняя UX `/participants`.
   - Описать реестр колонок распределения с отдельным ключом localStorage `prize-distribution:visible-columns`, дефолтами и фиксированным порядком: место выбранного среза, участник, пол, зачёт/тип велосипеда, статус, аудитные места, критерии, призы с дарителями и причина совпадения.
@@ -65,7 +65,7 @@
 
 ### Фаза 3: сценарий награждения в админке
 
-- [ ] **Задача 5. Собрать страницу в рабочий поток «сверху вниз».**
+- [x] **Задача 5. Собрать страницу в рабочий поток «сверху вниз».**
   - Файлы: `frontend/src/app/(dashboard)/prize-distribution/page.tsx`, создать `frontend/src/components/prize-distribution/PrizeDistributionFilters.tsx`.
   - Заменить жёстко заданную таблицу на новый реестр/таблицу и подключить `useColumnPreferences` с независимыми настройками.
   - Добавить два ряда фильтров с семантикой Mini App: «Пол» (Все/Мужчины/Женщины) и «Зачёт» (Все/Gravel/MTB/Шоссе/Single Speed/Тандем), сохранив отдельный фильтр причины совпадения. При любом изменении фильтра сбрасывать страницу на первую и перезапрашивать сервер.

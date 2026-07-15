@@ -3,11 +3,16 @@
 import { useState } from 'react';
 import { Dropdown } from '../ui/dropdown/Dropdown';
 import Checkbox from '../form/input/Checkbox';
-import type { ParticipantColumn } from './participantColumns';
+
+export interface ColumnSettingsColumn {
+  key: string;
+  label: string;
+  alwaysVisible?: boolean;
+}
 
 interface ColumnSettingsProps {
   /** Полный реестр колонок (включая всегда видимые). */
-  columns: ParticipantColumn[];
+  columns: readonly ColumnSettingsColumn[];
   /** Видима ли колонка (из useColumnPreferences). */
   isVisible: (key: string) => boolean;
   /** Переключить колонку. */

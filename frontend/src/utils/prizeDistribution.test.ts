@@ -5,6 +5,7 @@ import {
   countPrizeAssignmentSlots,
   formatUnassignedPrizeSlot,
   giftDonorName,
+  isCurrentPrizeDistributionRequest,
   participantHasPrize,
 } from './prizeDistribution';
 
@@ -97,5 +98,10 @@ describe('frontend prize distribution summaries', () => {
     );
     expect(giftDonorName({ ...gift, username: 'velo_gift' })).toBe('velo_gift');
     expect(giftDonorName(gift)).toBe('Участник 20');
+  });
+
+  it('rejects a response after a newer prize-distribution request starts', () => {
+    expect(isCurrentPrizeDistributionRequest(4, 5)).toBe(false);
+    expect(isCurrentPrizeDistributionRequest(5, 5)).toBe(true);
   });
 });

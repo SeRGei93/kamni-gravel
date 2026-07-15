@@ -1,5 +1,12 @@
 import type { Gift, PrizeDistribution, UnassignedPrizeSlot } from '@/types';
 
+export function isCurrentPrizeDistributionRequest(
+  requestVersion: number,
+  latestRequestVersion: number
+): boolean {
+  return requestVersion === latestRequestVersion;
+}
+
 export function giftDonorName(gift: Gift): string {
   const fullName = [gift.first_name, gift.last_name]
     .map((part) => part?.trim())

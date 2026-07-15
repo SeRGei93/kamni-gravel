@@ -1,54 +1,38 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { eventsApi } from '@/api/events';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
-import { extractActiveEvent } from '@/utils/events';
+import ColumnSettings from '@/components/participants/ColumnSettings';
+import PrizeDistributionFilters from '@/components/prize-distribution/PrizeDistributionFilters';
+import PrizeDistributionTable from '@/components/prize-distribution/PrizeDistributionTable';
+import {
+  PRIZE_DISTRIBUTION_COLUMNS,
+  PRIZE_DISTRIBUTION_COLUMNS_STORAGE_KEY,
+  PRIZE_DISTRIBUTION_DEFAULT_VISIBLE_KEYS,
+  PRIZE_DISTRIBUTION_TOGGLEABLE_COLUMN_KEYS,
+} from '@/components/prize-distribution/prizeDistributionColumns';
+import Badge from '@/components/ui/badge/Badge';
+import PaginationControls from '@/components/tables/PaginationControls';
+import { useColumnPreferences } from '@/hooks/useColumnPreferences';
+import { usePaginationParams } from '@/hooks/usePaginationParams';
 import type {
+  BikeTypeFilter,
+  GenderFilter,
   PrizeDistribution,
   PrizeDistributionStats,
   UnassignedPrizeSlot,
 } from '@/types';
-import { PARTICIPANT_STATUS_LABELS } from '@/types';
-import Select from '@/components/form/Select';
-import Label from '@/components/form/Label';
-import Badge from '@/components/ui/badge/Badge';
-import PaginationControls from '@/components/tables/PaginationControls';
-import { usePaginationParams } from '@/hooks/usePaginationParams';
-import { getCriteriaColor } from '@/utils/criteria';
-import { formatPrizeAssignment } from '@/utils/giftPlaceRule';
-import { formatUnassignedPrizeSlot } from '@/utils/prizeDistribution';
-import Link from 'next/link';
-
-const GENDER_LABELS: Record<string, string> = {
-  male: 'М',
-  female: 'Ж',
-};
-
-const BIKE_TYPE_LABELS: Record<string, string> = {
-  gravel: 'Гравел',
-  mtb: 'МТБ',
-  road: 'Шоссе',
-  single_speed: 'Фикс',
-  tandem: 'Тандем',
-};
-
-const MATCH_REASON_LABELS: Record<string, string> = {
-  criteria: 'По критериям',
-  place: 'По месту',
-  match: 'Совпадение',
-  no_match: 'Нет совпадения',
-};
-
-const MATCH_REASON_COLORS: Record<string, 'success' | 'info' | 'warning' | 'light'> = {
-  criteria: 'success',
-  place: 'info',
-  match: 'warning',
-  no_match: 'light',
-};
+import { extractActiveEvent } from '@/utils/events';
+import {
+  formatUnassignedPrizeSlot,
+  isCurrentPrizeDistributionRequest,
+} from '@/utils/prizeDistribution';
 
 export default function PrizeDistributionPage() {
   const { page, pageSize, setPage, setPageSize } = usePaginationParams();
+  const requestVersionRef = useRef(0);
 
   const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [distribution, setDistribution] = useState<PrizeDistribution[]>([]);
@@ -57,9 +41,30 @@ export default function PrizeDistributionPage() {
   const [stats, setStats] = useState<PrizeDistributionStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [genderFilter, setGenderFilter] = useState<GenderFilter>('all');
+  const [bikeTypeFilter, setBikeTypeFilter] = useState<BikeTypeFilter>('all');
+  const [matchReasonFilter, setMatchReasonFilter] = useState('all');
 
-  // Фильтры
-  const [matchReasonFilter, setMatchReasonFilter] = useState<string>('');
+  const { isVisible, toggle, reset } = useColumnPreferences(
+    PRIZE_DISTRIBUTION_COLUMNS_STORAGE_KEY,
+    PRIZE_DISTRIBUTION_TOGGLEABLE_COLUMN_KEYS,
+    PRIZE_DISTRIBUTION_DEFAULT_VISIBLE_KEYS
+  );
+  const visibleColumns = useMemo(
+    () =>
+      PRIZE_DISTRIBUTION_COLUMNS.filter(
+        (column) => column.alwaysVisible || isVisible(column.key)
+      ),
+    [isVisible]
+  );
+
+  const invalidatePendingRequests = useCallback((reason: string) => {
+    const requestVersion = ++requestVersionRef.current;
+    console.debug('[FIX:prize-distribution] request invalidated', {
+      reason,
+      request_version: requestVersion,
+    });
+  }, []);
 
   const loadActiveEvent = useCallback(async () => {
     try {
@@ -67,104 +72,155 @@ export default function PrizeDistributionPage() {
       const activeEvent = extractActiveEvent(response);
       setActiveEventId(activeEvent?.id ?? null);
       if (!activeEvent) {
+        invalidatePendingRequests('active_event_unavailable');
         setDistribution([]);
         setUnassignedSlots([]);
         setTotal(0);
         setStats(null);
+        setIsLoading(false);
         setError('Нет активного события');
       }
-    } catch (err) {
+    } catch (loadError) {
+      invalidatePendingRequests('active_event_load_failed');
       setActiveEventId(null);
       setDistribution([]);
       setUnassignedSlots([]);
       setTotal(0);
       setStats(null);
+      setIsLoading(false);
       setError('Ошибка загрузки активного события');
-      console.error('Failed to load active event:', {
+      console.error('[FIX:prize-distribution] failed to load active event', {
         operation: 'load_active_event',
-        error: err,
+        error: loadError,
       });
     }
-  }, []);
+  }, [invalidatePendingRequests]);
 
   const loadDistribution = useCallback(async () => {
-    if (!activeEventId) return;
+    if (!activeEventId) {
+      return;
+    }
+
+    const requestVersion = ++requestVersionRef.current;
+    setIsLoading(true);
+    setError(null);
 
     try {
-      setIsLoading(true);
-      setError(null);
-      const response = await prizeDistributionApi.getPrizeDistribution(
-        activeEventId,
-        {
-          match_reason: matchReasonFilter || undefined,
-          page,
-          page_size: pageSize,
-        }
-      );
-      console.debug('[prize-distribution] loaded', {
+      const response = await prizeDistributionApi.getPrizeDistribution(activeEventId, {
+        gender: genderFilter,
+        bike_type: bikeTypeFilter,
+        match_reason: matchReasonFilter,
         page,
-        pageSize,
+        page_size: pageSize,
+      });
+      if (
+        !isCurrentPrizeDistributionRequest(
+          requestVersion,
+          requestVersionRef.current
+        )
+      ) {
+        return;
+      }
+
+      console.debug('[FIX:prize-distribution] loaded', {
+        event_id: activeEventId,
+        gender: genderFilter,
+        bike_type: bikeTypeFilter,
+        match_reason: matchReasonFilter,
+        page,
+        page_size: pageSize,
         total: response.total,
       });
       setDistribution(response.distribution);
       setUnassignedSlots(response.unassigned_slots ?? []);
       setTotal(response.total);
       setStats(response.stats ?? null);
-    } catch (err) {
+    } catch (loadError) {
+      if (
+        !isCurrentPrizeDistributionRequest(
+          requestVersion,
+          requestVersionRef.current
+        )
+      ) {
+        return;
+      }
+
       setError('Ошибка загрузки распределения призов');
-      console.error('Failed to load prize distribution:', {
+      console.error('[FIX:prize-distribution] failed to load distribution', {
         operation: 'load_prize_distribution',
         event_id: activeEventId,
-        error: err,
+        gender: genderFilter,
+        bike_type: bikeTypeFilter,
+        match_reason: matchReasonFilter,
+        page,
+        page_size: pageSize,
+        error: loadError,
       });
     } finally {
-      setIsLoading(false);
+      if (
+        isCurrentPrizeDistributionRequest(
+          requestVersion,
+          requestVersionRef.current
+        )
+      ) {
+        setIsLoading(false);
+      }
     }
-  }, [activeEventId, matchReasonFilter, page, pageSize]);
+  }, [activeEventId, bikeTypeFilter, genderFilter, matchReasonFilter, page, pageSize]);
+
+  const applyFilterChange = useCallback(
+    (change: () => void) => {
+      invalidatePendingRequests('filters_changed');
+      change();
+      setPage(1);
+    },
+    [invalidatePendingRequests, setPage]
+  );
+
+  const handleGenderChange = useCallback(
+    (gender: GenderFilter) => applyFilterChange(() => setGenderFilter(gender)),
+    [applyFilterChange]
+  );
+  const handleBikeTypeChange = useCallback(
+    (bikeType: BikeTypeFilter) => applyFilterChange(() => setBikeTypeFilter(bikeType)),
+    [applyFilterChange]
+  );
+  const handleMatchReasonChange = useCallback(
+    (matchReason: string) => applyFilterChange(() => setMatchReasonFilter(matchReason)),
+    [applyFilterChange]
+  );
 
   useEffect(() => {
-    loadActiveEvent();
+    void loadActiveEvent();
   }, [loadActiveEvent]);
 
   useEffect(() => {
     if (activeEventId) {
-      loadDistribution();
-    } else {
-      setDistribution([]);
-      setUnassignedSlots([]);
-      setTotal(0);
-      setStats(null);
+      void loadDistribution();
+      return () => invalidatePendingRequests('effect_cleanup');
     }
-  }, [loadDistribution, activeEventId]);
 
-  // Сброс на первую страницу при смене фильтра (но не на первом рендере).
-  const didMountRef = useRef(false);
-  useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
-    if (page !== 1) setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchReasonFilter]);
+    invalidatePendingRequests('active_event_unavailable');
+    setDistribution([]);
+    setUnassignedSlots([]);
+    setTotal(0);
+    setStats(null);
+    setIsLoading(false);
+  }, [activeEventId, invalidatePendingRequests, loadDistribution]);
 
-  // Распределение уже отфильтровано и постранично разбито на сервере.
-  const filteredDistribution = distribution;
-
-  // Статистика приходит с сервера (по всему распределению, не по странице).
   const totalParticipants = stats?.total_participants ?? 0;
   const withPrizes = stats?.with_prizes ?? 0;
   const withoutPrizes = stats?.without_prizes ?? 0;
   const totalPrizeAssignments = stats?.prize_slots ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
         <h1 className="mb-2 text-2xl font-semibold text-gray-800 dark:text-white">
-          Автоматическое распределение призов
+          Награждение участников
         </h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Расчёт по критериям и местам. Призы с ручным распределением сюда не входят.
+          Автоматические призы в порядке награждения. Ручные назначения сюда не входят.
         </p>
       </div>
 
@@ -174,71 +230,48 @@ export default function PrizeDistributionPage() {
         </div>
       )}
 
-      {/* Фильтры */}
       <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <Label>Тип совпадения</Label>
-            <Select
-              options={[
-                { value: '', label: 'Все' },
-                { value: 'criteria', label: 'По критериям' },
-                { value: 'place', label: 'По месту' },
-                { value: 'match', label: 'Совпадение' },
-                { value: 'no_match', label: 'Нет совпадения' },
-              ]}
-              placeholder="Все"
-              defaultValue={matchReasonFilter}
-              onChange={setMatchReasonFilter}
-            />
-          </div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Выберите срез, затем проходите участников сверху вниз.
+          </p>
+          <ColumnSettings
+            columns={PRIZE_DISTRIBUTION_COLUMNS}
+            isVisible={isVisible}
+            toggle={toggle}
+            reset={reset}
+          />
         </div>
+        <PrizeDistributionFilters
+          gender={genderFilter}
+          bikeType={bikeTypeFilter}
+          matchReason={matchReasonFilter}
+          onGenderChange={handleGenderChange}
+          onBikeTypeChange={handleBikeTypeChange}
+          onMatchReasonChange={handleMatchReasonChange}
+        />
       </div>
 
-      {/* Статистика */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Всего участников
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-gray-800 dark:text-white">
-            {totalParticipants}
-          </p>
+      <section aria-label="Статистика автоматического распределения">
+        <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
+          Статистика по всему событию, независимо от выбранного среза.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Всего участников" value={totalParticipants} />
+          <StatCard label="С автоматическими призами" value={withPrizes} valueClass="text-success-600 dark:text-success-400" />
+          <StatCard label="Автоматических слотов" value={totalPrizeAssignments} valueClass="text-brand-600 dark:text-brand-400" />
+          <StatCard label="Без автоматического приза" value={withoutPrizes} valueClass="text-gray-600 dark:text-gray-400" />
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            С автоматическими призами
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-success-600 dark:text-success-400">
-            {withPrizes}
-          </p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Автоматических слотов
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-brand-600 dark:text-brand-400">
-            {totalPrizeAssignments}
-          </p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Без автоматического приза
-          </p>
-          <p className="mt-1 text-2xl font-semibold text-gray-600 dark:text-gray-400">
-            {withoutPrizes}
-          </p>
-        </div>
-      </div>
+      </section>
 
       {unassignedSlots.length > 0 && (
         <div className="rounded-xl border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
           <p className="text-sm font-semibold text-warning-700 dark:text-warning-300">
-            Невыданные автоматические слоты: {unassignedSlots.length}
+            Невыданные автоматические слоты по всему событию: {unassignedSlots.length}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {unassignedSlots.map((slot, index) => (
-              <Badge key={`${slot.gift_id}-${slot.target_rank || 'none'}-${index}`} color="warning" size="sm">
+              <Badge key={`${slot.gift_id}-${slot.target_rank ?? 'none'}-${index}`} color="warning" size="sm">
                 {formatUnassignedPrizeSlot(slot)}
               </Badge>
             ))}
@@ -246,204 +279,12 @@ export default function PrizeDistributionPage() {
         </div>
       )}
 
-      {/* Таблица */}
-      <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-800">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Участник
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Пол
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Тип
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Место (абс)
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Место (гендер)
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Место (гендер+тип)
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Критерии
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Приз
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Тип совпадения
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center">
-                    <div className="text-gray-500 dark:text-gray-400">
-                      Загрузка...
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredDistribution.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center">
-                    <div className="text-gray-500 dark:text-gray-400">
-                      Нет данных
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredDistribution.map((dist) => (
-                  <tr
-                    key={dist.participant_id}
-                    className="border-b border-gray-200 last:border-b-0 dark:border-gray-800"
-                  >
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/participants/${dist.participant_id}`}
-                        className="text-sm font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400"
-                      >
-                        {dist.participant_name}
-                      </Link>
-                      {dist.status && dist.status !== 'active' && (
-                        <div className="mt-1">
-                          <Badge
-                            color={
-                              dist.status === 'disqualified' ? 'error' : 'warning'
-                            }
-                            size="sm"
-                          >
-                            {PARTICIPANT_STATUS_LABELS[dist.status]}
-                          </Badge>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        color={dist.gender === 'male' ? 'info' : 'warning'}
-                        size="sm"
-                      >
-                        {GENDER_LABELS[dist.gender]}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge color="light" size="sm">
-                        {BIKE_TYPE_LABELS[dist.bike_type]}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-medium text-gray-800 dark:text-white/90">
-                        {dist.place_absolute || '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-medium text-gray-800 dark:text-white/90">
-                        {dist.place_by_gender || '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-medium text-gray-800 dark:text-white/90">
-                        {dist.place_by_gender_bike || '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {dist.result_criteria && dist.result_criteria.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {dist.result_criteria.map((c) => (
-                            <Badge
-                              key={c.id}
-                              color={getCriteriaColor(c.criteria_type)}
-                              size="sm"
-                            >
-                              {c.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          -
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {dist.matched_gift_assignments && dist.matched_gift_assignments.length > 0 ? (
-                        <div className="space-y-2 max-w-xs">
-                          {dist.matched_gift_assignments.map((assignment, index) => (
-                            <div key={`${assignment.gift_id}-${assignment.target_rank || 'none'}-${index}`} className="border-b border-gray-100 pb-2 last:border-0 last:pb-0 dark:border-gray-700">
-                              <p className="text-sm text-gray-800 dark:text-white/90">
-                                {assignment.gift.description}
-                              </p>
-                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                {formatPrizeAssignment(assignment)}
-                              </p>
-                              {assignment.gift.criteria && assignment.gift.criteria.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {assignment.gift.criteria.map((c) => (
-                                    <Badge
-                                      key={c.id}
-                                      color={getCriteriaColor(c.criteria_type)}
-                                      size="sm"
-                                    >
-                                      {c.name}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : dist.matched_gifts && dist.matched_gifts.length > 0 ? (
-                        <div className="space-y-2 max-w-xs">
-                          {dist.matched_gifts.map((gift, index) => (
-                            <div key={gift.id || index} className="border-b border-gray-100 pb-2 last:border-0 last:pb-0 dark:border-gray-700">
-                              <p className="text-sm text-gray-800 dark:text-white/90">
-                                {gift.description}
-                              </p>
-                              {gift.criteria && gift.criteria.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {gift.criteria.map((c) => (
-                                    <Badge
-                                      key={c.id}
-                                      color={getCriteriaColor(c.criteria_type)}
-                                      size="sm"
-                                    >
-                                      {c.name}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Нет призов
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        color={MATCH_REASON_COLORS[dist.match_reason]}
-                        size="sm"
-                      >
-                        {MATCH_REASON_LABELS[dist.match_reason]}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <PrizeDistributionTable
+        distribution={distribution}
+        columns={visibleColumns}
+        isLoading={isLoading}
+      />
 
-      {/* Управление пагинацией */}
       <PaginationControls
         total={total}
         page={page}
@@ -451,6 +292,23 @@ export default function PrizeDistributionPage() {
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
       />
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  valueClass = 'text-gray-800 dark:text-white',
+}: {
+  label: string;
+  value: number;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
+      <p className="text-sm text-gray-600 dark:text-gray-400">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${valueClass}`}>{value}</p>
     </div>
   );
 }
