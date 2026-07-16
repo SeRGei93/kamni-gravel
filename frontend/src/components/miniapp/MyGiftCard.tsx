@@ -4,6 +4,7 @@ import type { ManualGift, ManualGiftRecipient, MiniappParticipantOption } from "
 import GiftDistributionConditions from "./GiftDistributionConditions";
 import GiftPhotoGallery from "./GiftPhotoGallery";
 import MyGiftRecipientSelect from "./MyGiftRecipientSelect";
+import TelegramProfileLink from "./TelegramProfileLink";
 
 interface MyGiftCardProps {
   gift: ManualGift;
@@ -62,7 +63,10 @@ export default function MyGiftCard({
                 <ul className="mt-1 space-y-1">
                   {gift.recipients.map((recipient) => (
                     <li key={recipient.id} className="tg-title text-sm font-semibold leading-5">
-                      {recipientLabel(recipient)}
+                      <TelegramProfileLink
+                        label={recipientLabel(recipient)}
+                        username={recipient.username}
+                      />
                     </li>
                   ))}
                 </ul>

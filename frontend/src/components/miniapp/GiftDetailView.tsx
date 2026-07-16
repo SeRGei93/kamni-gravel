@@ -1,5 +1,5 @@
 import type { Gift } from "@/types";
-import DonorProfileLink from "./DonorProfileLink";
+import TelegramProfileLink from "./TelegramProfileLink";
 import GiftDistributionConditions from "./GiftDistributionConditions";
 import GiftPhotoGallery from "./GiftPhotoGallery";
 
@@ -66,7 +66,7 @@ function DetailRow({
     <div className="tg-divider rounded-lg border px-3 py-2">
       <p className="tg-muted text-xs font-medium">{label}</p>
       <p className="tg-title mt-1 break-words text-sm font-medium">
-        {username ? <DonorProfileLink label={value} username={username} /> : value}
+        <TelegramProfileLink label={value} username={username} />
       </p>
     </div>
   );

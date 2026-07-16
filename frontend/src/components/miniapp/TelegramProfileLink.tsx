@@ -3,16 +3,20 @@
 import type { MouseEvent } from "react";
 import { getTelegramWebApp, openTelegramProfile } from "@/utils/telegramWebApp";
 
-interface DonorProfileLinkProps {
+interface TelegramProfileLinkProps {
   label: string;
-  username: string;
+  username?: string;
 }
 
-// DonorProfileLink показывает имя дарителя ссылкой на его профиль в Telegram.
-// В Telegram открываем профиль через нативный openTelegramLink, вне Telegram —
-// обычным переходом по ссылке (href остаётся рабочим фолбэком без JS).
-export default function DonorProfileLink({ label, username }: DonorProfileLinkProps) {
-  const handle = username.replace(/^@+/, "").trim();
+// TelegramProfileLink открывает профиль по username через нативный Telegram API.
+// Вне Mini App обычная ссылка остаётся рабочим фолбэком без JavaScript.
+export default function TelegramProfileLink({ label, username }: TelegramProfileLinkProps) {
+  const handle = username?.replace(/^@+/, "").trim();
+
+  if (!handle) {
+    return label;
+  }
+
   const url = `https://t.me/${handle}`;
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {

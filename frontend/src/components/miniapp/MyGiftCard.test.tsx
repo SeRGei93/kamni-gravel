@@ -43,7 +43,9 @@ describe("MyGiftCard automatic recipients", () => {
 
     expect(markup).toContain("Получатели:");
     expect(markup).toContain("Ivan (@ivan)");
+    expect(markup).toContain('href="https://t.me/ivan"');
     expect(markup).toContain("Maria");
+    expect(markup).not.toContain('href="https://t.me/Maria"');
   });
 
   it("uses a singular label for one automatic recipient", () => {
@@ -69,5 +71,6 @@ describe("MyGiftCard automatic recipients", () => {
 
     expect(markup).toContain("Получатель:");
     expect(markup).toContain("Alex (@alex)");
+    expect(markup).toContain('href="https://t.me/alex"');
   });
 });

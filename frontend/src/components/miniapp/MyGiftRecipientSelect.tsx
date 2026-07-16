@@ -10,6 +10,7 @@ import {
 import type { ManualGift, MiniappParticipantOption } from "@/types";
 import { miniappGiftMutationErrorMessage } from "@/utils/miniappMyGifts";
 import { filterMiniappRecipientOptions } from "@/utils/miniappRecipientOptions";
+import TelegramProfileLink from "./TelegramProfileLink";
 
 interface MyGiftRecipientSelectProps {
   gift: ManualGift;
@@ -153,7 +154,13 @@ export default function MyGiftRecipientSelect({
       {gift.recipient ? (
         <div className="mt-3">
           <p className="tg-muted text-sm leading-5">
-            Получатель: <span className="tg-title font-semibold">{recipientLabel(gift.recipient)}</span>
+            Получатель:{" "}
+            <span className="tg-title font-semibold">
+              <TelegramProfileLink
+                label={recipientLabel(gift.recipient)}
+                username={gift.recipient.username}
+              />
+            </span>
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
