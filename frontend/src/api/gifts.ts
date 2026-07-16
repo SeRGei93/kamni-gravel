@@ -93,6 +93,12 @@ export const giftsApi = {
     await post<void>(`${GIFTS_PREFIX}/${id}/random-recipient`);
   },
 
+  // This separate endpoint is restricted to an unassigned manual gift. It
+  // may select an eligible participant who already has another prize.
+  async assignRandomRecipientIncludingAwarded(id: number): Promise<void> {
+    await post<void>(`${GIFTS_PREFIX}/${id}/random-recipient-including-awarded`);
+  },
+
   async delete(id: number): Promise<void> {
     return del<void>(`${GIFTS_PREFIX}/${id}`);
   },

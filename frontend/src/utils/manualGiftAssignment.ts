@@ -158,6 +158,19 @@ export function canAssignRandomRecipient(
   return status === 'automatic_unassigned' || status === 'manual_unassigned';
 }
 
+// canAssignRandomRecipientIncludingAwarded mirrors the narrow server-side
+// contract of the second action: it never converts an automatic gift to a
+// manual one and is available only before a manual recipient is chosen.
+export function canAssignRandomRecipientIncludingAwarded(
+  gift: Gift,
+  assignedGiftIds: Set<number>
+): boolean {
+  return (
+    gift.review_status === 'approved' &&
+    getManualGiftStatus(gift, assignedGiftIds).status === 'manual_unassigned'
+  );
+}
+
 export function formatManualRecipientSearchLabel(name: string, username?: string): string {
   const normalizedUsername = username?.replace(/^@+/, '').trim();
   return normalizedUsername ? `${name} (@${normalizedUsername})` : name;

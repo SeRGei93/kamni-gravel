@@ -25,19 +25,20 @@ import (
 
 // MiniappHandler обрабатывает защищённые запросы Telegram Mini App.
 type MiniappHandler struct {
-	eventRepo                         repository.EventRepository
-	getMiniappGiftsHandler            *query.GetMiniappGiftsHandler
-	getMiniappParticipantCountHandler *query.GetMiniappParticipantCountHandler
-	getParticipantsHandler            *query.GetParticipantsHandler
-	getParticipantByUserHandler       *query.GetParticipantByUserAndEventHandler
-	resultRepo                        repository.ResultRepository
-	getOwnerManualGiftsHandler        *query.GetOwnerManualGiftsHandler
-	hasOwnerGiftsHandler              *query.HasOwnerGiftsHandler
-	getMiniappParticipantsHandler     *query.GetMiniappParticipantsHandler
-	setManualGiftRecipientHandler     *command.SetManualGiftRecipientHandler
-	assignRandomRecipientHandler      *command.AssignRandomManualGiftRecipientHandler
-	fileFetcher                       miniappFileFetcher
-	giftsCache                        miniappGiftsCache
+	eventRepo                                    repository.EventRepository
+	getMiniappGiftsHandler                       *query.GetMiniappGiftsHandler
+	getMiniappParticipantCountHandler            *query.GetMiniappParticipantCountHandler
+	getParticipantsHandler                       *query.GetParticipantsHandler
+	getParticipantByUserHandler                  *query.GetParticipantByUserAndEventHandler
+	resultRepo                                   repository.ResultRepository
+	getOwnerManualGiftsHandler                   *query.GetOwnerManualGiftsHandler
+	hasOwnerGiftsHandler                         *query.HasOwnerGiftsHandler
+	getMiniappParticipantsHandler                *query.GetMiniappParticipantsHandler
+	setManualGiftRecipientHandler                *command.SetManualGiftRecipientHandler
+	assignRandomRecipientHandler                 randomManualGiftRecipientAssigner
+	assignRandomRecipientIncludingAwardedHandler randomManualGiftRecipientIncludingAwardedAssigner
+	fileFetcher                                  miniappFileFetcher
+	giftsCache                                   miniappGiftsCache
 }
 
 // ConfigureManualGiftManagement wires protected owner/manual flows after the
@@ -47,13 +48,23 @@ func (h *MiniappHandler) ConfigureManualGiftManagement(
 	hasOwnerGiftsHandler *query.HasOwnerGiftsHandler,
 	getMiniappParticipantsHandler *query.GetMiniappParticipantsHandler,
 	setManualGiftRecipientHandler *command.SetManualGiftRecipientHandler,
-	assignRandomRecipientHandler *command.AssignRandomManualGiftRecipientHandler,
+	assignRandomRecipientHandler randomManualGiftRecipientAssigner,
+	assignRandomRecipientIncludingAwardedHandler randomManualGiftRecipientIncludingAwardedAssigner,
 ) {
 	h.getOwnerManualGiftsHandler = getOwnerManualGiftsHandler
 	h.hasOwnerGiftsHandler = hasOwnerGiftsHandler
 	h.getMiniappParticipantsHandler = getMiniappParticipantsHandler
 	h.setManualGiftRecipientHandler = setManualGiftRecipientHandler
 	h.assignRandomRecipientHandler = assignRandomRecipientHandler
+	h.assignRandomRecipientIncludingAwardedHandler = assignRandomRecipientIncludingAwardedHandler
+}
+
+type randomManualGiftRecipientIncludingAwardedAssigner interface {
+	Handle(ctx context.Context, cmd command.AssignRandomManualGiftRecipientIncludingAwardedCommand) (uint, error)
+}
+
+type randomManualGiftRecipientAssigner interface {
+	Handle(ctx context.Context, cmd command.AssignRandomManualGiftRecipientCommand) (uint, error)
 }
 
 type miniappFileFetcher interface {
@@ -390,6 +401,64 @@ func (h *MiniappHandler) AssignRandomMyGiftRecipient(w http.ResponseWriter, r *h
 		return
 	}
 
+	response.NoContent(w)
+}
+
+// AssignRandomMyGiftRecipientIncludingAwarded assigns an unassigned owner
+// manual gift to a random finished or DNF participant, including those who
+// already hold another prize.
+func (h *MiniappHandler) AssignRandomMyGiftRecipientIncludingAwarded(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.telegramUser(w, r, "random my gift recipient including awarded")
+	if !ok {
+		return
+	}
+	event, ok := h.activeEvent(w, r, user.ID)
+	if !ok {
+		return
+	}
+	if h.assignRandomRecipientIncludingAwardedHandler == nil {
+		log.Printf("ERROR Miniapp random manual gift recipient including awarded assignment unavailable: telegram_user_id=%d event_id=%d", user.ID, event.ID)
+		response.InternalServerError(w, "Random manual gift assignment is unavailable")
+		return
+	}
+
+	giftID, err := strconv.ParseUint(chi.URLParam(r, "giftId"), 10, 32)
+	if err != nil || giftID == 0 {
+		log.Printf("WARN Miniapp random manual gift recipient including awarded assignment rejected: telegram_user_id=%d event_id=%d reason=invalid_gift_id", user.ID, event.ID)
+		response.BadRequest(w, "Invalid gift ID")
+		return
+	}
+	log.Printf("DEBUG Miniapp random manual gift recipient including awarded assignment request: telegram_user_id=%d event_id=%d gift_id=%d stage=decoded_path", user.ID, event.ID, giftID)
+
+	_, err = h.assignRandomRecipientIncludingAwardedHandler.Handle(r.Context(), command.AssignRandomManualGiftRecipientIncludingAwardedCommand{
+		GiftID:  uint(giftID),
+		EventID: event.ID,
+		Actor: command.ManualGiftRecipientActor{
+			TelegramUserID: user.ID,
+		},
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, command.ErrGiftNotFound),
+			errors.Is(err, command.ErrManualGiftOwnerForbidden),
+			errors.Is(err, command.ErrManualGiftRecipientNotFound):
+			log.Printf("WARN Miniapp random manual gift recipient including awarded assignment rejected: telegram_user_id=%d event_id=%d gift_id=%d reason=not_found", user.ID, event.ID, giftID)
+			response.NotFound(w, "Gift or participant not found")
+		case errors.Is(err, command.ErrManualGiftNotManual),
+			errors.Is(err, command.ErrManualGiftRecipientAlreadyAssigned),
+			errors.Is(err, command.ErrManualGiftRecipientEvent),
+			errors.Is(err, command.ErrManualGiftRecipientIneligible),
+			errors.Is(err, command.ErrManualGiftNoEligibleParticipants):
+			log.Printf("WARN Miniapp random manual gift recipient including awarded assignment rejected: telegram_user_id=%d event_id=%d gift_id=%d reason=conflict", user.ID, event.ID, giftID)
+			response.Conflict(w, err.Error())
+		default:
+			log.Printf("ERROR Miniapp random manual gift recipient including awarded assignment failed: telegram_user_id=%d event_id=%d gift_id=%d error=%v", user.ID, event.ID, giftID, err)
+			response.InternalServerError(w, "Failed to assign random manual gift recipient")
+		}
+		return
+	}
+
+	log.Printf("INFO Miniapp random manual gift recipient including awarded assignment completed: actor_type=telegram telegram_user_id=%d event_id=%d gift_id=%d", user.ID, event.ID, giftID)
 	response.NoContent(w)
 }
 

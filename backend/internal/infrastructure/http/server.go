@@ -254,13 +254,16 @@ func NewServer(
 	)
 	manualGiftRepo, supportsManualGifts := giftRepo.(repository.ManualGiftRepository)
 	var eligibleUnawardedParticipantIDsHandler *query.GetEligibleUnawardedParticipantIDsHandler
+	var eligibleManualGiftParticipantIDsHandler *query.GetEligibleManualGiftParticipantIDsHandler
 	var assignRandomAdminGiftRecipientHandler *command.AssignRandomAdminGiftRecipientHandler
+	var assignRandomAdminGiftRecipientIncludingAwardedHandler *command.AssignRandomAdminGiftRecipientIncludingAwardedHandler
 	if supportsManualGifts {
 		eligibleUnawardedParticipantIDsHandler = query.NewGetEligibleUnawardedParticipantIDsHandler(
 			participantRepo,
 			manualGiftRepo,
 			getPrizeDistributionHandlerTemp,
 		)
+		eligibleManualGiftParticipantIDsHandler = query.NewGetEligibleManualGiftParticipantIDsHandler(participantRepo)
 		if randomRecipientWriter, ok := giftRepo.(repository.RandomManualGiftRecipientRepository); ok {
 			assignRandomAdminGiftRecipientHandler = command.NewAssignRandomAdminGiftRecipientHandler(
 				giftRepo,
@@ -271,6 +274,16 @@ func NewServer(
 			)
 		} else {
 			log.Printf("ERROR Admin random gift assignment unavailable: gift repository does not implement RandomManualGiftRecipientRepository")
+		}
+		if randomRecipientIncludingAwardedWriter, ok := giftRepo.(repository.RandomManualGiftRecipientIncludingAwardedRepository); ok {
+			assignRandomAdminGiftRecipientIncludingAwardedHandler = command.NewAssignRandomAdminGiftRecipientIncludingAwardedHandler(
+				giftRepo,
+				randomRecipientIncludingAwardedWriter,
+				participantRepo,
+				eligibleManualGiftParticipantIDsHandler,
+			)
+		} else {
+			log.Printf("ERROR Admin random manual gift assignment including awarded participants unavailable: gift repository does not implement RandomManualGiftRecipientIncludingAwardedRepository")
 		}
 	} else {
 		log.Printf("ERROR Gift recipient management unavailable: gift repository does not implement ManualGiftRepository")
@@ -316,6 +329,7 @@ func NewServer(
 		updateGiftHandler,
 		copyGiftHandler,
 		assignRandomAdminGiftRecipientHandler,
+		assignRandomAdminGiftRecipientIncludingAwardedHandler,
 		miniappGiftsCache,
 		giftPublicationNotifiers...,
 	)
@@ -346,15 +360,21 @@ func NewServer(
 		miniappGiftsCache,
 	)
 	if supportsManualGifts {
-		participantOptionsHandler := query.NewGetMiniappParticipantsHandler(participantRepo, manualGiftRepo, getPrizeDistributionHandlerTemp)
-		setManualGiftRecipientHandler := command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo)
-		miniappHandler.ConfigureManualGiftManagement(
-			query.NewGetOwnerManualGiftsHandler(manualGiftRepo, criteriaRepo, participantRepo, getPrizeDistributionHandlerTemp),
-			query.NewHasOwnerGiftsHandler(manualGiftRepo),
-			participantOptionsHandler,
-			setManualGiftRecipientHandler,
-			command.NewAssignRandomManualGiftRecipientHandler(eligibleUnawardedParticipantIDsHandler, setManualGiftRecipientHandler),
-		)
+		initialManualRecipientWriter, supportsInitialManualRecipientWriter := giftRepo.(repository.InitialManualGiftRecipientRepository)
+		if !supportsInitialManualRecipientWriter {
+			log.Printf("ERROR Miniapp manual gift management unavailable: gift repository does not implement InitialManualGiftRecipientRepository")
+		} else {
+			participantOptionsHandler := query.NewGetMiniappParticipantsHandler(participantRepo, manualGiftRepo, getPrizeDistributionHandlerTemp)
+			setManualGiftRecipientHandler := command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo)
+			miniappHandler.ConfigureManualGiftManagement(
+				query.NewGetOwnerManualGiftsHandler(manualGiftRepo, criteriaRepo, participantRepo, getPrizeDistributionHandlerTemp),
+				query.NewHasOwnerGiftsHandler(manualGiftRepo),
+				participantOptionsHandler,
+				setManualGiftRecipientHandler,
+				command.NewAssignRandomManualGiftRecipientHandler(eligibleUnawardedParticipantIDsHandler, setManualGiftRecipientHandler),
+				command.NewAssignRandomManualGiftRecipientIncludingAwardedHandler(eligibleManualGiftParticipantIDsHandler, setManualGiftRecipientHandler, initialManualRecipientWriter),
+			)
+		}
 	} else {
 		log.Printf("ERROR Miniapp manual gift management unavailable: gift repository does not implement ManualGiftRepository")
 	}
@@ -579,6 +599,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Get("/participants", s.miniappHandler.Participants)
 			r.Put("/my-gifts/{giftId}/recipient", s.miniappHandler.UpdateMyGiftRecipient)
 			r.Post("/my-gifts/{giftId}/random-recipient", s.miniappHandler.AssignRandomMyGiftRecipient)
+			r.Post("/my-gifts/{giftId}/random-recipient-including-awarded", s.miniappHandler.AssignRandomMyGiftRecipientIncludingAwarded)
 			r.Get("/leaderboard", s.miniappHandler.Leaderboard)
 			r.Get("/telegram/files/{fileId}", s.miniappHandler.TelegramFile)
 		})
@@ -622,6 +643,7 @@ func (s *Server) setupRouter(cfg Config) *chi.Mux {
 			r.Post("/events/{eventId}/gifts", s.giftsHandler.Create)
 			r.Get("/events/{eventId}/manual-gifts", s.giftsHandler.GetManualByEvent)
 			r.Post("/gifts/{id}/random-recipient", s.giftsHandler.AssignRandomRecipient)
+			r.Post("/gifts/{id}/random-recipient-including-awarded", s.giftsHandler.AssignRandomRecipientIncludingAwarded)
 			r.Post("/gifts/{id}/copies", s.giftsHandler.Copy)
 			r.Put("/gifts/{id}", s.giftsHandler.Update)
 			r.Delete("/gifts/{id}", s.giftsHandler.Delete)

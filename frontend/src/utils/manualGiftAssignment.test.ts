@@ -3,6 +3,7 @@ import {
   attachManualGiftAssignments,
   buildManualGiftUpdate,
   canAssignRandomRecipient,
+  canAssignRandomRecipientIncludingAwarded,
   filterGiftsByDistribution,
   formatManualRecipientSearchLabel,
   getManualGiftsForRecipient,
@@ -230,5 +231,39 @@ describe('manual gift assignment helpers', () => {
         created_at: automaticGift.created_at,
       },
     }, new Set())).toBe(false);
+  });
+
+  it('allows the including-awarded random action only for an approved unassigned manual gift', () => {
+    expect(canAssignRandomRecipientIncludingAwarded(automaticGift, new Set())).toBe(false);
+    expect(
+      canAssignRandomRecipientIncludingAwarded(
+        { ...automaticGift, manual_distribution: true },
+        new Set()
+      )
+    ).toBe(true);
+    expect(
+      canAssignRandomRecipientIncludingAwarded(
+        { ...automaticGift, manual_distribution: true, review_status: 'pending_review' },
+        new Set()
+      )
+    ).toBe(false);
+    expect(
+      canAssignRandomRecipientIncludingAwarded(
+        {
+          ...automaticGift,
+          manual_distribution: true,
+          manual_assignment: {
+            id: automaticGift.id,
+            event_id: automaticGift.event_id,
+            description: automaticGift.description,
+            review_status: 'approved',
+            manual_distribution: true,
+            recipient: { id: 12, display_name: 'Alex', status: 'active' },
+            created_at: automaticGift.created_at,
+          },
+        },
+        new Set()
+      )
+    ).toBe(false);
   });
 });

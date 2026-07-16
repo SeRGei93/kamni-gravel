@@ -385,6 +385,44 @@ func TestMiniappAssignRandomMyGiftRecipientUsesOnlyUnawardedParticipants(t *test
 	}
 }
 
+func TestMiniappAssignRandomMyGiftRecipientIncludingAwardedUsesSeparateCommandAndPreservesOwnerErrors(t *testing.T) {
+	const token = "123456:secret"
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := newMiniappTestHandler(
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Active: true}},
+		&miniappHandlerGiftRepoFake{},
+		nil,
+		nil,
+	)
+	strictAssigner := &miniappRandomRecipientAssignerFake{}
+	wideAssigner := &miniappRandomRecipientIncludingAwardedAssignerFake{recipientID: 11}
+	h.assignRandomRecipientHandler = strictAssigner
+	h.assignRandomRecipientIncludingAwardedHandler = wideAssigner
+
+	rr := miniappAssignRandomRecipientIncludingAwardedRequest(t, token, now, h)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 body=%s", rr.Code, rr.Body.String())
+	}
+	if strictAssigner.calls != 0 || wideAssigner.calls != 1 {
+		t.Fatalf("strict/wide calls = %d/%d, want 0/1", strictAssigner.calls, wideAssigner.calls)
+	}
+	if wideAssigner.command.GiftID != 9 || wideAssigner.command.EventID != 77 || wideAssigner.command.Actor.TelegramUserID != 42 {
+		t.Fatalf("wide command = %+v, want protected gift/event/actor scope", wideAssigner.command)
+	}
+
+	wideAssigner.err = command.ErrManualGiftOwnerForbidden
+	rr = miniappAssignRandomRecipientIncludingAwardedRequest(t, token, now, h)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("owner error status = %d, want 404 body=%s", rr.Code, rr.Body.String())
+	}
+
+	wideAssigner.err = command.ErrManualGiftNoEligibleParticipants
+	rr = miniappAssignRandomRecipientIncludingAwardedRequest(t, token, now, h)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("empty candidates status = %d, want 409 body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestMiniappGiftsUsesActiveEventAndApprovedCatalog(t *testing.T) {
 	const token = "123456:secret"
 	now := time.Unix(1_700_000_000, 0).UTC()
@@ -729,6 +767,7 @@ func newMiniappTestHandler(
 	)
 	participantOptionsHandler := query.NewGetMiniappParticipantsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{})
 	eligibleUnawardedParticipantIDsHandler := query.NewGetEligibleUnawardedParticipantIDsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{})
+	eligibleManualGiftParticipantIDsHandler := query.NewGetEligibleManualGiftParticipantIDsHandler(participantRepo)
 	setRecipientHandler := command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo)
 	handler.ConfigureManualGiftManagement(
 		query.NewGetOwnerManualGiftsHandler(giftRepo, criteriaRepo, participantRepo, &miniappPrizeDistributionReaderFake{}),
@@ -736,6 +775,7 @@ func newMiniappTestHandler(
 		participantOptionsHandler,
 		setRecipientHandler,
 		command.NewAssignRandomManualGiftRecipientHandler(eligibleUnawardedParticipantIDsHandler, setRecipientHandler),
+		command.NewAssignRandomManualGiftRecipientIncludingAwardedHandler(eligibleManualGiftParticipantIDsHandler, setRecipientHandler, giftRepo),
 	)
 	return handler
 }
@@ -775,6 +815,37 @@ func miniappAssignRandomRecipientRequest(t *testing.T, token string, now time.Ti
 		routeContext.URLParams.Add("giftId", "9")
 		h.AssignRandomMyGiftRecipient(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, routeContext)))
 	}, "/api/miniapp/my-gifts/9/random-recipient", nil)
+}
+
+func miniappAssignRandomRecipientIncludingAwardedRequest(t *testing.T, token string, now time.Time, h *MiniappHandler) *httptest.ResponseRecorder {
+	t.Helper()
+	return miniappRequestWithMethod(t, token, now, http.MethodPost, func(w http.ResponseWriter, r *http.Request) {
+		routeContext := chi.NewRouteContext()
+		routeContext.URLParams.Add("giftId", "9")
+		h.AssignRandomMyGiftRecipientIncludingAwarded(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, routeContext)))
+	}, "/api/miniapp/my-gifts/9/random-recipient-including-awarded", nil)
+}
+
+type miniappRandomRecipientAssignerFake struct {
+	calls int
+}
+
+func (f *miniappRandomRecipientAssignerFake) Handle(context.Context, command.AssignRandomManualGiftRecipientCommand) (uint, error) {
+	f.calls++
+	return 0, nil
+}
+
+type miniappRandomRecipientIncludingAwardedAssignerFake struct {
+	recipientID uint
+	err         error
+	calls       int
+	command     command.AssignRandomManualGiftRecipientIncludingAwardedCommand
+}
+
+func (f *miniappRandomRecipientIncludingAwardedAssignerFake) Handle(_ context.Context, cmd command.AssignRandomManualGiftRecipientIncludingAwardedCommand) (uint, error) {
+	f.calls++
+	f.command = cmd
+	return f.recipientID, f.err
 }
 
 func miniappIntPtr(v int) *int { return &v }
@@ -898,6 +969,19 @@ func (r *miniappHandlerGiftRepoFake) SetManualRecipient(ctx context.Context, gif
 		r.giftByID.ManualRecipientParticipantID = recipientParticipantID
 	}
 	return nil
+}
+func (r *miniappHandlerGiftRepoFake) AssignInitialManualRecipient(ctx context.Context, giftID uint, recipientParticipantID uint) error {
+	gift, err := r.FindByID(ctx, giftID)
+	if err != nil {
+		return err
+	}
+	if !gift.ManualDistribution {
+		return repository.ErrManualDistributionDisabled
+	}
+	if gift.ManualRecipientParticipantID != nil {
+		return repository.ErrRandomGiftRecipientAlreadyAssigned
+	}
+	return r.SetManualRecipient(ctx, giftID, &recipientParticipantID)
 }
 func (r *miniappHandlerGiftRepoFake) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {
 	return r.manualRecipientCounts, r.manualRecipientCountsErr

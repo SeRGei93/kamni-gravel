@@ -8,6 +8,11 @@ export class MiniappMyGiftsRefreshError extends Error {
   }
 }
 
+export type MiniappGiftMutationAction =
+  | 'recipient_selection'
+  | 'random_unawarded'
+  | 'random_including_awarded';
+
 export function miniappGiftReviewLabel(gift: ManualGift): string {
   return gift.review_status === 'approved' ? 'Проверен' : 'На проверке';
 }
@@ -22,7 +27,10 @@ export function miniappGiftRecipientLabel(gift: ManualGift): string {
   return gift.recipient?.display_name ?? 'Получатель пока не выбран';
 }
 
-export function miniappGiftMutationErrorMessage(error: unknown): string {
+export function miniappGiftMutationErrorMessage(
+  error: unknown,
+  action: MiniappGiftMutationAction = 'recipient_selection'
+): string {
   if (error instanceof MiniappMyGiftsRefreshError) {
     return 'Получатель назначен, но список не удалось обновить. Обновите страницу.';
   }
@@ -34,6 +42,12 @@ export function miniappGiftMutationErrorMessage(error: unknown): string {
     return 'Приз или участник больше недоступен. Обновите список и выберите получателя снова.';
   }
   if (error.status === 409) {
+    if (action === 'random_unawarded') {
+      return 'Не удалось назначить участника без награды: приз уже назначен, не находится в ручном режиме или подходящих участников без награды не осталось.';
+    }
+    if (action === 'random_including_awarded') {
+      return 'Не удалось случайно назначить получателя: приз уже назначен, не находится в ручном режиме или нет допустимых участников. Получатель должен завершить заезд или иметь статус «сошёл с дистанции».';
+    }
     return 'Этот приз нельзя назначить вручную: получатель должен завершить заезд или иметь статус «сошёл с дистанции». Также проверьте событие и наличие участников без награды.';
   }
   if (error.status === 400) {

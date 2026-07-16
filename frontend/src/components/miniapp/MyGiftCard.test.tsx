@@ -21,10 +21,11 @@ function renderCard(gift: ManualGift, showGiftRecipients: boolean): string {
     <MyGiftCard
       gift={gift}
       participants={[]}
-      savingGiftID={null}
+      isSaving={false}
       showGiftRecipients={showGiftRecipients}
       onSaveRecipient={async () => undefined}
       onAssignRandomRecipient={async () => undefined}
+      onAssignRandomRecipientIncludingAwarded={async () => undefined}
     />
   );
 }

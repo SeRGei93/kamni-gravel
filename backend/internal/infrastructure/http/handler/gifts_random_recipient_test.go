@@ -71,6 +71,59 @@ func TestGiftsHandlerAssignRandomRecipientMapsErrorsAndUnavailableDependency(t *
 	}
 }
 
+func TestGiftsHandlerAssignRandomRecipientIncludingAwardedUsesSeparateDependencyAndDoesNotInvalidateCache(t *testing.T) {
+	strictAssigner := &randomGiftRecipientAssignerFake{}
+	wideAssigner := &randomGiftRecipientIncludingAwardedAssignerFake{result: &command.AssignRandomAdminGiftRecipientIncludingAwardedResult{
+		GiftID:                 1,
+		EventID:                77,
+		RecipientParticipantID: 10,
+	}}
+	cacheFake := &miniappGiftsCacheInvalidatorFake{}
+	h := &GiftsHandler{
+		assignRandomRecipient:                 strictAssigner,
+		assignRandomRecipientIncludingAwarded: wideAssigner,
+		giftsCache:                            cacheFake,
+	}
+
+	rr := assignRandomRecipientIncludingAwardedRequest(t, h, "1")
+	if rr.Code != http.StatusNoContent || rr.Body.Len() != 0 {
+		t.Fatalf("status/body = %d/%q, want 204 and empty", rr.Code, rr.Body.String())
+	}
+	if strictAssigner.calls != 0 {
+		t.Fatalf("strict assigner calls = %d, want 0", strictAssigner.calls)
+	}
+	if wideAssigner.calls != 1 {
+		t.Fatalf("wide assigner calls = %d, want 1", wideAssigner.calls)
+	}
+	if len(cacheFake.events) != 0 {
+		t.Fatalf("cache invalidations = %v, want none", cacheFake.events)
+	}
+}
+
+func TestGiftsHandlerAssignRandomRecipientIncludingAwardedMapsErrorsAndUnavailableDependency(t *testing.T) {
+	testCases := []struct {
+		name       string
+		assigner   randomGiftRecipientIncludingAwardedAssigner
+		giftID     string
+		wantStatus int
+	}{
+		{name: "unavailable", giftID: "1", wantStatus: http.StatusInternalServerError},
+		{name: "invalid ID", assigner: &randomGiftRecipientIncludingAwardedAssignerFake{}, giftID: "invalid", wantStatus: http.StatusBadRequest},
+		{name: "not found", assigner: &randomGiftRecipientIncludingAwardedAssignerFake{err: command.ErrGiftNotFound}, giftID: "1", wantStatus: http.StatusNotFound},
+		{name: "conflict", assigner: &randomGiftRecipientIncludingAwardedAssignerFake{err: command.ErrManualGiftNotManual}, giftID: "1", wantStatus: http.StatusConflict},
+		{name: "unexpected failure", assigner: &randomGiftRecipientIncludingAwardedAssignerFake{err: errors.New("database unavailable")}, giftID: "1", wantStatus: http.StatusInternalServerError},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			h := &GiftsHandler{assignRandomRecipientIncludingAwarded: testCase.assigner}
+			rr := assignRandomRecipientIncludingAwardedRequest(t, h, testCase.giftID)
+			if rr.Code != testCase.wantStatus {
+				t.Fatalf("status = %d, want %d body=%s", rr.Code, testCase.wantStatus, rr.Body.String())
+			}
+		})
+	}
+}
+
 func assignRandomRecipientRequest(t *testing.T, h *GiftsHandler, giftID string) *httptest.ResponseRecorder {
 	t.Helper()
 	router := chi.NewRouter()
@@ -80,11 +133,33 @@ func assignRandomRecipientRequest(t *testing.T, h *GiftsHandler, giftID string) 
 	return rr
 }
 
+func assignRandomRecipientIncludingAwardedRequest(t *testing.T, h *GiftsHandler, giftID string) *httptest.ResponseRecorder {
+	t.Helper()
+	router := chi.NewRouter()
+	router.Post("/api/gifts/{id}/random-recipient-including-awarded", h.AssignRandomRecipientIncludingAwarded)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/gifts/"+giftID+"/random-recipient-including-awarded", nil))
+	return rr
+}
+
 type randomGiftRecipientAssignerFake struct {
 	result *command.AssignRandomAdminGiftRecipientResult
 	err    error
+	calls  int
 }
 
 func (f *randomGiftRecipientAssignerFake) Handle(context.Context, command.AssignRandomAdminGiftRecipientCommand) (*command.AssignRandomAdminGiftRecipientResult, error) {
+	f.calls++
+	return f.result, f.err
+}
+
+type randomGiftRecipientIncludingAwardedAssignerFake struct {
+	result *command.AssignRandomAdminGiftRecipientIncludingAwardedResult
+	err    error
+	calls  int
+}
+
+func (f *randomGiftRecipientIncludingAwardedAssignerFake) Handle(context.Context, command.AssignRandomAdminGiftRecipientIncludingAwardedCommand) (*command.AssignRandomAdminGiftRecipientIncludingAwardedResult, error) {
+	f.calls++
 	return f.result, f.err
 }

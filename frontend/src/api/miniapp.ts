@@ -170,6 +170,13 @@ export const miniappApi = {
     );
   },
 
+  async assignRandomMyGiftRecipientIncludingAwarded(giftID: number): Promise<void> {
+    await miniappRequest<void>(
+      `${MINIAPP_PREFIX}/my-gifts/${encodeURIComponent(String(giftID))}/random-recipient-including-awarded`,
+      { method: 'POST' }
+    );
+  },
+
   async getTelegramFile(fileId: string): Promise<Blob> {
     return miniappBlobRequest(
       `${MINIAPP_PREFIX}/telegram/files/${encodeURIComponent(fileId)}`,

@@ -46,6 +46,18 @@ describe('Mini App My Prizes helpers', () => {
   it('maps stale and conflicting mutations to actionable messages', () => {
     expect(miniappGiftMutationErrorMessage(new MiniappApiError(404, 'Not Found'))).toContain('недоступен');
     expect(miniappGiftMutationErrorMessage(new MiniappApiError(409, 'Conflict'))).toContain('завершить заезд');
+    expect(
+      miniappGiftMutationErrorMessage(
+        new MiniappApiError(409, 'Conflict'),
+        'random_unawarded'
+      )
+    ).toContain('без награды');
+    expect(
+      miniappGiftMutationErrorMessage(
+        new MiniappApiError(409, 'Conflict'),
+        'random_including_awarded'
+      )
+    ).not.toContain('без награды');
     expect(miniappGiftMutationErrorMessage(new MiniappMyGiftsRefreshError())).toContain('назначен');
   });
 

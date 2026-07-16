@@ -973,6 +973,40 @@ paths:
             Приз не проверен, уже распределён, не осталось участников без
             приза или состояние изменилось одновременно с запросом.
 
+  /gifts/{id}/random-recipient-including-awarded:
+    post:
+      tags: [Gifts]
+      summary: Случайно распределить ручной приз среди всех допустимых участников
+      description: >-
+        Защищённое административное действие без тела запроса. В отличие от
+        random-recipient, этот маршрут доступен только для одобренного ручного
+        приза без получателя и может выбрать участника, уже получившего
+        автоматический или ручной приз. Получатель должен относиться к тому же
+        событию, финишировать или иметь статус DNF и не быть дисквалифицированным.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: ID ручного приза
+      responses:
+        '204':
+          description: Получатель выбран и назначен; тело ответа отсутствует
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Приз или выбранный участник не найден
+        '409':
+          description: >-
+            Приз не проверен, не в ручном режиме, уже имеет получателя, нет
+            допустимых участников или состояние изменилось одновременно с запросом.
+
   /gifts/{id}/copies:
     post:
       tags: [Gifts]
@@ -1695,6 +1729,35 @@ paths:
           description: Нет активного события или подарок недоступен владельцу
         '409':
           description: Подарок не ручной или не осталось участников без награды
+
+  /miniapp/my-gifts/{giftId}/random-recipient-including-awarded:
+    post:
+      tags: [Miniapp]
+      summary: Случайно назначить ручной приз допустимому участнику
+      description: >-
+        Владелец и активное событие определяются на сервере из Telegram init
+        data. В отличие от random-recipient, получатель может уже иметь
+        автоматический или вручную назначенный приз. Доступен только для ручного
+        подарка владельца без получателя; DNS и дисквалифицированные участники
+        не выбираются.
+      security:
+        - TelegramWebAppInitData: []
+      parameters:
+        - name: giftId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: Случайный получатель назначен
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Нет активного события или подарок недоступен владельцу
+        '409':
+          description: Подарок не ручной, уже имеет получателя или нет допустимых участников
 
   /miniapp/telegram/files/{fileId}:
     get:

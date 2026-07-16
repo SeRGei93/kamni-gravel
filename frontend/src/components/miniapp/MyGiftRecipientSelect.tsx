@@ -8,7 +8,10 @@ import {
   type KeyboardEvent,
 } from "react";
 import type { ManualGift, MiniappParticipantOption } from "@/types";
-import { miniappGiftMutationErrorMessage } from "@/utils/miniappMyGifts";
+import {
+  miniappGiftMutationErrorMessage,
+  type MiniappGiftMutationAction,
+} from "@/utils/miniappMyGifts";
 import { filterMiniappRecipientOptions } from "@/utils/miniappRecipientOptions";
 import TelegramProfileLink from "./TelegramProfileLink";
 
@@ -18,6 +21,7 @@ interface MyGiftRecipientSelectProps {
   isSaving: boolean;
   onSave: (giftID: number, participantID: number | null) => Promise<void>;
   onAssignRandom: (giftID: number) => Promise<void>;
+  onAssignRandomIncludingAwarded: (giftID: number) => Promise<void>;
 }
 
 interface RecipientLabelParticipant {
@@ -38,6 +42,7 @@ export default function MyGiftRecipientSelect({
   isSaving,
   onSave,
   onAssignRandom,
+  onAssignRandomIncludingAwarded,
 }: MyGiftRecipientSelectProps) {
   const [search, setSearch] = useState("");
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -88,16 +93,20 @@ export default function MyGiftRecipientSelect({
     void saveRecipient(participant.id, true);
   };
 
-  const assignRandomRecipient = async () => {
+  const assignRandomRecipient = async (
+    action: MiniappGiftMutationAction,
+    assign: (giftID: number) => Promise<void>,
+  ) => {
     try {
       setError(null);
-      await onAssignRandom(gift.id);
+      await assign(gift.id);
     } catch (saveError) {
       console.warn("[miniapp] random manual recipient update failed", {
-        giftId: gift.id,
+        operation: action,
+        gift_id: gift.id,
         message: saveError instanceof Error ? saveError.message : "Unknown error",
       });
-      setError(miniappGiftMutationErrorMessage(saveError));
+      setError(miniappGiftMutationErrorMessage(saveError, action));
     }
   };
 
@@ -174,23 +183,43 @@ export default function MyGiftRecipientSelect({
           </div>
         </div>
       ) : (
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 space-y-2">
           <button
             type="button"
             onClick={openPicker}
             disabled={isSaving}
-            className="tg-divider tg-title min-h-12 flex-1 rounded-lg border bg-transparent px-3 py-2 text-left text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-60"
+            className="tg-divider tg-title min-h-12 w-full rounded-lg border bg-transparent px-3 py-2 text-left text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Выберите получателя
           </button>
-          <button
-            type="button"
-            onClick={() => void assignRandomRecipient()}
-            disabled={isSaving}
-            className="tg-link-button min-h-12 flex-1 rounded-lg border px-3 py-2 text-left text-xs font-semibold leading-4 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Отдать рандомному участнику без награды
-          </button>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() =>
+                void assignRandomRecipient(
+                  "random_unawarded",
+                  onAssignRandom
+                )
+              }
+              disabled={isSaving}
+              className="tg-link-button min-h-12 w-full rounded-lg border px-3 py-2 text-left text-xs font-semibold leading-4 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Отдать рандомному участнику без награды
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void assignRandomRecipient(
+                  "random_including_awarded",
+                  onAssignRandomIncludingAwarded
+                )
+              }
+              disabled={isSaving}
+              className="tg-link-button min-h-12 w-full rounded-lg border px-3 py-2 text-left text-xs font-semibold leading-4 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Отдать рандомному участнику
+            </button>
+          </div>
         </div>
       )}
       {!isPickerOpen && error && <p className="tg-error mt-2 text-sm leading-5">{error}</p>}

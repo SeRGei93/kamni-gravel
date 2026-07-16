@@ -9,7 +9,11 @@ import Button from '../ui/button/Button';
 import { CheckLineIcon, PencilIcon } from '@/icons';
 import { getCriteriaColor } from '@/utils/criteria';
 import { formatGiftPlaceRule } from '@/utils/giftPlaceRule';
-import { canAssignRandomRecipient, getManualGiftStatus } from '@/utils/manualGiftAssignment';
+import {
+  canAssignRandomRecipient,
+  canAssignRandomRecipientIncludingAwarded,
+  getManualGiftStatus,
+} from '@/utils/manualGiftAssignment';
 import type { Gift } from '@/types';
 import { useGiftPhotoUrls } from './useGiftPhotoUrls';
 
@@ -20,6 +24,7 @@ interface GiftsTableProps {
   onApprove?: (gift: Gift) => Promise<void>;
   onEnableManualAssignment?: (gift: Gift) => Promise<void>;
   onAssignRandomRecipient?: (gift: Gift) => Promise<void>;
+  onAssignRandomRecipientIncludingAwarded?: (gift: Gift) => Promise<void>;
   editQueryString?: string;
 }
 
@@ -30,6 +35,7 @@ export default function GiftsTable({
   onApprove,
   onEnableManualAssignment,
   onAssignRandomRecipient,
+  onAssignRandomRecipientIncludingAwarded,
   editQueryString,
 }: GiftsTableProps) {
   const [approvingId, setApprovingId] = useState<number | null>(null);
@@ -77,6 +83,19 @@ export default function GiftsTable({
     }
   };
 
+  const handleAssignRandomRecipientIncludingAwarded = async (gift: Gift) => {
+    if (!onAssignRandomRecipientIncludingAwarded) {
+      return;
+    }
+
+    setAssigningRandomRecipientId(gift.id);
+    try {
+      await onAssignRandomRecipientIncludingAwarded(gift);
+    } finally {
+      setAssigningRandomRecipientId(null);
+    }
+  };
+
   const photoUrlTargets = useMemo(
     () =>
       gifts.flatMap((gift) => {
@@ -108,7 +127,7 @@ export default function GiftsTable({
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
       <div className="max-w-full overflow-x-auto">
-        <div className="min-w-[1320px]">
+        <div className="min-w-[1600px]">
           <Table>
             <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
               <TableRow>
@@ -193,6 +212,11 @@ export default function GiftsTable({
                   gift,
                   currentAssignedGiftIds
                 );
+                const canAssignRandomIncludingAwarded =
+                  canAssignRandomRecipientIncludingAwarded(
+                    gift,
+                    currentAssignedGiftIds
+                  );
 
                 return (
                   <TableRow
@@ -205,7 +229,7 @@ export default function GiftsTable({
                       </span>
                     </TableCell>
                     <TableCell className="px-5 py-4">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {photoUrl ? (
                           <Image
                             src={photoUrl}
@@ -339,14 +363,31 @@ export default function GiftsTable({
                             variant="outline"
                             onClick={() => handleAssignRandomRecipient(gift)}
                             disabled={assigningRandomRecipientId === gift.id}
-                            title="Назначить случайного участника без приза"
-                            className="text-brand-600 dark:text-brand-400"
+                            title="Отдать рандомному участнику без награды"
+                            className="whitespace-nowrap text-brand-600 dark:text-brand-400"
                           >
                             {assigningRandomRecipientId === gift.id
                               ? 'Распределяем...'
-                              : 'Случайно'}
+                              : 'Отдать рандомному участнику без награды'}
                           </Button>
                         )}
+                        {canAssignRandomIncludingAwarded &&
+                          onAssignRandomRecipientIncludingAwarded && (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() =>
+                                handleAssignRandomRecipientIncludingAwarded(gift)
+                              }
+                              disabled={assigningRandomRecipientId === gift.id}
+                              title="Отдать рандомному участнику"
+                              className="whitespace-nowrap text-brand-600 dark:text-brand-400"
+                            >
+                              {assigningRandomRecipientId === gift.id
+                                ? 'Распределяем...'
+                                : 'Отдать рандомному участнику'}
+                            </Button>
+                          )}
                         <Link
                           href={`/gifts/${gift.id}${
                             editQueryString ? `?${editQueryString}` : ''
