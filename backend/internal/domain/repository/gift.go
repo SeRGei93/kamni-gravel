@@ -15,6 +15,8 @@ var (
 	ErrManualRecipientNotFound = errors.New("manual recipient participant not found")
 	// ErrManualRecipientEventMismatch означает, что получатель принадлежит другому событию.
 	ErrManualRecipientEventMismatch = errors.New("manual recipient participant belongs to another event")
+	// ErrManualRecipientIneligible means a recipient is no longer finished or DNF.
+	ErrManualRecipientIneligible = errors.New("manual recipient participant is ineligible")
 	// ErrRandomGiftRecipientAlreadyAssigned means another request assigned the gift first.
 	ErrRandomGiftRecipientAlreadyAssigned = errors.New("gift recipient is already assigned")
 	// ErrRandomGiftRecipientGiftNotApproved means a random recipient may only be assigned to an approved gift.
@@ -113,6 +115,22 @@ type ManualGiftRecipientCountRepository interface {
 // assignment does not need this transactional claim operation.
 type RandomManualGiftRecipientRepository interface {
 	AssignRandomManualRecipient(ctx context.Context, giftID uint, recipientParticipantID uint) error
+}
+
+// RandomManualGiftRecipientIncludingAwardedRepository atomically assigns an
+// already-manual gift to an eligible participant without considering their
+// existing automatic or manual prizes. It remains separate from both the base
+// gift repository and the strict unawarded-recipient workflow.
+type RandomManualGiftRecipientIncludingAwardedRepository interface {
+	AssignRandomManualRecipientIncludingAwarded(ctx context.Context, giftID uint, recipientParticipantID uint) error
+}
+
+// InitialManualGiftRecipientRepository atomically assigns the first recipient
+// of an owner-managed manual gift. It deliberately does not expose the
+// replace-or-clear capability of ManualGiftRepository.SetManualRecipient:
+// the owner random action must never overwrite an existing assignment.
+type InitialManualGiftRecipientRepository interface {
+	AssignInitialManualRecipient(ctx context.Context, giftID uint, recipientParticipantID uint) error
 }
 
 // GiftCopyRepository atomically creates copies of an unrestricted gift together

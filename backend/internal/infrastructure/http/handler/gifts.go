@@ -26,20 +26,25 @@ import (
 
 // GiftsHandler обрабатывает запросы для подарков
 type GiftsHandler struct {
-	giftRepo              repository.GiftRepository
-	getGiftsHandler       *query.GetGiftsHandler
-	getGiftByIDHandler    *query.GetGiftByIDHandler
-	getManualGiftsHandler *query.GetManualGiftsHandler
-	addGiftHandler        *command.AddGiftHandler
-	updateGiftHandler     *command.UpdateGiftHandler
-	copyGiftHandler       giftCopier
-	assignRandomRecipient randomGiftRecipientAssigner
-	publicGiftNotifier    GiftPublicationNotifier
-	giftsCache            miniappGiftsCacheInvalidator
+	giftRepo                              repository.GiftRepository
+	getGiftsHandler                       *query.GetGiftsHandler
+	getGiftByIDHandler                    *query.GetGiftByIDHandler
+	getManualGiftsHandler                 *query.GetManualGiftsHandler
+	addGiftHandler                        *command.AddGiftHandler
+	updateGiftHandler                     *command.UpdateGiftHandler
+	copyGiftHandler                       giftCopier
+	assignRandomRecipient                 randomGiftRecipientAssigner
+	assignRandomRecipientIncludingAwarded randomGiftRecipientIncludingAwardedAssigner
+	publicGiftNotifier                    GiftPublicationNotifier
+	giftsCache                            miniappGiftsCacheInvalidator
 }
 
 type randomGiftRecipientAssigner interface {
 	Handle(ctx context.Context, cmd command.AssignRandomAdminGiftRecipientCommand) (*command.AssignRandomAdminGiftRecipientResult, error)
+}
+
+type randomGiftRecipientIncludingAwardedAssigner interface {
+	Handle(ctx context.Context, cmd command.AssignRandomAdminGiftRecipientIncludingAwardedCommand) (*command.AssignRandomAdminGiftRecipientIncludingAwardedResult, error)
 }
 
 type giftCopier interface {
@@ -68,6 +73,7 @@ func NewGiftsHandler(
 	updateGiftHandler *command.UpdateGiftHandler,
 	copyGiftHandler giftCopier,
 	assignRandomRecipient randomGiftRecipientAssigner,
+	assignRandomRecipientIncludingAwarded randomGiftRecipientIncludingAwardedAssigner,
 	giftsCache miniappGiftsCacheInvalidator,
 	publicGiftNotifier ...GiftPublicationNotifier,
 ) *GiftsHandler {
@@ -77,16 +83,17 @@ func NewGiftsHandler(
 	}
 
 	return &GiftsHandler{
-		giftRepo:              giftRepo,
-		getGiftsHandler:       getGiftsHandler,
-		getGiftByIDHandler:    getGiftByIDHandler,
-		getManualGiftsHandler: getManualGiftsHandler,
-		addGiftHandler:        addGiftHandler,
-		updateGiftHandler:     updateGiftHandler,
-		copyGiftHandler:       copyGiftHandler,
-		assignRandomRecipient: assignRandomRecipient,
-		publicGiftNotifier:    notifier,
-		giftsCache:            giftsCache,
+		giftRepo:                              giftRepo,
+		getGiftsHandler:                       getGiftsHandler,
+		getGiftByIDHandler:                    getGiftByIDHandler,
+		getManualGiftsHandler:                 getManualGiftsHandler,
+		addGiftHandler:                        addGiftHandler,
+		updateGiftHandler:                     updateGiftHandler,
+		copyGiftHandler:                       copyGiftHandler,
+		assignRandomRecipient:                 assignRandomRecipient,
+		assignRandomRecipientIncludingAwarded: assignRandomRecipientIncludingAwarded,
+		publicGiftNotifier:                    notifier,
+		giftsCache:                            giftsCache,
 	}
 }
 
@@ -225,6 +232,61 @@ func (h *GiftsHandler) AssignRandomRecipient(w http.ResponseWriter, r *http.Requ
 		adminID = claims.UserID
 	}
 	log.Printf("INFO admin random gift recipient assignment completed: admin_id=%d gift_id=%d event_id=%d recipient_participant_id=%d converted_to_manual=%t", adminID, result.GiftID, result.EventID, result.RecipientParticipantID, result.BecameManual)
+	response.NoContent(w)
+}
+
+// AssignRandomRecipientIncludingAwarded handles POST
+// /api/gifts/{id}/random-recipient-including-awarded. It only assigns an
+// already-manual gift and deliberately leaves the public catalog cache intact.
+func (h *GiftsHandler) AssignRandomRecipientIncludingAwarded(w http.ResponseWriter, r *http.Request) {
+	if h.assignRandomRecipientIncludingAwarded == nil {
+		log.Printf("ERROR admin random manual gift recipient including awarded assignment unavailable")
+		response.InternalServerError(w, "Random manual gift assignment is unavailable")
+		return
+	}
+
+	adminID := uint(0)
+	if claims, ok := middleware.GetUserFromContext(r.Context()); ok {
+		adminID = claims.UserID
+	}
+	giftID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 32)
+	if err != nil || giftID == 0 {
+		log.Printf("WARN admin random manual gift recipient including awarded assignment rejected: admin_id=%d reason=invalid_gift_id", adminID)
+		response.BadRequest(w, "Invalid gift ID")
+		return
+	}
+	log.Printf("DEBUG admin random manual gift recipient including awarded assignment request: admin_id=%d gift_id=%d stage=decoded_path", adminID, giftID)
+
+	result, err := h.assignRandomRecipientIncludingAwarded.Handle(r.Context(), command.AssignRandomAdminGiftRecipientIncludingAwardedCommand{
+		GiftID:  uint(giftID),
+		AdminID: adminID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, command.ErrGiftNotFound), errors.Is(err, command.ErrManualGiftRecipientNotFound):
+			log.Printf("WARN admin random manual gift recipient including awarded assignment rejected: admin_id=%d gift_id=%d reason=not_found", adminID, giftID)
+			response.NotFound(w, "Gift or participant not found")
+		case errors.Is(err, command.ErrAdminRandomGiftNotApproved),
+			errors.Is(err, command.ErrManualGiftNotManual),
+			errors.Is(err, command.ErrAdminRandomGiftAlreadyAssigned),
+			errors.Is(err, command.ErrManualGiftNoEligibleParticipants),
+			errors.Is(err, command.ErrManualGiftRecipientEvent),
+			errors.Is(err, command.ErrManualGiftRecipientIneligible):
+			log.Printf("WARN admin random manual gift recipient including awarded assignment rejected: admin_id=%d gift_id=%d reason=conflict", adminID, giftID)
+			response.Conflict(w, err.Error())
+		default:
+			log.Printf("ERROR admin random manual gift recipient including awarded assignment failed: admin_id=%d gift_id=%d error=%v", adminID, giftID, err)
+			response.InternalServerError(w, "Failed to assign random manual gift recipient")
+		}
+		return
+	}
+	if result == nil {
+		log.Printf("ERROR admin random manual gift recipient including awarded assignment failed: admin_id=%d gift_id=%d reason=empty_result", adminID, giftID)
+		response.InternalServerError(w, "Failed to assign random manual gift recipient")
+		return
+	}
+
+	log.Printf("INFO admin random manual gift recipient including awarded assignment completed: admin_id=%d gift_id=%d event_id=%d recipient_participant_id=%d", adminID, result.GiftID, result.EventID, result.RecipientParticipantID)
 	response.NoContent(w)
 }
 
