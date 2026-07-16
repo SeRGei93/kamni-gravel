@@ -60,6 +60,19 @@ func (h *GetMiniappParticipantsHandler) Handle(ctx context.Context, query GetMin
 		return nil, err
 	}
 
+	options := miniappParticipantOptionsFromStates(states)
+
+	log.Printf(
+		"INFO [FIX:manual-recipient-eligibility] miniapp participant options filtered: event_id=%d source_count=%d returned_count=%d excluded_count=%d",
+		query.EventID,
+		sourceCount,
+		len(options),
+		excludedCount,
+	)
+	return options, nil
+}
+
+func miniappParticipantOptionsFromStates(states []eligibleManualGiftParticipantState) []*MiniappParticipantOption {
 	options := make([]*MiniappParticipantOption, 0, len(states))
 	for _, state := range states {
 		option := newMiniappParticipantOption(state.participant)
@@ -77,15 +90,7 @@ func (h *GetMiniappParticipantsHandler) Handle(ctx context.Context, query GetMin
 		}
 		return leftName < rightName
 	})
-
-	log.Printf(
-		"INFO [FIX:manual-recipient-eligibility] miniapp participant options filtered: event_id=%d source_count=%d returned_count=%d excluded_count=%d",
-		query.EventID,
-		sourceCount,
-		len(options),
-		excludedCount,
-	)
-	return options, nil
+	return options
 }
 
 func newMiniappParticipantOption(participant *entity.Participant) *MiniappParticipantOption {

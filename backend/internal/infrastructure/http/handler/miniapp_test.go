@@ -173,12 +173,34 @@ func TestMiniappMyGiftsReturnsOnlyVerifiedUsersActiveEventGifts(t *testing.T) {
 		attachments: map[uint][]*entity.GiftAttachment{
 			1: {{ID: 13, GiftID: 1, TelegramFileID: "gift-photo", FileType: "photo"}},
 		},
+		manualRecipientCounts: map[uint]int{recipientID: 1},
 	}
 	criteriaRepo := &miniappHandlerCriteriaRepoFake{criteriaByGift: map[uint][]*entity.Criteria{
 		2: {{ID: 5, Name: "Самая быстрая", CriteriaType: "speed"}},
 	}}
+	participantRepo := &miniappHandlerParticipantRepoFake{participants: []*entity.Participant{
+		{ID: recipientID, EventID: 77, Result: &entity.Result{}, User: &entity.User{FirstName: "Ivan", Username: "ivan"}},
+		{ID: 12, EventID: 77, Result: &entity.Result{}, User: &entity.User{FirstName: "Maria", Username: "maria"}},
+		{ID: 13, EventID: 77, Result: &entity.Result{}, User: &entity.User{FirstName: "Alex", Username: "alex"}},
+	}}
 	h := newMiniappTestHandler(
-		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true}}, giftRepo, criteriaRepo, nil,
+		&miniappEventRepoFake{activeEvent: &entity.Event{ID: 77, Name: "Gravel Race", Active: true, ShowGiftRecipients: true}}, giftRepo, criteriaRepo, participantRepo,
+	)
+	distributionReader := &miniappPrizeDistributionReaderFake{results: []*query.PrizeDistributionResult{
+		{
+			ParticipantID:   12,
+			ParticipantName: "Maria",
+			Status:          "active",
+			MatchedGiftAssignments: []*query.PrizeGiftAssignment{
+				{ParticipantID: 12, Gift: giftRepo.ownerGifts[1]},
+			},
+		},
+	}}
+	h.getOwnerManualGiftsHandler = query.NewGetOwnerManualGiftsHandler(
+		giftRepo,
+		criteriaRepo,
+		participantRepo,
+		distributionReader,
 	)
 
 	rr := miniappRequest(t, token, now, h.MyGifts, "/api/miniapp/my-gifts")
@@ -197,6 +219,15 @@ func TestMiniappMyGiftsReturnsOnlyVerifiedUsersActiveEventGifts(t *testing.T) {
 	}
 	if got.Gifts[1].GenderFilter != "female" || got.Gifts[1].BikeTypeFilter != "gravel" || got.Gifts[1].Place == nil || *got.Gifts[1].Place != place || len(got.Gifts[1].Criteria) != 1 || got.Gifts[1].Criteria[0].ID != 5 {
 		t.Fatalf("automatic gift conditions mismatch: %#v", got.Gifts[1])
+	}
+	if len(got.Gifts[1].Recipients) != 1 || got.Gifts[1].Recipients[0].ID != 12 || got.Gifts[1].Recipients[0].DisplayName != "Maria" {
+		t.Fatalf("automatic gift recipients mismatch: %#v", got.Gifts[1].Recipients)
+	}
+	if len(got.Participants) != 3 || got.Participants[0].ID != 13 || got.Participants[0].HasPrize || !got.Participants[1].HasPrize || !got.Participants[2].HasPrize {
+		t.Fatalf("participant options mismatch: %#v", got.Participants)
+	}
+	if distributionReader.calls != 1 || distributionReader.eventID != 77 {
+		t.Fatalf("prize distribution calls = %d, event_id = %d", distributionReader.calls, distributionReader.eventID)
 	}
 	if strings.Contains(rr.Body.String(), "user_id") {
 		t.Fatalf("response leaks recipient telegram user id: %s", rr.Body.String())
@@ -700,7 +731,7 @@ func newMiniappTestHandler(
 	eligibleUnawardedParticipantIDsHandler := query.NewGetEligibleUnawardedParticipantIDsHandler(participantRepo, giftRepo, &miniappPrizeDistributionReaderFake{})
 	setRecipientHandler := command.NewSetManualGiftRecipientHandler(giftRepo, participantRepo)
 	handler.ConfigureManualGiftManagement(
-		query.NewGetOwnerManualGiftsHandler(giftRepo, criteriaRepo),
+		query.NewGetOwnerManualGiftsHandler(giftRepo, criteriaRepo, participantRepo, &miniappPrizeDistributionReaderFake{}),
 		query.NewHasOwnerGiftsHandler(giftRepo),
 		participantOptionsHandler,
 		setRecipientHandler,
@@ -875,9 +906,13 @@ func (r *miniappHandlerGiftRepoFake) ManualRecipientCountsByEvent(ctx context.Co
 type miniappPrizeDistributionReaderFake struct {
 	results []*query.PrizeDistributionResult
 	err     error
+	calls   int
+	eventID uint
 }
 
-func (r *miniappPrizeDistributionReaderFake) Handle(context.Context, query.GetPrizeDistributionQuery) ([]*query.PrizeDistributionResult, error) {
+func (r *miniappPrizeDistributionReaderFake) Handle(_ context.Context, request query.GetPrizeDistributionQuery) ([]*query.PrizeDistributionResult, error) {
+	r.calls++
+	r.eventID = request.EventID
 	return r.results, r.err
 }
 func (r *miniappHandlerGiftRepoFake) Delete(ctx context.Context, id uint) error { return nil }

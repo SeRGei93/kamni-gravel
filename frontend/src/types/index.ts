@@ -272,11 +272,13 @@ export interface ManualGift {
   attachments?: GiftAttachment[];
   criteria?: Criteria[];
   recipient?: ManualGiftRecipient;
+  recipients?: ManualGiftRecipient[];
   created_at: string;
 }
 
 export interface ManualGiftListResponse {
   gifts: ManualGift[];
+  participants?: MiniappParticipantOption[];
 }
 
 export interface MiniappParticipantOption {

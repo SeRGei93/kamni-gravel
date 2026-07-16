@@ -89,6 +89,26 @@ func loadEligibleManualGiftParticipantStates(
 	manualRecipientCountRepo repository.ManualGiftRecipientCountRepository,
 	prizeDistributionReader prizeDistributionReader,
 ) ([]eligibleManualGiftParticipantState, int, int, error) {
+	automaticPrizeCounts, err := automaticPrizeCounts(ctx, eventID, prizeDistributionReader)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return loadEligibleManualGiftParticipantStatesWithAutomaticPrizeCounts(
+		ctx,
+		eventID,
+		participantRepo,
+		manualRecipientCountRepo,
+		automaticPrizeCounts,
+	)
+}
+
+func loadEligibleManualGiftParticipantStatesWithAutomaticPrizeCounts(
+	ctx context.Context,
+	eventID uint,
+	participantRepo repository.ParticipantRepository,
+	manualRecipientCountRepo repository.ManualGiftRecipientCountRepository,
+	automaticPrizeCounts map[uint]int,
+) ([]eligibleManualGiftParticipantState, int, int, error) {
 	participants, err := participantRepo.FindByEvent(ctx, eventID)
 	if err != nil {
 		log.Printf("ERROR manual gift recipient candidates query failed: event_id=%d stage=find_by_event error=%v", eventID, err)
@@ -100,11 +120,6 @@ func loadEligibleManualGiftParticipantStates(
 		log.Printf("ERROR manual gift recipient candidates query failed: event_id=%d stage=manual_recipient_counts error=%v", eventID, err)
 		return nil, 0, 0, fmt.Errorf("find manual gift recipients for event %d: %w", eventID, err)
 	}
-	automaticPrizeCounts, err := automaticPrizeCounts(ctx, eventID, prizeDistributionReader)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-
 	states := make([]eligibleManualGiftParticipantState, 0, len(participants))
 	excludedCount := 0
 	for _, participant := range participants {
@@ -131,6 +146,10 @@ func automaticPrizeCounts(
 		return nil, fmt.Errorf("find automatic gift recipients for event %d: %w", eventID, err)
 	}
 
+	return automaticPrizeCountsFromDistribution(distribution), nil
+}
+
+func automaticPrizeCountsFromDistribution(distribution []*PrizeDistributionResult) map[uint]int {
 	counts := make(map[uint]int)
 	for _, participant := range distribution {
 		if participant == nil {
@@ -143,5 +162,5 @@ func automaticPrizeCounts(
 		counts[participant.ParticipantID] += len(participant.MatchedGiftAssignments)
 		counts[participant.ParticipantID] += len(participant.MatchedGifts)
 	}
-	return counts, nil
+	return counts
 }

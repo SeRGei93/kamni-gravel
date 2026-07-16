@@ -752,6 +752,17 @@ func manualGiftDTOFromReadModel(model *query.ManualGiftReadModel) *dto.ManualGif
 			Status:      model.Recipient.Status,
 		}
 	}
+	if len(model.Recipients) > 0 {
+		dtoModel.Recipients = make([]*dto.ManualGiftRecipientDTO, len(model.Recipients))
+		for index, recipient := range model.Recipients {
+			dtoModel.Recipients[index] = &dto.ManualGiftRecipientDTO{
+				ID:          recipient.ID,
+				DisplayName: recipient.DisplayName,
+				Username:    recipient.Username,
+				Status:      recipient.Status,
+			}
+		}
+	}
 	return dtoModel
 }
 

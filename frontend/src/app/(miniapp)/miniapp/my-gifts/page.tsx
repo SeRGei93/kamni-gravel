@@ -24,17 +24,14 @@ export default function MiniappMyGiftsPage() {
     try {
       setIsLoading(true);
       setError(null);
-      const [giftResponse, participantResponse] = await Promise.all([
-        miniappApi.getMyGifts(),
-        miniappApi.getParticipants(),
-      ]);
+      const giftResponse = await miniappApi.getMyGifts();
       setSnapshot({
         gifts: giftResponse.gifts,
-        participants: participantResponse.participants,
+        participants: giftResponse.participants ?? [],
       });
       console.debug("[miniapp] my gifts loaded", {
         giftCount: giftResponse.gifts.length,
-        participantCount: participantResponse.total,
+        participantCount: giftResponse.participants?.length ?? 0,
       });
       return true;
     } catch (loadError) {
@@ -141,6 +138,7 @@ export default function MiniappMyGiftsPage() {
               gift={gift}
               participants={participants}
               savingGiftID={savingGiftID}
+              showGiftRecipients={session.event.show_gift_recipients}
               onSaveRecipient={saveRecipient}
               onAssignRandomRecipient={assignRandomRecipient}
             />

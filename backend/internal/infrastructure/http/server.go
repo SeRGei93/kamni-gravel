@@ -349,7 +349,7 @@ func NewServer(
 		participantOptionsHandler := query.NewGetMiniappParticipantsHandler(participantRepo, manualGiftRepo, getPrizeDistributionHandlerTemp)
 		setManualGiftRecipientHandler := command.NewSetManualGiftRecipientHandler(manualGiftRepo, participantRepo)
 		miniappHandler.ConfigureManualGiftManagement(
-			query.NewGetOwnerManualGiftsHandler(manualGiftRepo, criteriaRepo),
+			query.NewGetOwnerManualGiftsHandler(manualGiftRepo, criteriaRepo, participantRepo, getPrizeDistributionHandlerTemp),
 			query.NewHasOwnerGiftsHandler(manualGiftRepo),
 			participantOptionsHandler,
 			setManualGiftRecipientHandler,

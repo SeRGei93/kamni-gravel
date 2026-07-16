@@ -12,19 +12,20 @@ import (
 // ManualGiftDTO is a protected read model for dashboard and owner Mini App
 // screens. It deliberately has no Telegram user ID for the recipient.
 type ManualGiftDTO struct {
-	ID                 uint                    `json:"id"`
-	EventID            uint                    `json:"event_id"`
-	Description        string                  `json:"description"`
-	GenderFilter       string                  `json:"gender_filter,omitempty"`
-	BikeTypeFilter     string                  `json:"bike_type_filter,omitempty"`
-	ReviewStatus       string                  `json:"review_status"`
-	ManualDistribution bool                    `json:"manual_distribution"`
-	Place              *int                    `json:"place,omitempty"`
-	PlaceRule          *GiftPlaceRuleDTO       `json:"place_rule"`
-	Attachments        []*GiftAttachmentDTO    `json:"attachments,omitempty"`
-	Criteria           []*CriteriaDTO          `json:"criteria,omitempty"`
-	Recipient          *ManualGiftRecipientDTO `json:"recipient,omitempty"`
-	CreatedAt          time.Time               `json:"created_at"`
+	ID                 uint                      `json:"id"`
+	EventID            uint                      `json:"event_id"`
+	Description        string                    `json:"description"`
+	GenderFilter       string                    `json:"gender_filter,omitempty"`
+	BikeTypeFilter     string                    `json:"bike_type_filter,omitempty"`
+	ReviewStatus       string                    `json:"review_status"`
+	ManualDistribution bool                      `json:"manual_distribution"`
+	Place              *int                      `json:"place,omitempty"`
+	PlaceRule          *GiftPlaceRuleDTO         `json:"place_rule"`
+	Attachments        []*GiftAttachmentDTO      `json:"attachments,omitempty"`
+	Criteria           []*CriteriaDTO            `json:"criteria,omitempty"`
+	Recipient          *ManualGiftRecipientDTO   `json:"recipient,omitempty"`
+	Recipients         []*ManualGiftRecipientDTO `json:"recipients,omitempty"`
+	CreatedAt          time.Time                 `json:"created_at"`
 }
 
 // ManualGiftRecipientDTO is the minimal participant summary safe for
@@ -38,7 +39,8 @@ type ManualGiftRecipientDTO struct {
 
 // ManualGiftListResponse is the protected manual-gift management response.
 type ManualGiftListResponse struct {
-	Gifts []*ManualGiftDTO `json:"gifts"`
+	Gifts        []*ManualGiftDTO               `json:"gifts"`
+	Participants []*MiniappParticipantOptionDTO `json:"participants,omitempty"`
 }
 
 // MiniappParticipantOptionDTO is the minimal selectable participant model.

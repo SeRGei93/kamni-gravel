@@ -66,7 +66,7 @@ func TestGetOwnerManualGiftsHandlerReturnsPendingAndApprovedGiftsForOwnerAndEven
 	criteriaRepo := &manualGiftCriteriaRepoFake{criteriaByGift: map[uint][]*entity.Criteria{
 		2: {{ID: 4, Name: "Самый быстрый", CriteriaType: "speed"}},
 	}}
-	handler := NewGetOwnerManualGiftsHandler(repo, criteriaRepo)
+	handler := NewGetOwnerManualGiftsHandler(repo, criteriaRepo, nil, nil)
 
 	gifts, err := handler.Handle(context.Background(), GetOwnerManualGiftsQuery{OwnerTelegramUserID: 100, EventID: 77})
 	if err != nil {
@@ -83,6 +83,69 @@ func TestGetOwnerManualGiftsHandlerReturnsPendingAndApprovedGiftsForOwnerAndEven
 	}
 }
 
+func TestGetOwnerManualGiftsHandlerIncludesAutomaticRecipientsWhenRequested(t *testing.T) {
+	automaticGift := &entity.Gift{ID: 2, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved}
+	repo := &manualGiftsRepoFake{ownerGifts: []*entity.Gift{automaticGift}}
+	distributionReader := &manualGiftPrizeDistributionReaderFake{results: []*PrizeDistributionResult{
+		{
+			ParticipantID:   10,
+			ParticipantName: "Ivan",
+			Status:          "active",
+			MatchedGiftAssignments: []*PrizeGiftAssignment{
+				{ParticipantID: 10, Gift: automaticGift},
+			},
+			MatchedGifts: []*entity.Gift{automaticGift},
+		},
+		{
+			ParticipantID:   11,
+			ParticipantName: "Maria",
+			Status:          "dnf",
+			MatchedGiftAssignments: []*PrizeGiftAssignment{
+				{ParticipantID: 11, Gift: automaticGift},
+			},
+		},
+	}}
+	handler := NewGetOwnerManualGiftsHandler(repo, &manualGiftCriteriaRepoFake{}, nil, distributionReader)
+
+	gifts, err := handler.Handle(context.Background(), GetOwnerManualGiftsQuery{
+		OwnerTelegramUserID:        100,
+		EventID:                    77,
+		IncludeAutomaticRecipients: true,
+	})
+	if err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+	if distributionReader.calls != 1 || distributionReader.eventID != 77 {
+		t.Fatalf("prize distribution calls = %d, event_id = %d", distributionReader.calls, distributionReader.eventID)
+	}
+	if len(gifts) != 1 || len(gifts[0].Recipients) != 2 {
+		t.Fatalf("automatic recipients = %+v", gifts)
+	}
+	if gifts[0].Recipients[0].DisplayName != "Ivan" || gifts[0].Recipients[1].DisplayName != "Maria" {
+		t.Fatalf("automatic recipients = %+v", gifts[0].Recipients)
+	}
+}
+
+func TestGetOwnerManualGiftsHandlerSkipsAutomaticRecipientsWhenNotRequested(t *testing.T) {
+	repo := &manualGiftsRepoFake{ownerGifts: []*entity.Gift{{ID: 2, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved}}}
+	distributionReader := &manualGiftPrizeDistributionReaderFake{err: errors.New("must not be called")}
+	handler := NewGetOwnerManualGiftsHandler(repo, &manualGiftCriteriaRepoFake{}, nil, distributionReader)
+
+	gifts, err := handler.Handle(context.Background(), GetOwnerManualGiftsQuery{
+		OwnerTelegramUserID: 100,
+		EventID:             77,
+	})
+	if err != nil {
+		t.Fatalf("Handle error: %v", err)
+	}
+	if distributionReader.calls != 0 {
+		t.Fatalf("prize distribution calls = %d, want 0", distributionReader.calls)
+	}
+	if len(gifts) != 1 || len(gifts[0].Recipients) != 0 {
+		t.Fatalf("automatic recipients must be omitted: %+v", gifts)
+	}
+}
+
 func TestGetManualGiftsHandlersPropagateRepositoryFailures(t *testing.T) {
 	repoErr := errors.New("database unavailable")
 	adminHandler := NewGetManualGiftsHandler(&manualGiftsRepoFake{eventErr: repoErr})
@@ -91,7 +154,7 @@ func TestGetManualGiftsHandlersPropagateRepositoryFailures(t *testing.T) {
 	}
 
 	ownerRepo := &manualGiftsRepoFake{ownerErr: repoErr}
-	ownerHandler := NewGetOwnerManualGiftsHandler(ownerRepo, &manualGiftCriteriaRepoFake{})
+	ownerHandler := NewGetOwnerManualGiftsHandler(ownerRepo, &manualGiftCriteriaRepoFake{}, nil, nil)
 	if _, err := ownerHandler.Handle(context.Background(), GetOwnerManualGiftsQuery{OwnerTelegramUserID: 100, EventID: 77}); !errors.Is(err, repoErr) {
 		t.Fatalf("owner query error = %v, want wrapped repository error", err)
 	}
@@ -99,6 +162,50 @@ func TestGetManualGiftsHandlersPropagateRepositoryFailures(t *testing.T) {
 	hasOwnerHandler := NewHasOwnerGiftsHandler(&manualGiftsRepoFake{hasOwnerErr: repoErr})
 	if _, err := hasOwnerHandler.Handle(context.Background(), HasOwnerGiftsQuery{OwnerTelegramUserID: 100, EventID: 77}); !errors.Is(err, repoErr) {
 		t.Fatalf("owner gift presence error = %v, want wrapped repository error", err)
+	}
+}
+
+func TestGetOwnerManualGiftsHandlerReusesDistributionForRecipientsAndParticipantOptions(t *testing.T) {
+	automaticGift := &entity.Gift{ID: 2, EventID: 77, ReviewStatus: entity.GiftReviewStatusApproved}
+	repo := &manualGiftsRepoFake{
+		ownerGifts:            []*entity.Gift{automaticGift},
+		manualRecipientCounts: map[uint]int{11: 1},
+	}
+	participantRepo := &manualGiftParticipantRepoFake{participants: []*entity.Participant{
+		{ID: 10, EventID: 77, Result: &entity.Result{}, User: &entity.User{FirstName: "Ivan"}},
+		{ID: 11, EventID: 77, Result: &entity.Result{}, User: &entity.User{FirstName: "Maria"}},
+		{ID: 12, EventID: 77, Result: &entity.Result{}, User: &entity.User{FirstName: "Alex"}},
+	}}
+	distributionReader := &manualGiftPrizeDistributionReaderFake{results: []*PrizeDistributionResult{{
+		ParticipantID:   10,
+		ParticipantName: "Ivan",
+		MatchedGiftAssignments: []*PrizeGiftAssignment{{
+			ParticipantID: 10,
+			Gift:          automaticGift,
+		}},
+	}}}
+	handler := NewGetOwnerManualGiftsHandler(repo, &manualGiftCriteriaRepoFake{}, participantRepo, distributionReader)
+
+	output, err := handler.HandleDetailed(context.Background(), GetOwnerManualGiftsQuery{
+		OwnerTelegramUserID:        100,
+		EventID:                    77,
+		IncludeAutomaticRecipients: true,
+		IncludeParticipantOptions:  true,
+	})
+	if err != nil {
+		t.Fatalf("HandleDetailed error: %v", err)
+	}
+	if distributionReader.calls != 1 || distributionReader.eventID != 77 {
+		t.Fatalf("prize distribution calls = %d, event_id = %d", distributionReader.calls, distributionReader.eventID)
+	}
+	if len(output.Gifts) != 1 || len(output.Gifts[0].Recipients) != 1 || output.Gifts[0].Recipients[0].ID != 10 {
+		t.Fatalf("automatic recipients = %+v", output.Gifts)
+	}
+	if len(output.ParticipantOptions) != 3 || output.ParticipantOptions[0].ID != 12 || output.ParticipantOptions[0].HasPrize {
+		t.Fatalf("participant options = %+v", output.ParticipantOptions)
+	}
+	if !output.ParticipantOptions[1].HasPrize || !output.ParticipantOptions[2].HasPrize {
+		t.Fatalf("awarded participant options = %+v", output.ParticipantOptions)
 	}
 }
 
@@ -126,16 +233,17 @@ func containsJSONKey(body []byte, key string) bool {
 
 type manualGiftsRepoFake struct {
 	repository.ManualGiftRepository
-	eventID       uint
-	eventGifts    []*entity.Gift
-	eventErr      error
-	ownerID       int64
-	ownerEventID  uint
-	ownerGifts    []*entity.Gift
-	ownerErr      error
-	attachments   map[uint][]*entity.GiftAttachment
-	hasOwnerGifts bool
-	hasOwnerErr   error
+	eventID               uint
+	eventGifts            []*entity.Gift
+	eventErr              error
+	ownerID               int64
+	ownerEventID          uint
+	ownerGifts            []*entity.Gift
+	ownerErr              error
+	attachments           map[uint][]*entity.GiftAttachment
+	hasOwnerGifts         bool
+	hasOwnerErr           error
+	manualRecipientCounts map[uint]int
 }
 
 func (r *manualGiftsRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Gift, error) {
@@ -159,9 +267,35 @@ func (r *manualGiftsRepoFake) GetAttachments(ctx context.Context, giftID uint) (
 	return r.attachments[giftID], nil
 }
 
+func (r *manualGiftsRepoFake) ManualRecipientCountsByEvent(ctx context.Context, eventID uint) (map[uint]int, error) {
+	return r.manualRecipientCounts, nil
+}
+
+type manualGiftParticipantRepoFake struct {
+	repository.ParticipantRepository
+	participants []*entity.Participant
+}
+
+func (r *manualGiftParticipantRepoFake) FindByEvent(ctx context.Context, eventID uint) ([]*entity.Participant, error) {
+	return r.participants, nil
+}
+
 type manualGiftCriteriaRepoFake struct {
 	repository.CriteriaRepository
 	criteriaByGift map[uint][]*entity.Criteria
+}
+
+type manualGiftPrizeDistributionReaderFake struct {
+	results []*PrizeDistributionResult
+	err     error
+	calls   int
+	eventID uint
+}
+
+func (r *manualGiftPrizeDistributionReaderFake) Handle(_ context.Context, query GetPrizeDistributionQuery) ([]*PrizeDistributionResult, error) {
+	r.calls++
+	r.eventID = query.EventID
+	return r.results, r.err
 }
 
 func (r *manualGiftCriteriaRepoFake) FindByGift(ctx context.Context, giftID uint) ([]*entity.Criteria, error) {

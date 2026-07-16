@@ -217,9 +217,11 @@ func (h *MiniappHandler) MyGifts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	models, err := h.getOwnerManualGiftsHandler.Handle(r.Context(), query.GetOwnerManualGiftsQuery{
-		OwnerTelegramUserID: user.ID,
-		EventID:             event.ID,
+	output, err := h.getOwnerManualGiftsHandler.HandleDetailed(r.Context(), query.GetOwnerManualGiftsQuery{
+		OwnerTelegramUserID:        user.ID,
+		EventID:                    event.ID,
+		IncludeAutomaticRecipients: event.ShowGiftRecipients,
+		IncludeParticipantOptions:  true,
 	})
 	if err != nil {
 		log.Printf("ERROR Miniapp my gifts failed: telegram_user_id=%d event_id=%d error=%v", user.ID, event.ID, err)
@@ -227,12 +229,13 @@ func (h *MiniappHandler) MyGifts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gifts := make([]*dto.ManualGiftDTO, 0, len(models))
-	for _, model := range models {
+	gifts := make([]*dto.ManualGiftDTO, 0, len(output.Gifts))
+	for _, model := range output.Gifts {
 		gifts = append(gifts, manualGiftDTOFromReadModel(model))
 	}
-	log.Printf("INFO Miniapp my gifts served: telegram_user_id=%d event_id=%d gift_count=%d", user.ID, event.ID, len(gifts))
-	response.Success(w, dto.ManualGiftListResponse{Gifts: gifts})
+	participants := miniappParticipantOptionDTOs(output.ParticipantOptions)
+	log.Printf("INFO Miniapp my gifts served: telegram_user_id=%d event_id=%d gift_count=%d participant_count=%d", user.ID, event.ID, len(gifts), len(participants))
+	response.Success(w, dto.ManualGiftListResponse{Gifts: gifts, Participants: participants})
 }
 
 // Participants returns minimal same-event recipient options for the verified user.
@@ -258,6 +261,15 @@ func (h *MiniappHandler) Participants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	participants := miniappParticipantOptionDTOs(models)
+	log.Printf("INFO Miniapp participant options served: telegram_user_id=%d event_id=%d participant_count=%d", user.ID, event.ID, len(participants))
+	response.Success(w, struct {
+		Participants []*dto.MiniappParticipantOptionDTO `json:"participants"`
+		Total        int                                `json:"total"`
+	}{Participants: participants, Total: len(participants)})
+}
+
+func miniappParticipantOptionDTOs(models []*query.MiniappParticipantOption) []*dto.MiniappParticipantOptionDTO {
 	participants := make([]*dto.MiniappParticipantOptionDTO, 0, len(models))
 	for _, model := range models {
 		participants = append(participants, &dto.MiniappParticipantOptionDTO{
@@ -268,11 +280,7 @@ func (h *MiniappHandler) Participants(w http.ResponseWriter, r *http.Request) {
 			HasPrize:    model.HasPrize,
 		})
 	}
-	log.Printf("INFO Miniapp participant options served: telegram_user_id=%d event_id=%d participant_count=%d", user.ID, event.ID, len(participants))
-	response.Success(w, struct {
-		Participants []*dto.MiniappParticipantOptionDTO `json:"participants"`
-		Total        int                                `json:"total"`
-	}{Participants: participants, Total: len(participants)})
+	return participants
 }
 
 // UpdateMyGiftRecipient replaces or clears a recipient on an owner manual gift.
