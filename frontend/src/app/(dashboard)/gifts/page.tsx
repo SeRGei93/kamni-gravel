@@ -646,7 +646,29 @@ export default function GiftsPage() {
         operation: 'assign_random_gift_recipient',
         gift_id: gift.id,
         event_id: activeEventId,
-        error: err,
+        error: err instanceof Error ? err.message : 'unknown_error',
+      });
+      throw err;
+    }
+  };
+
+  const handleAssignRandomRecipientIncludingAwarded = async (gift: Gift) => {
+    try {
+      setError(null);
+      await giftsApi.assignRandomRecipientIncludingAwarded(gift.id);
+      await loadGifts();
+      console.info('Random manual gift recipient including awarded participants assigned:', {
+        operation: 'assign_random_gift_recipient_including_awarded',
+        gift_id: gift.id,
+        event_id: activeEventId,
+      });
+    } catch (err) {
+      setError('Не удалось случайно распределить ручной приз. Обновите список и повторите.');
+      console.error('Failed to assign random manual gift recipient including awarded participants:', {
+        operation: 'assign_random_gift_recipient_including_awarded',
+        gift_id: gift.id,
+        event_id: activeEventId,
+        error: err instanceof Error ? err.message : 'unknown_error',
       });
       throw err;
     }
@@ -909,6 +931,7 @@ export default function GiftsPage() {
         onApprove={handleApprove}
         onEnableManualAssignment={handleEnableManualAssignment}
         onAssignRandomRecipient={handleAssignRandomRecipient}
+        onAssignRandomRecipientIncludingAwarded={handleAssignRandomRecipientIncludingAwarded}
         editQueryString={listQueryString}
       />
 

@@ -58,6 +58,21 @@ describe('giftsApi', () => {
     expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
   });
 
+  it('posts an empty request to assign a random recipient including awarded participants', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await giftsApi.assignRandomRecipientIncludingAwarded(77);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8080/api/gifts/77/random-recipient-including-awarded',
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+  });
+
   it('gets protected manual gifts for an event', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ gifts: [] }), { status: 200 }),

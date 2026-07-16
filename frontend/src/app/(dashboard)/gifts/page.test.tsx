@@ -3,7 +3,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GiftListResponse } from '@/types';
+import type { Gift, GiftListResponse } from '@/types';
 import GiftsPage from './page';
 
 const mocks = vi.hoisted(() => ({
@@ -16,9 +16,11 @@ const mocks = vi.hoisted(() => ({
   updateGift: vi.fn(),
   createGift: vi.fn(),
   assignRandomRecipient: vi.fn(),
+  assignRandomRecipientIncludingAwarded: vi.fn(),
   getParticipants: vi.fn(),
   getPrizeDistribution: vi.fn(),
   downloadGiftCsv: vi.fn(),
+  giftsTableProps: null as Record<string, unknown> | null,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -39,6 +41,8 @@ vi.mock('@/api/gifts', () => ({
     update: mocks.updateGift,
     create: mocks.createGift,
     assignRandomRecipient: mocks.assignRandomRecipient,
+    assignRandomRecipientIncludingAwarded:
+      mocks.assignRandomRecipientIncludingAwarded,
   },
 }));
 
@@ -69,7 +73,12 @@ vi.mock('@/utils/giftCsv', () => ({
   ) => isMounted && requestVersion === latestRequestVersion,
 }));
 
-vi.mock('@/components/gifts/GiftsTable', () => ({ default: () => null }));
+vi.mock('@/components/gifts/GiftsTable', () => ({
+  default: (props: Record<string, unknown>) => {
+    mocks.giftsTableProps = props;
+    return null;
+  },
+}));
 vi.mock('@/components/tables/PaginationControls', () => ({ default: () => null }));
 vi.mock('@/components/gifts/GiftOwnerFilter', () => ({ default: () => null }));
 vi.mock('@/components/form/input/InputField', () => ({ default: () => null }));
@@ -147,6 +156,7 @@ describe('GiftsPage export lifecycle', () => {
       mocks.updateGift,
       mocks.createGift,
       mocks.assignRandomRecipient,
+      mocks.assignRandomRecipientIncludingAwarded,
       mocks.getParticipants,
       mocks.getPrizeDistribution,
       mocks.downloadGiftCsv,
@@ -160,6 +170,7 @@ describe('GiftsPage export lifecycle', () => {
     mocks.getManualGifts.mockResolvedValue({ gifts: [] });
     mocks.getParticipants.mockResolvedValue({ participants: [], total: 0 });
     mocks.getPrizeDistribution.mockResolvedValue({ distribution: [], total: 0 });
+    mocks.giftsTableProps = null;
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -262,5 +273,67 @@ describe('GiftsPage export lifecycle', () => {
     expect(mocks.downloadGiftCsv).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain('Не удалось выгрузить список призов');
     expect(getExportButton(container).disabled).toBe(false);
+  });
+
+  it('reloads the source-of-truth list only after the including-awarded assignment succeeds', async () => {
+    const gift: Gift = {
+      id: 12,
+      user_id: 44,
+      event_id: 77,
+      description: 'Manual gift',
+      review_status: 'approved',
+      manual_distribution: true,
+      created_at: '2026-07-16T00:00:00Z',
+    };
+    mocks.assignRandomRecipientIncludingAwarded.mockResolvedValue(undefined);
+
+    await act(async () => root?.render(<GiftsPage />));
+    await flushAsyncWork();
+
+    const callback = mocks.giftsTableProps?.onAssignRandomRecipientIncludingAwarded;
+    if (typeof callback !== 'function') {
+      throw new Error('Including-awarded callback was not passed to GiftsTable');
+    }
+    mocks.listGifts.mockClear();
+    mocks.getManualGifts.mockClear();
+
+    await act(async () => {
+      await callback(gift);
+    });
+
+    expect(mocks.assignRandomRecipientIncludingAwarded).toHaveBeenCalledWith(12);
+    expect(mocks.listGifts).toHaveBeenCalledTimes(1);
+    expect(mocks.getManualGifts).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload the list when the including-awarded assignment fails', async () => {
+    const gift: Gift = {
+      id: 12,
+      user_id: 44,
+      event_id: 77,
+      description: 'Manual gift',
+      review_status: 'approved',
+      manual_distribution: true,
+      created_at: '2026-07-16T00:00:00Z',
+    };
+    const assignmentError = new Error('conflict');
+    mocks.assignRandomRecipientIncludingAwarded.mockRejectedValue(assignmentError);
+
+    await act(async () => root?.render(<GiftsPage />));
+    await flushAsyncWork();
+
+    const callback = mocks.giftsTableProps?.onAssignRandomRecipientIncludingAwarded;
+    if (typeof callback !== 'function') {
+      throw new Error('Including-awarded callback was not passed to GiftsTable');
+    }
+    mocks.listGifts.mockClear();
+    mocks.getManualGifts.mockClear();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(callback(gift)).rejects.toBe(assignmentError);
+
+    expect(mocks.listGifts).not.toHaveBeenCalled();
+    expect(mocks.getManualGifts).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

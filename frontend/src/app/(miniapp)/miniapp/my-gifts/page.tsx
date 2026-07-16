@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { miniappApi, MiniappApiError } from "@/api/miniapp";
 import MyGiftCard from "@/components/miniapp/MyGiftCard";
 import { useMiniappMyGifts } from "@/components/miniapp/MiniappMyGiftsContext";
@@ -17,28 +17,86 @@ export default function MiniappMyGiftsPage() {
   const { session, isLoading: isSessionLoading, error: sessionError } = useMiniappSession();
   const { snapshot, setSnapshot, updateSnapshot, scrollYRef } = useMiniappMyGifts();
   const [isLoading, setIsLoading] = useState(false);
-  const [savingGiftID, setSavingGiftID] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestVersionRef = useRef(0);
+  const isMountedRef = useRef(false);
+  const isMutationInFlightRef = useRef(false);
+  const snapshotRef = useRef(snapshot);
 
-  const load = useCallback(async (): Promise<boolean> => {
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      isMutationInFlightRef.current = false;
+      requestVersionRef.current += 1;
+    };
+  }, []);
+
+  const startRequest = useCallback(() => {
+    requestVersionRef.current += 1;
+    return requestVersionRef.current;
+  }, []);
+
+  const isCurrentRequest = useCallback((requestVersion: number) => {
+    return isMountedRef.current && requestVersion === requestVersionRef.current;
+  }, []);
+
+  const beginMutation = useCallback((giftID: number): number | null => {
+    if (!isMountedRef.current || isMutationInFlightRef.current) {
+      console.debug("[FIX:my-gifts-mutation-serialization] mutation rejected", {
+        gift_id: giftID,
+        reason: isMountedRef.current ? "mutation_in_progress" : "page_unmounted",
+      });
+      return null;
+    }
+    isMutationInFlightRef.current = true;
+    setIsSaving(true);
+    return startRequest();
+  }, [startRequest]);
+
+  const finishMutation = useCallback(() => {
+    if (!isMountedRef.current) {
+      return;
+    }
+    isMutationInFlightRef.current = false;
+    setIsSaving(false);
+  }, []);
+
+  const load = useCallback(async (requestVersion = startRequest()): Promise<boolean> => {
+    if (!isCurrentRequest(requestVersion)) {
+      return false;
+    }
     try {
       setIsLoading(true);
       setError(null);
       const giftResponse = await miniappApi.getMyGifts();
+      if (!isCurrentRequest(requestVersion)) {
+        return false;
+      }
       setSnapshot({
         gifts: giftResponse.gifts,
         participants: giftResponse.participants ?? [],
       });
       console.debug("[miniapp] my gifts loaded", {
-        giftCount: giftResponse.gifts.length,
-        participantCount: giftResponse.participants?.length ?? 0,
+        operation: "load_my_gifts",
+        gift_count: giftResponse.gifts.length,
+        participant_count: giftResponse.participants?.length ?? 0,
       });
       return true;
     } catch (loadError) {
+      if (!isCurrentRequest(requestVersion)) {
+        return false;
+      }
       console.warn("[miniapp] my gifts load failed", {
-        message: loadError instanceof Error ? loadError.message : "Unknown error",
+        operation: "load_my_gifts",
+        message: loadError instanceof Error ? loadError.message : "unknown_error",
       });
-      if (snapshot) {
+      if (snapshotRef.current) {
         return false;
       }
       if (loadError instanceof MiniappApiError && loadError.status === 404) {
@@ -48,9 +106,11 @@ export default function MiniappMyGiftsPage() {
       }
       return false;
     } finally {
-      setIsLoading(false);
+      if (isCurrentRequest(requestVersion)) {
+        setIsLoading(false);
+      }
     }
-  }, [setSnapshot, snapshot]);
+  }, [isCurrentRequest, setSnapshot, startRequest]);
 
   useEffect(() => {
     if (session && snapshot === null) {
@@ -59,44 +119,93 @@ export default function MiniappMyGiftsPage() {
   }, [load, session, snapshot]);
 
   const saveRecipient = useCallback(async (giftID: number, participantID: number | null) => {
+    const requestVersion = beginMutation(giftID);
+    if (requestVersion === null) {
+      return;
+    }
     try {
-      setSavingGiftID(giftID);
       await miniappApi.updateMyGiftRecipient(giftID, participantID);
-      console.info("[miniapp] manual recipient updated", { giftId: giftID, participantId: participantID });
+      if (!isCurrentRequest(requestVersion)) {
+        return;
+      }
+      console.info("[miniapp] manual recipient updated", {
+        operation: "update_manual_recipient",
+        gift_id: giftID,
+        event_id: session?.event.id,
+        recipient_participant_id: participantID,
+      });
       updateSnapshot((current) => ({
         ...current,
         gifts: updateManualGiftRecipient(current.gifts, current.participants, giftID, participantID),
       }));
       // The server remains the source of truth after every mutation.
-      const refreshed = await load();
+      const refreshed = await load(requestVersion);
+      if (!isCurrentRequest(requestVersion)) {
+        return;
+      }
       if (!refreshed) {
         console.warn("[FIX:my-gifts-recipient-cache] recipient cache updated without server refresh", {
+          event_id: session?.event.id,
           gift_id: giftID,
           mutation: participantID === null ? "clear" : "select",
         });
       }
     } finally {
-      setSavingGiftID(null);
+      finishMutation();
     }
-  }, [load, updateSnapshot]);
+  }, [beginMutation, finishMutation, isCurrentRequest, load, session?.event.id, updateSnapshot]);
 
-  const assignRandomRecipient = useCallback(async (giftID: number) => {
+  const runRandomRecipientAssignment = useCallback(async (
+    giftID: number,
+    operation: "assign_random_recipient" | "assign_random_recipient_including_awarded",
+    assign: (id: number) => Promise<void>,
+  ) => {
+    const requestVersion = beginMutation(giftID);
+    if (requestVersion === null) {
+      return;
+    }
     try {
-      setSavingGiftID(giftID);
-      await miniappApi.assignRandomMyGiftRecipient(giftID);
-      console.info("[miniapp] random manual recipient assigned", { giftId: giftID });
-      const refreshed = await load();
+      await assign(giftID);
+      if (!isCurrentRequest(requestVersion)) {
+        return;
+      }
+      console.info("[miniapp] random manual recipient assigned", {
+        operation,
+        gift_id: giftID,
+        event_id: session?.event.id,
+      });
+      const refreshed = await load(requestVersion);
+      if (!isCurrentRequest(requestVersion)) {
+        return;
+      }
       if (!refreshed) {
         console.warn("[FIX:my-gifts-recipient-cache] random recipient assigned without server refresh", {
+          operation,
+          event_id: session?.event.id,
           gift_id: giftID,
-          mutation: "random",
         });
         throw new MiniappMyGiftsRefreshError();
       }
     } finally {
-      setSavingGiftID(null);
+      finishMutation();
     }
-  }, [load]);
+  }, [beginMutation, finishMutation, isCurrentRequest, load, session?.event.id]);
+
+  const assignRandomRecipient = useCallback((giftID: number) => {
+    return runRandomRecipientAssignment(
+      giftID,
+      "assign_random_recipient",
+      miniappApi.assignRandomMyGiftRecipient
+    );
+  }, [runRandomRecipientAssignment]);
+
+  const assignRandomRecipientIncludingAwarded = useCallback((giftID: number) => {
+    return runRandomRecipientAssignment(
+      giftID,
+      "assign_random_recipient_including_awarded",
+      miniappApi.assignRandomMyGiftRecipientIncludingAwarded
+    );
+  }, [runRandomRecipientAssignment]);
 
   const gifts: ManualGift[] = snapshot?.gifts ?? [];
   const participants: MiniappParticipantOption[] = snapshot?.participants ?? [];
@@ -137,10 +246,11 @@ export default function MiniappMyGiftsPage() {
               key={gift.id}
               gift={gift}
               participants={participants}
-              savingGiftID={savingGiftID}
+              isSaving={isSaving}
               showGiftRecipients={session.event.show_gift_recipients}
               onSaveRecipient={saveRecipient}
               onAssignRandomRecipient={assignRandomRecipient}
+              onAssignRandomRecipientIncludingAwarded={assignRandomRecipientIncludingAwarded}
             />
           ))
         )}

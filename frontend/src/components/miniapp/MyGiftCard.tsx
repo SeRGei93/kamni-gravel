@@ -9,19 +9,21 @@ import TelegramProfileLink from "./TelegramProfileLink";
 interface MyGiftCardProps {
   gift: ManualGift;
   participants: MiniappParticipantOption[];
-  savingGiftID: number | null;
+  isSaving: boolean;
   showGiftRecipients: boolean;
   onSaveRecipient: (giftID: number, participantID: number | null) => Promise<void>;
   onAssignRandomRecipient: (giftID: number) => Promise<void>;
+  onAssignRandomRecipientIncludingAwarded: (giftID: number) => Promise<void>;
 }
 
 export default function MyGiftCard({
   gift,
   participants,
-  savingGiftID,
+  isSaving,
   showGiftRecipients,
   onSaveRecipient,
   onAssignRandomRecipient,
+  onAssignRandomRecipientIncludingAwarded,
 }: MyGiftCardProps) {
   return (
     <article className="tg-card overflow-hidden rounded-xl border">
@@ -40,9 +42,10 @@ export default function MyGiftCard({
             <MyGiftRecipientSelect
               gift={gift}
               participants={participants}
-              isSaving={savingGiftID === gift.id}
+              isSaving={isSaving}
               onSave={onSaveRecipient}
               onAssignRandom={onAssignRandomRecipient}
+              onAssignRandomIncludingAwarded={onAssignRandomRecipientIncludingAwarded}
             />
           </div>
         ) : (

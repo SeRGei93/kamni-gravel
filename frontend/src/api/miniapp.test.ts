@@ -57,4 +57,17 @@ describe('miniappApi manual gift endpoints', () => {
 		expect.objectContaining({ method: 'POST' })
 	  );
 	});
+
+  it('assigns a random recipient including awarded participants through its separate owner endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await miniappApi.assignRandomMyGiftRecipientIncludingAwarded(15);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/miniapp/my-gifts/15/random-recipient-including-awarded',
+      expect.objectContaining({ method: 'POST' })
+    );
+    expect((fetchMock.mock.calls[0][1] as RequestInit).body).toBeUndefined();
+  });
 });
