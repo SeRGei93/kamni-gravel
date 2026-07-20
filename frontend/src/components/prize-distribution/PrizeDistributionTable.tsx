@@ -1,12 +1,14 @@
 'use client';
 
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
-import type { PrizeDistribution } from '@/types';
+import type { ManualGift, PrizeDistribution } from '@/types';
+import { getManualGiftsForRecipient } from '@/utils/manualGiftAssignment';
 
 import type { PrizeDistributionColumn } from './prizeDistributionColumns';
 
 interface PrizeDistributionTableProps {
   distribution: PrizeDistribution[];
+  manualGifts?: ManualGift[];
   columns: PrizeDistributionColumn[];
   isLoading?: boolean;
 }
@@ -19,6 +21,7 @@ function alignClass(align?: PrizeDistributionColumn['align']): string {
 
 export default function PrizeDistributionTable({
   distribution,
+  manualGifts = [],
   columns,
   isLoading,
 }: PrizeDistributionTableProps) {
@@ -58,21 +61,28 @@ export default function PrizeDistributionTable({
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-            {distribution.map((row) => (
-              <TableRow
-                key={row.participant_id}
-                className="hover:bg-gray-50 dark:hover:bg-white/5"
-              >
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.key}
-                    className={`whitespace-nowrap px-5 py-4 ${alignClass(column.align)}`}
-                  >
-                    {column.render(row)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {distribution.map((row) => {
+              const participantManualGifts = getManualGiftsForRecipient(
+                manualGifts,
+                row.participant_id
+              );
+
+              return (
+                <TableRow
+                  key={row.participant_id}
+                  className="hover:bg-gray-50 dark:hover:bg-white/5"
+                >
+                  {columns.map((column) => (
+                    <TableCell
+                      key={column.key}
+                      className={`whitespace-nowrap px-5 py-4 ${alignClass(column.align)}`}
+                    >
+                      {column.render(row, participantManualGifts)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

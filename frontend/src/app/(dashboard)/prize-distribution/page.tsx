@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { eventsApi } from '@/api/events';
+import { giftsApi } from '@/api/gifts';
 import { prizeDistributionApi } from '@/api/prizeDistribution';
 import ColumnSettings from '@/components/participants/ColumnSettings';
 import PrizeDistributionFilters from '@/components/prize-distribution/PrizeDistributionFilters';
@@ -20,6 +21,7 @@ import { usePaginationParams } from '@/hooks/usePaginationParams';
 import type {
   BikeTypeFilter,
   GenderFilter,
+  ManualGift,
   PrizeDistribution,
   PrizeDistributionStats,
   UnassignedPrizeSlot,
@@ -36,6 +38,8 @@ export default function PrizeDistributionPage() {
 
   const [activeEventId, setActiveEventId] = useState<number | null>(null);
   const [distribution, setDistribution] = useState<PrizeDistribution[]>([]);
+  const [manualGifts, setManualGifts] = useState<ManualGift[]>([]);
+  const [manualGiftsError, setManualGiftsError] = useState(false);
   const [unassignedSlots, setUnassignedSlots] = useState<UnassignedPrizeSlot[]>([]);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<PrizeDistributionStats | null>(null);
@@ -104,15 +108,19 @@ export default function PrizeDistributionPage() {
     const requestVersion = ++requestVersionRef.current;
     setIsLoading(true);
     setError(null);
+    setManualGiftsError(false);
 
     try {
-      const response = await prizeDistributionApi.getPrizeDistribution(activeEventId, {
-        gender: genderFilter,
-        bike_type: bikeTypeFilter,
-        match_reason: matchReasonFilter,
-        page,
-        page_size: pageSize,
-      });
+      const [distributionResult, manualGiftsResult] = await Promise.allSettled([
+        prizeDistributionApi.getPrizeDistribution(activeEventId, {
+          gender: genderFilter,
+          bike_type: bikeTypeFilter,
+          match_reason: matchReasonFilter,
+          page,
+          page_size: pageSize,
+        }),
+        giftsApi.getManualByEvent(activeEventId),
+      ]);
       if (
         !isCurrentPrizeDistributionRequest(
           requestVersion,
@@ -120,6 +128,23 @@ export default function PrizeDistributionPage() {
         )
       ) {
         return;
+      }
+
+      if (distributionResult.status === 'rejected') {
+        throw distributionResult.reason;
+      }
+
+      const response = distributionResult.value;
+      if (manualGiftsResult.status === 'fulfilled') {
+        setManualGifts(manualGiftsResult.value.gifts);
+      } else {
+        setManualGifts([]);
+        setManualGiftsError(true);
+        console.error('[FIX:prize-distribution] failed to load manual gifts', {
+          operation: 'load_manual_gifts',
+          event_id: activeEventId,
+          error: manualGiftsResult.reason,
+        });
       }
 
       console.debug('[FIX:prize-distribution] loaded', {
@@ -130,6 +155,9 @@ export default function PrizeDistributionPage() {
         page,
         page_size: pageSize,
         total: response.total,
+        manual_gifts: manualGiftsResult.status === 'fulfilled'
+          ? manualGiftsResult.value.gifts.length
+          : 0,
       });
       setDistribution(response.distribution);
       setUnassignedSlots(response.unassigned_slots ?? []);
@@ -202,6 +230,8 @@ export default function PrizeDistributionPage() {
 
     invalidatePendingRequests('active_event_unavailable');
     setDistribution([]);
+    setManualGifts([]);
+    setManualGiftsError(false);
     setUnassignedSlots([]);
     setTotal(0);
     setStats(null);
@@ -220,13 +250,21 @@ export default function PrizeDistributionPage() {
           Награждение участников
         </h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Автоматические призы в порядке награждения. Ручные назначения сюда не входят.
+          Автоматические призы и ручные назначения в порядке награждения. Ручные отмечены отдельно.
         </p>
       </div>
 
       {error && (
         <div className="rounded-lg border border-error-200 bg-error-50 p-4 dark:border-error-800 dark:bg-error-900/20">
           <p className="text-error-600 dark:text-error-400">{error}</p>
+        </div>
+      )}
+
+      {manualGiftsError && (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-900/20">
+          <p className="text-warning-700 dark:text-warning-300">
+            Не удалось загрузить ручные призы. Автоматическое распределение показано без них.
+          </p>
         </div>
       )}
 
@@ -281,6 +319,7 @@ export default function PrizeDistributionPage() {
 
       <PrizeDistributionTable
         distribution={distribution}
+        manualGifts={manualGifts}
         columns={visibleColumns}
         isLoading={isLoading}
       />

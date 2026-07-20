@@ -83,4 +83,25 @@ describe('prize distribution column registry', () => {
     expect(markup).toContain('место 1 -&gt; выдано месту 2');
     expect(markup).toContain('целевое место недоступно');
   });
+
+  it('shows manually assigned prizes alongside automatic prizes', () => {
+    const prizesColumn = PRIZE_DISTRIBUTION_COLUMNS.find((column) => column.key === 'prizes');
+    expect(prizesColumn).toBeDefined();
+
+    const markup = renderToStaticMarkup(prizesColumn!.render(row, [
+      {
+        id: 11,
+        event_id: 77,
+        description: 'Термокружка',
+        review_status: 'approved',
+        manual_distribution: true,
+        recipient: { id: row.participant_id, display_name: row.participant_name, status: 'active' },
+        created_at: '2026-07-15T00:00:00Z',
+      },
+    ]));
+
+    expect(markup).toContain('Шлем');
+    expect(markup).toContain('Термокружка');
+    expect(markup).toContain('Назначен вручную');
+  });
 });
