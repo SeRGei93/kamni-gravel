@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import Badge from '@/components/ui/badge/Badge';
 import { PARTICIPANT_STATUS_LABELS } from '@/types';
-import type { PrizeDistribution, PrizeGiftAssignment } from '@/types';
+import type { ManualGift, PrizeDistribution, PrizeGiftAssignment } from '@/types';
 import { formatPrizeAssignment } from '@/utils/giftPlaceRule';
 import { giftDonorName } from '@/utils/prizeDistribution';
 
@@ -13,7 +13,10 @@ export interface PrizeDistributionColumn {
   alwaysVisible?: boolean;
   defaultVisible: boolean;
   align?: 'start' | 'end' | 'center';
-  render: (distribution: PrizeDistribution) => React.ReactNode;
+  render: (
+    distribution: PrizeDistribution,
+    manualGifts?: ManualGift[]
+  ) => React.ReactNode;
 }
 
 const GENDER_LABELS: Record<string, string> = {
@@ -72,49 +75,62 @@ function assignmentDescription(assignment: PrizeGiftAssignment): string {
   return `${detail} (${fallbackReason})`;
 }
 
-function PrizeListCell({ row }: { row: PrizeDistribution }) {
+function PrizeListCell({
+  row,
+  manualGifts = [],
+}: {
+  row: PrizeDistribution;
+  manualGifts?: ManualGift[];
+}) {
   const assignments = row.matched_gift_assignments ?? [];
-  if (assignments.length > 0) {
-    return (
-      <div className="min-w-56 space-y-2">
-        {assignments.map((assignment, index) => (
-          <div
-            key={`${assignment.gift_id}-${index}`}
-            className="border-l-2 border-brand-200 pl-2 dark:border-brand-700"
-          >
-            <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-              {assignment.gift.description}
-            </p>
-            <p className={muted}>от {giftDonorName(assignment.gift)}</p>
-            <p className="text-theme-xs text-gray-500 dark:text-gray-400">
-              {assignmentDescription(assignment)}
-            </p>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   const legacyGifts = row.matched_gifts ?? [];
-  if (legacyGifts.length > 0) {
-    return (
-      <div className="min-w-56 space-y-2">
-        {legacyGifts.map((gift) => (
-          <div
-            key={gift.id}
-            className="border-l-2 border-brand-200 pl-2 dark:border-brand-700"
-          >
-            <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-              {gift.description}
-            </p>
-            <p className={muted}>от {giftDonorName(gift)}</p>
-          </div>
-        ))}
-      </div>
-    );
+
+  if (assignments.length === 0 && legacyGifts.length === 0 && manualGifts.length === 0) {
+    return <span className={muted}>-</span>;
   }
 
-  return <span className={muted}>-</span>;
+  return (
+    <div className="min-w-56 space-y-2">
+      {assignments.map((assignment, index) => (
+        <div
+          key={`${assignment.gift_id}-${index}`}
+          className="border-l-2 border-brand-200 pl-2 dark:border-brand-700"
+        >
+          <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
+            {assignment.gift.description}
+          </p>
+          <p className={muted}>от {giftDonorName(assignment.gift)}</p>
+          <p className="text-theme-xs text-gray-500 dark:text-gray-400">
+            {assignmentDescription(assignment)}
+          </p>
+        </div>
+      ))}
+      {assignments.length === 0 && legacyGifts.map((gift) => (
+        <div
+          key={gift.id}
+          className="border-l-2 border-brand-200 pl-2 dark:border-brand-700"
+        >
+          <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
+            {gift.description}
+          </p>
+          <p className={muted}>от {giftDonorName(gift)}</p>
+        </div>
+      ))}
+      {manualGifts.map((gift) => (
+        <div
+          key={gift.id}
+          className="border-l-2 border-info-200 pl-2 dark:border-info-700"
+        >
+          <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
+            {gift.description}
+          </p>
+          <p className="text-theme-xs text-gray-500 dark:text-gray-400">
+            Назначен вручную
+          </p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export const PRIZE_DISTRIBUTION_COLUMNS: PrizeDistributionColumn[] = [
@@ -205,7 +221,7 @@ export const PRIZE_DISTRIBUTION_COLUMNS: PrizeDistributionColumn[] = [
     label: 'Призы',
     alwaysVisible: true,
     defaultVisible: true,
-    render: (row) => <PrizeListCell row={row} />,
+    render: (row, manualGifts) => <PrizeListCell row={row} manualGifts={manualGifts} />,
   },
   {
     key: 'match_reason',
